@@ -5,35 +5,37 @@ import { Platform, type TextStyle } from 'react-native';
  * Red is reserved for genuine risk states.
  */
 export const colors = {
-  bg: '#090B0F',
-  surface: '#11151B',
-  card: '#151A22',
-  cardRaised: '#1A202A',
-  border: '#242B36',
-  borderStrong: '#323B49',
+  bg: '#060A13',
+  surface: '#0B111D',
+  card: '#0E1524',
+  cardRaised: '#121B2E',
+  border: '#1B2740',
+  borderStrong: '#26385A',
 
-  accent: '#4DA8FF',
-  accentPressed: '#3A8FE0',
-  accentMuted: 'rgba(77, 168, 255, 0.14)',
-  accentOn: '#05101C',
+  accent: '#1F7BFF',
+  accentPressed: '#1666DB',
+  accentBright: '#4DA3FF',
+  accentMuted: 'rgba(31, 123, 255, 0.16)',
+  accentOn: '#FFFFFF',
 
-  positive: '#3FB68B',
-  positiveMuted: 'rgba(63, 182, 139, 0.14)',
-  warning: '#E5A23A',
-  warningMuted: 'rgba(229, 162, 58, 0.14)',
-  danger: '#E5534B',
-  dangerMuted: 'rgba(229, 83, 75, 0.14)',
+  positive: '#22C55E',
+  positivePressed: '#1AA64E',
+  positiveMuted: 'rgba(34, 197, 94, 0.14)',
+  warning: '#F5B70B',
+  warningMuted: 'rgba(245, 183, 11, 0.14)',
+  danger: '#EF4444',
+  dangerMuted: 'rgba(239, 68, 68, 0.14)',
 
-  text: '#ECEFF4',
-  textSecondary: '#8D97A7',
-  textTertiary: '#5D6778',
-  overlay: 'rgba(3, 5, 8, 0.72)',
+  text: '#F1F5FB',
+  textSecondary: '#93A1B8',
+  textTertiary: '#5B6A84',
+  overlay: 'rgba(2, 5, 10, 0.78)',
 } as const;
 
 export type Tone = 'neutral' | 'accent' | 'positive' | 'warning' | 'danger';
 
 export const toneColor: Record<Tone, { fg: string; bg: string }> = {
-  neutral: { fg: colors.textSecondary, bg: 'rgba(141, 151, 167, 0.12)' },
+  neutral: { fg: colors.textSecondary, bg: 'rgba(147, 161, 184, 0.12)' },
   accent: { fg: colors.accent, bg: colors.accentMuted },
   positive: { fg: colors.positive, bg: colors.positiveMuted },
   warning: { fg: colors.warning, bg: colors.warningMuted },

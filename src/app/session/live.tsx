@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { LiveTradeChart } from '@/components/charts/LiveTradeChart';
 import {
   AppHeader,
   AppText,
@@ -11,16 +13,21 @@ import {
   EmptyState,
   Input,
   Metric,
+  MetricTile,
+  NotificationCard,
   NumericInput,
   Screen,
   Sheet,
   StatusBadge,
+  TileGrid,
+  ToggleRow,
   WarningSheet,
 } from '@/components/ui';
-import { colors, spacing } from '@/constants/theme';
+import { colors, radius, spacing } from '@/constants/theme';
 import { useDailyGuard, useStrategy, useTrade } from '@/hooks/useAppData';
-import { isStopWidened, openPnl, stopChangeRiskDelta } from '@/lib/engines';
+import { closedTradeAlert, getInstrument, isStopWidened, liveAlerts, liveState, openPnl, roundToTick, stopChangeRiskDelta, type LiveAlert } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
+import type { AlertKind, Trade } from '@/types/domain';
 import { money, parseNum, price } from '@/utils/format';
 
 type SheetKind = 'none' | 'stop' | 'stopWarning' | 'target' | 'close' | 'note' | 'mark';
@@ -28,31 +35,17 @@ type SheetKind = 'none' | 'stop' | 'stopWarning' | 'target' | 'close' | 'note' |
 export default function LiveTradeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const trade = useTrade(id);
-  const strategy = useStrategy(trade?.strategyId);
-  const guard = useDailyGuard();
-  const rules = useAppStore((s) => s.tradingRules);
-  const updateTrade = useAppStore((s) => s.updateTrade);
-  const closeTrade = useAppStore((s) => s.closeTrade);
-  const recordEvent = useAppStore((s) => s.recordEvent);
-
-  const [sheet, setSheet] = useState<SheetKind>('none');
-  const [mark, setMark] = useState<string>('');
-  const [newStop, setNewStop] = useState('');
-  const [newTarget, setNewTarget] = useState('');
-  const [exit, setExit] = useState('');
-  const [note, setNote] = useState('');
 
   if (!trade) {
     return (
-      <Screen header={<AppHeader title="Live trade" back />}>
-        <EmptyState icon="pulse-outline" title="Trade not found" message="This trade may have been closed or removed." actionLabel="Back to session" onAction={() => router.replace('/session')} />
+      <Screen header={<AppHeader title="Live trade monitor" back />}>
+        <EmptyState icon="pulse-outline" title="Trade not found" message="This trade may have been closed or removed." actionLabel="Back to check trade" onAction={() => router.replace('/analyze')} />
       </Screen>
     );
   }
-
   if (trade.status !== 'open') {
     return (
-      <Screen header={<AppHeader title="Live trade" back />}>
+      <Screen header={<AppHeader title="Live trade monitor" back />}>
         <EmptyState
           icon="checkmark-done-outline"
           title="Trade closed"
@@ -63,20 +56,84 @@ export default function LiveTradeScreen() {
       </Screen>
     );
   }
+  return <LiveMonitor trade={trade} />;
+}
 
-  const markPrice = parseNum(mark);
-  const pnl = markPrice != null ? openPnl(trade.instrument, trade.direction, trade.entryPrice, markPrice, trade.contracts) : null;
+function seedPrices(trade: Trade): number[] {
+  const tick = getInstrument(trade.instrument).tickSize;
+  const sign = trade.direction === 'long' ? 1 : -1;
+  return Array.from({ length: 16 }, (_, i) => roundToTick(trade.instrument, trade.entryPrice - sign * (15 - i) * tick * (i % 3 === 0 ? 1.5 : 0.8)));
+}
+
+function LiveMonitor({ trade }: { trade: Trade }) {
+  const strategy = useStrategy(trade.strategyId);
+  const guard = useDailyGuard();
+  const rules = useAppStore((s) => s.tradingRules);
+  const demo = useAppStore((s) => s.mode === 'demo');
+  const updateTrade = useAppStore((s) => s.updateTrade);
+  const closeTrade = useAppStore((s) => s.closeTrade);
+  const recordEvent = useAppStore((s) => s.recordEvent);
+  const pushAlert = useAppStore((s) => s.pushAlert);
+
+  const [sheet, setSheet] = useState<SheetKind>('none');
+  const [prices, setPrices] = useState<number[]>(() => seedPrices(trade));
+  const [markInput, setMarkInput] = useState('');
+  const [newStop, setNewStop] = useState('');
+  const [newTarget, setNewTarget] = useState('');
+  const [exit, setExit] = useState('');
+  const [note, setNote] = useState('');
+  const [feed, setFeed] = useState(demo);
+  const [toast, setToast] = useState<LiveAlert | null>(null);
+  const sent = useRef(new Set<AlertKind>());
+  const markPrice = prices[prices.length - 1];
+  const insets = useSafeAreaInsets();
+
+  const pushPrice = useCallback((p: number) => setPrices((cur) => [...cur.slice(-59), p]), []);
+
+  // Demo price feed — a random walk with a slight drift. Replaced by broker marks later.
+  useEffect(() => {
+    if (!feed) return;
+    const tick = getInstrument(trade.instrument).tickSize;
+    const t = setInterval(() => {
+      setPrices((cur) => {
+        const last = cur[cur.length - 1];
+        const step = (Math.random() < 0.56 ? 1 : -1) * (trade.direction === 'long' ? 1 : -1) * tick * (1 + Math.floor(Math.random() * 4));
+        return [...cur.slice(-59), roundToTick(trade.instrument, last + step)];
+      });
+    }, 1400);
+    return () => clearInterval(t);
+  }, [feed, trade.instrument, trade.direction]);
+
+  // Turn price moves into alerts (in-app feed + toast).
+  useEffect(() => {
+    const fresh = liveAlerts(trade, markPrice, sent.current);
+    if (fresh.length === 0) return;
+    for (const a of fresh) {
+      sent.current.add(a.kind);
+      pushAlert({ kind: a.kind, title: a.title, body: a.body, tradeId: trade.id });
+    }
+    const latest = fresh[fresh.length - 1];
+    setToast(latest);
+    const s = liveState(trade, markPrice);
+    if (s.targetHit || s.stopHit) {
+      setFeed(false);
+      setExit(String(s.targetHit ? trade.targetPrice : trade.stopPrice));
+      setSheet('close');
+    }
+    const h = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(h);
+  }, [markPrice, trade, pushAlert]);
+
+  const live = liveState(trade, markPrice);
   const stopVal = parseNum(newStop);
   const widened = stopVal != null && isStopWidened(trade.direction, trade.stopPrice, stopVal);
   const delta = stopVal != null ? stopChangeRiskDelta(trade.instrument, trade.direction, trade.entryPrice, trade.stopPrice, stopVal, trade.contracts) : 0;
-  // Only validate against the market when a current price is known.
-  const stopInvalid =
-    stopVal != null && markPrice != null && (trade.direction === 'long' ? stopVal >= markPrice : stopVal <= markPrice);
+  const stopInvalid = stopVal != null && (trade.direction === 'long' ? stopVal >= markPrice : stopVal <= markPrice);
 
-  const applyStop = (override: boolean) => {
-    if (stopVal == null) return;
+  const applyStop = (override: boolean, value = stopVal) => {
+    if (value == null) return;
     updateTrade(trade.id, {
-      stopPrice: stopVal,
+      stopPrice: value,
       rulesViolated: override ? [...new Set([...trade.rulesViolated, 'stop_widened'])] : trade.rulesViolated,
       disciplineScore: override ? Math.max(0, (trade.disciplineScore ?? 100) - 25) : trade.disciplineScore,
     });
@@ -87,7 +144,7 @@ export default function LiveTradeScreen() {
         accountId: trade.accountId,
         tradeId: trade.id,
         sessionId: trade.sessionId,
-        detail: `Stop moved from ${price(trade.stopPrice)} to ${price(stopVal)} (+${money(delta)} risk).`,
+        detail: `Stop moved from ${price(trade.stopPrice)} to ${price(value)} (+${money(delta)} risk).`,
       });
     }
     setNewStop('');
@@ -101,72 +158,96 @@ export default function LiveTradeScreen() {
   };
 
   const onClose = (exitPrice: number) => {
+    setFeed(false);
     const closed = closeTrade(trade.id, exitPrice);
     setSheet('none');
     if (!closed) return;
+    const a = closedTradeAlert(closed);
+    pushAlert({ kind: a.kind, title: a.title, body: a.body, tradeId: closed.id });
     if ((closed.pnl ?? 0) < 0) router.replace({ pathname: '/session/loss', params: { id: closed.id } });
     else router.replace({ pathname: '/journal/[id]', params: { id: closed.id, edit: '1' } });
   };
 
   const exitVal = parseNum(exit);
-  const dir = trade.direction.toUpperCase();
+  const atBreakeven = live.stopAtBreakevenOrBetter;
 
   return (
-    <Screen header={<AppHeader title="Live trade" back right={<StatusBadge label="Live" tone="accent" />} />}>
-      <View style={styles.hero}>
-        <AppText variant="title">
-          {trade.instrument} {dir}
-        </AppText>
-        <AppText variant="caption">
-          {strategy?.name ?? 'No strategy'} · {trade.contracts} contract{trade.contracts > 1 ? 's' : ''}
-        </AppText>
-      </View>
-
-      <Card raised onPress={() => setSheet('mark')} accessibilityLabel="Update current price">
-        <AppText variant="label">Open P/L</AppText>
-        <AppText variant="hero" tone={pnl == null ? 'secondary' : pnl >= 0 ? 'positive' : 'danger'}>
-          {pnl == null ? '—' : money(pnl, { sign: true })}
-        </AppText>
-        <AppText variant="caption">{markPrice != null ? `Mark ${price(markPrice)} · tap to update` : 'Tap to enter the current price'}</AppText>
-      </Card>
-
-      <Card>
-        <View style={styles.grid}>
-          <Metric label="Entry" value={price(trade.entryPrice)} />
-          <Metric label="Current" value={markPrice != null ? price(markPrice) : '—'} />
-        </View>
-        <View style={[styles.grid, { marginTop: spacing.lg }]}>
-          <Metric label="Stop" value={price(trade.stopPrice)} tone="danger" sub={trade.stopPrice !== trade.originalStopPrice ? `Original ${price(trade.originalStopPrice)}` : undefined} />
-          <Metric label="Target" value={price(trade.targetPrice)} tone="positive" />
-        </View>
-        <View style={[styles.grid, { marginTop: spacing.lg }]}>
-          <Metric label="Planned risk" value={money(trade.riskDollars)} />
-          <Metric label="Risk remaining today" value={money(guard?.riskRemaining)} />
-        </View>
-      </Card>
-
-      <View style={styles.actions}>
-        <Button label="Move stop" variant="secondary" icon="swap-vertical" size="md" style={styles.flex} onPress={() => { setNewStop(String(trade.stopPrice)); setSheet('stop'); }} />
-        <Button label="Edit target" variant="secondary" icon="flag-outline" size="md" style={styles.flex} onPress={() => { setNewTarget(trade.targetPrice != null ? String(trade.targetPrice) : ''); setSheet('target'); }} />
-      </View>
-      <View style={styles.actions}>
-        <Button label="Add note" variant="secondary" icon="create-outline" size="md" style={styles.flex} onPress={() => { setNote(trade.notes); setSheet('note'); }} />
-        <Button label="Close trade" variant="primary" icon="exit-outline" size="md" style={styles.flex} onPress={() => { setExit(mark); setSheet('close'); }} />
-      </View>
-
-      {trade.notes ? (
+    <View style={styles.root}>
+      <Screen
+        header={<AppHeader title="Live trade monitor" back right={<StatusBadge label="Active" tone="positive" />} />}
+        footer={
+          <View style={styles.actions}>
+            <Button label="Move to Breakeven" variant="secondary" size="md" style={styles.flex} disabled={atBreakeven || live.r <= 0} onPress={() => applyStop(false, trade.entryPrice)} />
+            <Button label="Close Trade" variant="danger" size="md" style={styles.flex} onPress={() => { setExit(String(markPrice)); setSheet('close'); }} />
+          </View>
+        }>
         <Card>
-          <AppText variant="label">Notes</AppText>
-          <AppText variant="body" style={{ marginTop: spacing.sm }}>
-            {trade.notes}
-          </AppText>
+          <View style={styles.tradeHead}>
+            <View style={styles.instIcon}>
+              <Ionicons name={trade.direction === 'long' ? 'trending-up' : 'trending-down'} size={20} color={colors.accentBright} />
+            </View>
+            <View style={styles.flex}>
+              <AppText variant="heading">
+                {trade.instrument} • {trade.direction === 'long' ? 'Long' : 'Short'} {trade.contracts}
+              </AppText>
+              <AppText variant="caption">{strategy?.name ?? 'No strategy'}</AppText>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <AppText variant="number" tone={live.pnl >= 0 ? 'positive' : 'danger'}>
+                {money(live.pnl, { sign: true })}
+              </AppText>
+              <AppText variant="caption">{live.r >= 0 ? '+' : ''}{live.r.toFixed(2)}R</AppText>
+            </View>
+          </View>
         </Card>
-      ) : null}
+
+        <TileGrid>
+          <MetricTile label="Entry" value={price(trade.entryPrice)} />
+          <MetricTile label="Stop" value={price(trade.stopPrice)} tone={atBreakeven ? 'positive' : 'danger'} sub={trade.stopPrice !== trade.originalStopPrice ? `orig ${price(trade.originalStopPrice)}` : undefined} />
+          <MetricTile label="Target" value={price(trade.targetPrice)} tone="positive" />
+          <MetricTile label="Current" value={price(markPrice)} onPress={() => { setMarkInput(String(markPrice)); setSheet('mark'); }} sub="Tap to update" />
+        </TileGrid>
+
+        <Card>
+          <LiveTradeChart prices={prices} entry={trade.entryPrice} stop={trade.stopPrice} target={trade.targetPrice} />
+          {demo ? <ToggleRow label="Demo price feed" description="Simulated prices so you can preview live alerts." value={feed} onChange={setFeed} /> : null}
+        </Card>
+
+        <Card>
+          <View style={styles.metrics}>
+            <Metric label="Open P/L" value={money(live.pnl, { sign: true })} tone={live.pnl >= 0 ? 'positive' : 'danger'} compact />
+            <Metric label="To stop" value={`${live.pointsToStop} pts`} compact />
+            <Metric label="Session risk left" value={money(guard?.riskRemaining)} compact />
+          </View>
+        </Card>
+
+        <View style={styles.actions}>
+          <Button label="Move stop" variant="secondary" icon="swap-vertical" size="md" style={styles.flex} onPress={() => { setNewStop(String(trade.stopPrice)); setSheet('stop'); }} />
+          <Button label="Edit target" variant="secondary" icon="flag-outline" size="md" style={styles.flex} onPress={() => { setNewTarget(trade.targetPrice != null ? String(trade.targetPrice) : ''); setSheet('target'); }} />
+        </View>
+        <Button label="Add note" variant="ghost" icon="create-outline" size="md" onPress={() => { setNote(trade.notes); setSheet('note'); }} />
+
+        {trade.notes ? (
+          <Card>
+            <AppText variant="label">Notes</AppText>
+            <AppText variant="body" style={{ marginTop: spacing.sm }}>
+              {trade.notes}
+            </AppText>
+          </Card>
+        ) : null}
 
       <Sheet visible={sheet === 'mark'} onClose={() => setSheet('none')} title="Current price">
-        <NumericInput label="Mark price" value={mark} onChangeText={setMark} autoFocus large placeholder={price(trade.entryPrice)} />
-        <AppText variant="caption">Live prices arrive with Connected Broker mode. For now, enter the price from your platform.</AppText>
-        <Button label="Update" onPress={() => setSheet('none')} />
+        <NumericInput label="Mark price" value={markInput} onChangeText={setMarkInput} autoFocus large placeholder={price(trade.entryPrice)} />
+        <AppText variant="caption">Live prices arrive with Connected Broker mode. Enter the price from your platform, or use the demo feed.</AppText>
+        <Button
+          label="Update"
+          disabled={parseNum(markInput) == null}
+          onPress={() => {
+            const v = parseNum(markInput);
+            if (v != null) pushPrice(v);
+            setSheet('none');
+          }}
+        />
       </Sheet>
 
       <Sheet visible={sheet === 'stop'} onClose={() => setSheet('none')} title="Moving stop">
@@ -246,14 +327,24 @@ export default function LiveTradeScreen() {
         ) : null}
         <Button label="Close trade" disabled={exitVal == null || exitVal <= 0} onPress={() => exitVal != null && onClose(exitVal)} />
       </Sheet>
-    </Screen>
+      </Screen>
+      {toast ? (
+        <View style={[styles.toast, { top: insets.top + 60 }]} pointerEvents="box-none">
+          <NotificationCard kind={toast.kind} title={toast.title} body={toast.body} time="now" highlight onPress={() => setToast(null)} />
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  hero: { gap: 4 },
+  root: { flex: 1, backgroundColor: colors.bg },
   grid: { flexDirection: 'row', gap: spacing.md },
   actions: { flexDirection: 'row', gap: spacing.md },
+  metrics: { flexDirection: 'row', gap: spacing.md },
   flex: { flex: 1 },
   preview: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  tradeHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  instIcon: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: colors.accentMuted, alignItems: 'center', justifyContent: 'center' },
+  toast: { position: 'absolute', left: 16, right: 16 },
 });

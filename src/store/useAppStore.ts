@@ -7,6 +7,9 @@ import { realizedPnl, realizedR } from '@/lib/engines/riskEngine';
 import { syncService } from '@/services/syncService';
 import type {
   Account,
+  AppAlert,
+  PracticeRun,
+  TradePlan,
   DisciplineEvent,
   Emotion,
   NotificationPrefs,
@@ -66,6 +69,15 @@ export interface AppState extends AppData {
 
   // discipline
   recordEvent: (event: Omit<DisciplineEvent, 'id' | 'at'> & { at?: string }) => void;
+
+  // plans, practice, alerts, manual journal
+  savePlan: (plan: TradePlan) => void;
+  setPlanStatus: (id: string, status: TradePlan['status']) => void;
+  addPracticeRun: (run: PracticeRun) => void;
+  pushAlert: (alert: Omit<AppAlert, 'id' | 'at' | 'read'> & { at?: string }) => void;
+  markAlertsRead: () => void;
+  /** Record an already-closed trade (manual or screenshot journaling). Updates balance. */
+  addJournalTrade: (trade: Trade) => void;
 }
 
 const nowIso = () => new Date().toISOString();
@@ -282,6 +294,52 @@ export const useAppStore = create<AppState>()(
         syncService.remove('trades', id);
       },
 
+      savePlan: (plan) => {
+        set((s) => ({ plans: [plan, ...s.plans.filter((p) => p.id !== plan.id)] }));
+        syncService.upsertPlan(plan);
+      },
+
+      setPlanStatus: (id, status) => {
+        let updated: TradePlan | undefined;
+        set((s) => ({
+          plans: s.plans.map((p) => {
+            if (p.id !== id) return p;
+            updated = { ...p, status };
+            return updated;
+          }),
+        }));
+        if (updated) syncService.upsertPlan(updated);
+      },
+
+      addPracticeRun: (run) => {
+        set((s) => ({ practiceRuns: [run, ...s.practiceRuns].slice(0, 100) }));
+        syncService.insertPracticeRun(run);
+      },
+
+      pushAlert: (alert) =>
+        set((s) => ({ alerts: [{ ...alert, id: uuid(), at: alert.at ?? nowIso(), read: false }, ...s.alerts].slice(0, 60) })),
+
+      markAlertsRead: () => set((s) => ({ alerts: s.alerts.map((a) => (a.read ? a : { ...a, read: true })) })),
+
+      addJournalTrade: (trade) => {
+        set((s) => ({
+          trades: [...s.trades, trade],
+          accounts: s.accounts.map((a) => {
+            if (a.id !== trade.accountId || trade.pnl == null) return a;
+            const balance = Math.round((a.balance + trade.pnl) * 100) / 100;
+            return { ...a, balance, highWaterMark: Math.max(a.highWaterMark, balance) };
+          }),
+        }));
+        syncService.upsertTrade(trade);
+        const account = get().accounts.find((a) => a.id === trade.accountId);
+        if (account) syncService.upsertAccount(account);
+        const base = { accountId: trade.accountId, tradeId: trade.id, sessionId: trade.sessionId };
+        if (trade.journaled) get().recordEvent({ ...base, type: 'JOURNAL_COMPLETED', category: 'journal', detail: 'Journal completed', at: trade.closedAt ?? undefined });
+        if (trade.followedPlan === false) {
+          get().recordEvent({ ...base, type: 'STRATEGY_VIOLATION', category: 'entry', detail: 'Self-reported: did not follow the plan.', at: trade.openedAt });
+        }
+      },
+
       recordEvent: (event) => {
         const full: DisciplineEvent = { ...event, id: uuid(), at: event.at ?? nowIso() };
         set((s) => ({ events: [...s.events, full] }));
@@ -290,7 +348,20 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'prop-guard-store',
-      version: 1,
+      version: 2,
+      migrate: (persisted, version) => {
+        const st = (persisted ?? {}) as Partial<AppState>;
+        if (version < 2) {
+          return {
+            ...st,
+            plans: st.plans ?? [],
+            practiceRuns: st.practiceRuns ?? [],
+            alerts: st.alerts ?? [],
+            preferences: { ...DEFAULT_PREFERENCES, ...(st.preferences ?? {}), tradingProfile: { ...DEFAULT_PREFERENCES.tradingProfile, ...(st.preferences?.tradingProfile ?? {}) } },
+          } as AppState;
+        }
+        return st as AppState;
+      },
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
         accounts: s.accounts,
@@ -302,6 +373,9 @@ export const useAppStore = create<AppState>()(
         preferences: s.preferences,
         activeAccountId: s.activeAccountId,
         activeStrategyId: s.activeStrategyId,
+        plans: s.plans,
+        practiceRuns: s.practiceRuns,
+        alerts: s.alerts,
         mode: s.mode,
         user: s.user,
         draft: s.draft,

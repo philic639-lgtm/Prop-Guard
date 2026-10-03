@@ -160,6 +160,66 @@ export interface Trade {
   /** Maximum adverse / favorable excursion in points, when known. */
   mae: number | null;
   mfe: number | null;
+  /** Trader's own answer to "Did you follow your plan?" (null = not answered). */
+  followedPlan?: boolean | null;
+}
+
+/** A trade planned and checked before execution. */
+export interface TradePlan {
+  id: string;
+  accountId: string;
+  strategyId: string | null;
+  instrument: InstrumentSymbol;
+  direction: Direction;
+  entry: number;
+  stop: number;
+  target: number | null;
+  contracts: number;
+  riskDollars: number;
+  rewardDollars: number | null;
+  rr: number | null;
+  matchPct: number;
+  grade: SetupGrade;
+  conditionsMet: number;
+  conditionsTotal: number;
+  notes: string;
+  status: 'saved' | 'executed' | 'discarded';
+  createdAt: string;
+}
+
+/** A strategy practice attempt on a screenshot (never risks capital). */
+export interface PracticeRun {
+  id: string;
+  strategyId: string;
+  screenshotUri: string | null;
+  answers: Record<string, boolean>;
+  matchPct: number;
+  conditionsMet: number;
+  conditionsTotal: number;
+  verdict: 'match' | 'wait' | 'no_trade';
+  feedback: string;
+  createdAt: string;
+}
+
+export type AlertKind =
+  | 'good_entry'
+  | 'move_stop_breakeven'
+  | 'partial_taken'
+  | 'take_profit'
+  | 'approaching_stop'
+  | 'trade_closed'
+  | 'risk_limit'
+  | 'cooldown';
+
+/** In-app notification feed item (mirrors push notifications). */
+export interface AppAlert {
+  id: string;
+  kind: AlertKind;
+  title: string;
+  body: string;
+  tradeId: string | null;
+  at: string;
+  read: boolean;
 }
 
 export interface SessionReview {
@@ -224,6 +284,23 @@ export interface NotificationPrefs {
   journal: boolean;
 }
 
+export type TradingStyle = 'scalp' | 'intraday' | 'swing';
+export type PreferredSession = 'ny_open' | 'morning' | 'afternoon';
+export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
+export type HoldTime = 'lt5' | '5to30' | '30to120' | 'hours';
+export type RiskPreference = 'conservative' | 'balanced' | 'aggressive';
+export type ConnectionMethod = 'manual' | 'screenshot' | 'connected';
+
+export interface TradingProfile {
+  path: 'have_strategy' | 'build' | null;
+  style: TradingStyle;
+  session: PreferredSession;
+  experience: ExperienceLevel;
+  holdTime: HoldTime;
+  riskPreference: RiskPreference;
+  connection: ConnectionMethod;
+}
+
 export interface UserPreferences {
   displayName: string;
   email: string;
@@ -233,5 +310,6 @@ export interface UserPreferences {
   tradingType: TradingType;
   propFirm: string;
   notifications: NotificationPrefs;
+  tradingProfile: TradingProfile;
   onboarded: boolean;
 }

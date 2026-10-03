@@ -1,5 +1,7 @@
 import type {
   Account,
+  PracticeRun,
+  TradePlan,
   ChecklistItem,
   DisciplineEvent,
   Strategy,
@@ -191,6 +193,7 @@ export function tradeToRows(t: Trade, userId: string) {
       source: t.source,
       mae: t.mae,
       mfe: t.mfe,
+      followed_plan: t.followedPlan ?? null,
     },
     checklist: t.checklist.map((c) => ({ trade_id: t.id, item_key: c.itemId, user_id: userId, label: c.label, value: c.value })),
     journal: {
@@ -243,6 +246,7 @@ export function rowsToTrade(r: Row, checklist: Row[], journal: Row | undefined):
     journaled: journal?.completed_at != null,
     mae: numOrNull(r.mae),
     mfe: numOrNull(r.mfe),
+    followedPlan: r.followed_plan == null ? null : r.followed_plan === true,
   };
 }
 
@@ -316,8 +320,90 @@ export function preferencesToRow(
     prop_firm: p.propFirm,
     notifications: p.notifications,
     trading_rules: rules,
+    trading_profile: p.tradingProfile,
     onboarded: p.onboarded,
     active_account_id: activeAccountId,
     active_strategy_id: activeStrategyId,
+  };
+}
+
+export function planToRow(p: TradePlan, userId: string) {
+  return {
+    id: p.id,
+    user_id: userId,
+    account_id: p.accountId,
+    strategy_id: p.strategyId,
+    instrument: p.instrument,
+    direction: p.direction,
+    entry: p.entry,
+    stop: p.stop,
+    target: p.target,
+    contracts: p.contracts,
+    risk_dollars: p.riskDollars,
+    reward_dollars: p.rewardDollars,
+    rr: p.rr,
+    match_pct: p.matchPct,
+    grade: p.grade,
+    conditions_met: p.conditionsMet,
+    conditions_total: p.conditionsTotal,
+    notes: p.notes,
+    status: p.status,
+    created_at: p.createdAt,
+  };
+}
+
+export function rowToPlan(r: Row): TradePlan {
+  return {
+    id: str(r.id),
+    accountId: str(r.account_id),
+    strategyId: (r.strategy_id as string | null) ?? null,
+    instrument: r.instrument as TradePlan['instrument'],
+    direction: r.direction === 'short' ? 'short' : 'long',
+    entry: num(r.entry),
+    stop: num(r.stop),
+    target: numOrNull(r.target),
+    contracts: num(r.contracts),
+    riskDollars: num(r.risk_dollars),
+    rewardDollars: numOrNull(r.reward_dollars),
+    rr: numOrNull(r.rr),
+    matchPct: num(r.match_pct),
+    grade: r.grade as TradePlan['grade'],
+    conditionsMet: num(r.conditions_met),
+    conditionsTotal: num(r.conditions_total),
+    notes: str(r.notes),
+    status: (r.status as TradePlan['status']) ?? 'saved',
+    createdAt: str(r.created_at),
+  };
+}
+
+export function practiceToRow(p: PracticeRun, userId: string) {
+  return {
+    id: p.id,
+    user_id: userId,
+    strategy_id: p.strategyId,
+    // Local file URIs are device-specific; only storage paths are synced.
+    screenshot_path: p.screenshotUri && !p.screenshotUri.startsWith('file:') ? p.screenshotUri : null,
+    answers: p.answers,
+    match_pct: p.matchPct,
+    conditions_met: p.conditionsMet,
+    conditions_total: p.conditionsTotal,
+    verdict: p.verdict,
+    feedback: p.feedback,
+    created_at: p.createdAt,
+  };
+}
+
+export function rowToPractice(r: Row): PracticeRun {
+  return {
+    id: str(r.id),
+    strategyId: str(r.strategy_id),
+    screenshotUri: (r.screenshot_path as string | null) ?? null,
+    answers: (r.answers as Record<string, boolean>) ?? {},
+    matchPct: num(r.match_pct),
+    conditionsMet: num(r.conditions_met),
+    conditionsTotal: num(r.conditions_total),
+    verdict: (r.verdict as PracticeRun['verdict']) ?? 'wait',
+    feedback: str(r.feedback),
+    createdAt: str(r.created_at),
   };
 }

@@ -9,14 +9,15 @@ import {
   AppText,
   Button,
   Card,
-  CircularScore,
   ConfirmationSheet,
+  DetailTable,
   LoadingState,
-  Metric,
   RuleChecklist,
   Screen,
-  StatusBadge,
+  VerdictBanner,
   WarningSheet,
+  type ChecklistRow,
+  type DetailRow,
 } from '@/components/ui';
 import { AI_DISCLAIMER } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
@@ -27,9 +28,10 @@ import { aiService, type SetupAnalysis } from '@/services/ai';
 import { notificationService } from '@/services/notificationService';
 import { useAppStore } from '@/store/useAppStore';
 import { useEntitlement } from '@/store/useSubscriptionStore';
-import type { DisciplineCategory, DisciplineEventType, Trade } from '@/types/domain';
+import { GRADE_LABEL, maxContractsForRisk } from '@/lib/engines';
+import type { DisciplineCategory, DisciplineEventType, SetupGrade, Trade } from '@/types/domain';
 import { uuid } from '@/utils/id';
-import { money, rr } from '@/utils/format';
+import { money, price, rr } from '@/utils/format';
 
 type ViolationEvent = { type: DisciplineEventType; category: DisciplineCategory; detail: string };
 
@@ -172,7 +174,7 @@ export default function SetupCheckScreen() {
       setupScore: evaluation.matchPct,
       setupGrade: evaluation.grade,
       disciplineScore,
-      notes: '',
+      notes: draft.notes?.trim() ?? '',
       aiSummary: analysis?.summary ?? null,
       emotion: null,
       setupRating: null,
@@ -188,6 +190,7 @@ export default function SetupCheckScreen() {
       store().recordEvent({ ...base, type: 'RULE_FOLLOWED', category: 'strategy', detail: `${ui.label} — all rules followed.` });
     }
     for (const v of violationEvents) store().recordEvent({ ...base, ...v });
+    if (draft.planId) store().setPlanStatus(draft.planId, 'executed');
 
     // Trade-limit notification when this entry uses the last allowed trade.
     if (guard.tradesRemaining <= 1) void notificationService.notifyNow('tradeLimit', prefs);
@@ -208,42 +211,60 @@ export default function SetupCheckScreen() {
     setSheet('violation');
   };
 
-  const rows = evaluation.checks.map((c) => ({
-    id: c.id,
-    label: c.label,
-    state: c.passed ? ('pass' as const) : c.severity === 'context' ? ('warn' as const) : ('fail' as const),
-    detail: c.detail,
-  }));
+  const verdict = verdictFor(evaluation.grade);
+  const counted = evaluation.checks.filter((c) => c.severity !== 'context');
+  const met = counted.filter((c) => c.passed).length;
+  const riskFailed = evaluation.rulesViolated.some((r) => r === 'risk_per_trade' || r === 'risk_daily' || r === 'max_contracts');
+  const n = draftNumbers(draft);
+  const suggested =
+    riskFailed && n.entry != null && n.stop != null
+      ? maxContractsForRisk(draft.instrument, n.entry, n.stop, Math.min(rules.maxRiskPerTrade, guard.riskRemaining), guard.maxContracts)
+      : null;
+
+  const rows: ChecklistRow[] = evaluation.checks.map((c) => {
+    let state: ChecklistRow['state'] = 'pass';
+    if (!c.passed) {
+      if (c.severity === 'context') state = 'warn';
+      else if (c.severity === 'checklist' && (c.detail === 'Not answered' || evaluation.grade === 'CAUTION')) state = 'warn';
+      else state = 'fail';
+    }
+    return { id: c.id, label: c.label, state, detail: c.passed ? c.detail : (c.detail ?? (state === 'warn' ? 'Unclear — not confirmed' : 'Missing')) };
+  });
+
+  const details: DetailRow[] = [
+    { label: 'Instrument', value: draft.instrument },
+    { label: 'Direction', value: draft.direction === 'long' ? 'Long' : 'Short', tone: draft.direction === 'long' ? 'positive' : 'danger' },
+    { label: 'Entry', value: price(n.entry) },
+    { label: 'Stop', value: `${price(n.stop)}${risk.pointsRisk != null ? ` (${risk.pointsRisk} pts)` : ''}` },
+    { label: 'Target', value: `${price(n.target)}${risk.pointsReward != null ? ` (${risk.pointsReward} pts)` : ''}` },
+    { label: 'Contracts', value: String(n.contracts ?? '—') },
+    { label: 'Dollar risk', value: money(risk.riskDollars), tone: riskFailed ? 'danger' : 'primary' },
+    { label: 'Potential reward', value: money(risk.rewardDollars), tone: risk.rewardDollars ? 'positive' : 'primary' },
+    { label: 'R:R ratio', value: rr(risk.rr) },
+    { label: 'Strategy match', value: `${evaluation.matchPct}% · ${strategy.name}` },
+    { label: 'Entry quality', value: GRADE_LABEL[evaluation.grade], tone: verdict.tone },
+    { label: 'Conditions met', value: `${met} / ${counted.length}` },
+  ];
 
   return (
     <Screen
-      header={<AppHeader title="Setup check" back />}
+      header={<AppHeader title="AI entry analysis" back />}
       footer={
         <>
-          <Button
-            label={evaluation.grade === 'NO_TRADE' || evaluation.grade === 'RULE_VIOLATION' ? 'Enter anyway' : 'Enter trade'}
-            variant={evaluation.grade === 'NO_TRADE' || evaluation.grade === 'RULE_VIOLATION' ? 'secondary' : 'primary'}
-            icon="enter-outline"
-            disabled={!canEnter}
-            onPress={onEnterPress}
-          />
-          <Button label="Modify trade" variant="ghost" onPress={() => router.back()} />
+          <Button label={verdict.cta} variant={verdict.button} icon={verdict.ctaIcon} disabled={!canEnter} onPress={onEnterPress} />
+          <View style={styles.footerRow}>
+            <Button label="Save Trade Plan" variant="secondary" size="md" icon="bookmark-outline" style={styles.flex} disabled={!risk.valid} onPress={() => router.push('/session/plan')} />
+            <Button label="Adjust Trade" variant="secondary" size="md" icon="create-outline" style={styles.flex} onPress={() => router.back()} />
+          </View>
         </>
       }>
-      <View style={styles.hero}>
-        <CircularScore value={evaluation.matchPct} suffix="%" tone={ui.tone} size={150} stroke={12} label="Strategy match" />
-        <StatusBadge label={ui.label} tone={ui.tone} icon={ui.icon} size="lg" />
-        <AppText variant="caption" align="center">
-          {strategy.name} · {draft.instrument} {draft.direction.toUpperCase()} · {draft.contracts} ct
-        </AppText>
-      </View>
+      <VerdictBanner tone={verdict.tone} title={verdict.title} subtitle={verdict.subtitle} badge={`${met}/${counted.length}`} />
 
-      <Card raised>
-        <View style={styles.metrics}>
-          <Metric label="Risk" value={money(risk.riskDollars)} />
-          <Metric label="Reward" value={money(risk.rewardDollars)} />
-          <Metric label="R:R" value={rr(risk.rr)} />
-        </View>
+      <Card>
+        <AppText variant="label" style={{ marginBottom: spacing.md }}>
+          {strategy.name} · conditions
+        </AppText>
+        <RuleChecklist rows={rows} />
       </Card>
 
       {evaluation.violations.length > 0 ? (
@@ -251,23 +272,29 @@ export default function SetupCheckScreen() {
           <View style={styles.head}>
             <Ionicons name="close-circle" size={18} color={colors.danger} />
             <AppText variant="label" tone="danger">
-              {evaluation.grade === 'NO_TRADE' ? 'No trade' : 'Rule violation'}
+              Violations
             </AppText>
           </View>
           {evaluation.violations.map((v) => (
             <AppText key={v} variant="body" style={styles.line}>
-              {v}
+              • {v}
             </AppText>
           ))}
         </Card>
       ) : null}
 
-      <Card>
-        <AppText variant="label" style={{ marginBottom: spacing.md }}>
-          Checks
-        </AppText>
-        <RuleChecklist rows={rows} />
-      </Card>
+      {suggested != null ? (
+        <Card tone="warning">
+          <AppText variant="label" tone="warning">
+            Suggested adjustment
+          </AppText>
+          <AppText variant="body" style={styles.line}>
+            {suggested > 0
+              ? `Use ${suggested} ${draft.instrument} contract${suggested === 1 ? '' : 's'} or a closer stop to stay within your ${money(Math.min(rules.maxRiskPerTrade, guard.riskRemaining))} risk limit.`
+              : `This stop is too wide for even 1 ${draft.instrument} within your ${money(Math.min(rules.maxRiskPerTrade, guard.riskRemaining))} limit. Use a micro contract or a closer stop.`}
+          </AppText>
+        </Card>
+      ) : null}
 
       {evaluation.cautions.length > 0 ? (
         <Card tone="warning">
@@ -279,18 +306,22 @@ export default function SetupCheckScreen() {
           </View>
           {evaluation.cautions.map((c) => (
             <AppText key={c} variant="body" style={styles.line}>
-              {c}
+              • {c}
             </AppText>
           ))}
         </Card>
       ) : null}
 
+      <Card>
+        <DetailTable title="Trade details" rows={details} />
+      </Card>
+
       {aiAllowed ? (
         <Card>
           <View style={styles.head}>
-            <Ionicons name="sparkles" size={16} color={colors.accent} />
+            <Ionicons name="sparkles" size={16} color={colors.accentBright} />
             <AppText variant="label" tone="accent">
-              {analysis?.source === 'ai' ? 'AI review' : 'Guard review'}
+              {analysis?.source === 'ai' ? 'AI analysis' : 'Guard analysis'}
             </AppText>
           </View>
           {analysis ? (
@@ -306,7 +337,7 @@ export default function SetupCheckScreen() {
             </>
           ) : (
             <AppText variant="caption" style={styles.line}>
-              Reviewing against your rules…
+              Checking against your rules…
             </AppText>
           )}
           <AppText variant="caption" tone="tertiary" style={{ marginTop: spacing.md, fontSize: 11 }}>
@@ -324,6 +355,9 @@ export default function SetupCheckScreen() {
         </Card>
       )}
 
+      <AppText variant="caption" tone="secondary" align="center">
+        {verdict.footnote}
+      </AppText>
       {cooldownBlocked ? (
         <AppText variant="caption" tone="warning" align="center">
           Cooldown overrides are disabled in your rules. New trades unlock when the cooldown ends.
@@ -332,8 +366,8 @@ export default function SetupCheckScreen() {
 
       <ConfirmationSheet
         visible={sheet === 'caution'}
-        title="Caution setup"
-        message={`This setup matches ${evaluation.matchPct}% of your ${strategy.name} checklist. Your plan says to wait for full confirmation. Entering will be recorded in your Discipline Score.`}
+        title="Proceed with caution"
+        message={`This setup meets ${met}/${counted.length} of your ${strategy.name} conditions. Your plan says to wait for full confirmation. Entering will be recorded in your Discipline Score.`}
         confirmLabel="Enter anyway"
         cancelLabel="Wait for confirmation"
         onConfirm={enterTrade}
@@ -342,7 +376,7 @@ export default function SetupCheckScreen() {
 
       <WarningSheet
         visible={sheet === 'violation'}
-        title={evaluation.grade === 'NO_TRADE' ? 'No trade recommended' : 'Rule violation'}
+        title={evaluation.grade === 'NO_TRADE' ? 'Not recommended' : 'Rule violation'}
         tone="danger"
         lines={evaluation.violations.length ? evaluation.violations : violationEvents.map((v) => v.detail)}
         question="Prop Guard recommends not taking this trade. Continue anyway?"
@@ -354,9 +388,65 @@ export default function SetupCheckScreen() {
   );
 }
 
+type Verdict = {
+  tone: 'positive' | 'warning' | 'danger';
+  title: string;
+  subtitle: string;
+  cta: string;
+  ctaIcon: 'checkmark-circle' | 'warning' | 'close-circle';
+  button: 'success' | 'caution' | 'danger';
+  footnote: string;
+};
+
+function verdictFor(grade: SetupGrade): Verdict {
+  switch (grade) {
+    case 'A_PLUS':
+    case 'VALID':
+      return {
+        tone: 'positive',
+        title: 'Good Entry',
+        subtitle: 'Strategy match — this trade follows your rules',
+        cta: 'Trade Approved · Enter Trade',
+        ctaIcon: 'checkmark-circle',
+        button: 'success',
+        footnote: 'You can enter this trade following your plan.',
+      };
+    case 'CAUTION':
+      return {
+        tone: 'warning',
+        title: 'Caution',
+        subtitle: 'Wait — some conditions are not confirmed',
+        cta: 'Proceed with Caution',
+        ctaIcon: 'warning',
+        button: 'caution',
+        footnote: 'This trade meets your risk rules but has unconfirmed conditions.',
+      };
+    case 'RULE_VIOLATION':
+      return {
+        tone: 'danger',
+        title: 'Rule Violation',
+        subtitle: 'This trade breaks your rules',
+        cta: 'Not Recommended',
+        ctaIcon: 'close-circle',
+        button: 'danger',
+        footnote: 'Adjust the trade or wait for a setup that fits your plan.',
+      };
+    default:
+      return {
+        tone: 'danger',
+        title: 'No Trade',
+        subtitle: 'Your limits or plan say no trade',
+        cta: 'Not Recommended',
+        ctaIcon: 'close-circle',
+        button: 'danger',
+        footnote: 'Protecting the account is the priority.',
+      };
+  }
+}
+
 const styles = StyleSheet.create({
-  hero: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
-  metrics: { flexDirection: 'row', gap: spacing.md },
   head: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   line: { marginTop: spacing.sm },
+  flex: { flex: 1 },
+  footerRow: { flexDirection: 'row', gap: spacing.sm },
 });

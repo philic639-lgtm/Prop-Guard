@@ -98,3 +98,28 @@ export function localSessionReview(summary: SessionSummary, rules: TradingRules)
     source: 'local',
   };
 }
+
+export interface SessionFlags {
+  revengeTrading: boolean;
+  overtrading: boolean;
+  riskBreaches: number;
+  stopWidened: number;
+  ruleAdherencePct: number;
+  /** 0-100: share of trades whose planned risk stayed within the per-trade limit. */
+  riskDiscipline: number;
+}
+
+/** Behavioural flags for the AI session summary. Discipline-first, P/L-agnostic. */
+export function sessionFlags(summary: SessionSummary, trades: Trade[], rules: TradingRules): SessionFlags {
+  const counted = trades.filter((t) => t.status !== 'cancelled');
+  const withinRisk = counted.filter((t) => t.riskDollars <= rules.maxRiskPerTrade + 1e-9).length;
+  const riskEvents = summary.violations.filter((v) => v.category === 'risk').length;
+  return {
+    revengeTrading: summary.cooldownGaps.length > 0 || summary.violations.some((v) => v.type === 'COOLDOWN_BROKEN'),
+    overtrading: counted.length > rules.maxTradesPerDay || summary.violations.some((v) => v.category === 'trade_limit'),
+    riskBreaches: Math.max(riskEvents, counted.length - withinRisk),
+    stopWidened: summary.violations.filter((v) => v.type === 'STOP_WIDENED').length,
+    ruleAdherencePct: summary.rulesFollowedPct,
+    riskDiscipline: counted.length === 0 ? 100 : Math.round((withinRisk / counted.length) * 100),
+  };
+}

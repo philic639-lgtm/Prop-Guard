@@ -1,11 +1,14 @@
 import { localSessionReview } from '@/lib/engines/sessionEngine';
 import { DEFAULT_TRADING_RULES } from '@/data/demo';
 import { GRADE_LABEL } from '@/lib/engines/strategyEngine';
+import { parseStrategyText } from '@/lib/engines/strategyParser';
 
 import type { AIProvider } from './provider';
 import { matchStrategies } from './strategyMatcher';
 import type {
+  AccountExtraction,
   DailyCoach,
+  PracticeInput,
   DailyCoachInput,
   ScreenshotExtraction,
   ScreenshotInput,
@@ -61,8 +64,26 @@ export class MockAIProvider implements AIProvider {
     };
   }
 
-  async analyzeScreenshot(_input: ScreenshotInput): Promise<ScreenshotExtraction> {
+  async analyzeScreenshot(input: ScreenshotInput): Promise<ScreenshotExtraction> {
     await delay(900);
+    if (input.demo) {
+      return {
+        instrument: 'ES',
+        direction: 'long',
+        entry: 6742.25,
+        stop: 6737.25,
+        target: 6752.25,
+        levels: [
+          { label: 'ORB high', price: 6741.5 },
+          { label: 'ORB low', price: 6731.25 },
+          { label: 'VWAP', price: 6736.75 },
+        ],
+        detected: { orb: true, vwap: true, supportResistance: true },
+        confidence: 'medium',
+        notes: 'Demo Mode sample extraction — these values are illustrative. Confirm every value against your chart.',
+        source: 'local',
+      };
+    }
     // Without a vision model we cannot read the chart. Return an honest empty
     // extraction so the user enters / confirms every value manually.
     return {
@@ -112,6 +133,48 @@ export class MockAIProvider implements AIProvider {
   async recommendStrategies(answers: StrategyFinderAnswers): Promise<StrategyRecommendation[]> {
     await delay(800);
     return matchStrategies(answers);
+  }
+
+  async parseStrategyDescription(text: string) {
+    await delay(700);
+    return { ...parseStrategyText(text), source: 'local' as const };
+  }
+
+  async analyzeAccountScreenshot(input: ScreenshotInput): Promise<AccountExtraction> {
+    await delay(900);
+    if (input.demo) {
+      return {
+        balance: 26420,
+        dailyPnl: 180,
+        totalPnl: 1420,
+        drawdownRemaining: 1300,
+        accountType: 'Flex 25K',
+        confidence: 'medium',
+        notes: 'Demo Mode sample extraction. Confirm each value against your dashboard.',
+        source: 'local',
+      };
+    }
+    return {
+      balance: null,
+      dailyPnl: null,
+      totalPnl: null,
+      drawdownRemaining: null,
+      accountType: null,
+      confidence: 'low',
+      notes: 'On-device mode cannot read dashboard values. Enter them below — your screenshot stays on this device.',
+      source: 'local',
+    };
+  }
+
+  async practiceFeedback(input: PracticeInput) {
+    await delay(500);
+    const missing = input.conditions.filter((c) => !c.met).map((c) => c.label);
+    const total = input.conditions.length;
+    let feedback: string;
+    if (missing.length === 0) feedback = `All ${total} ${input.strategyName} conditions are present. This is the exact setup your plan describes — in live trading you would be cleared to enter.`;
+    else if (missing.length === 1) feedback = `${total - 1}/${total} conditions met. Missing: ${missing[0]}. Your plan says WAIT until it is confirmed.`;
+    else feedback = `Only ${total - missing.length}/${total} conditions met. Missing: ${missing.join('; ')}. This is not your setup — no trade.`;
+    return { feedback, source: 'local' as const };
   }
 
   async generateDailyCoach(input: DailyCoachInput): Promise<DailyCoach> {

@@ -65,7 +65,7 @@ export default function ProfileScreen() {
 
       <SectionHeader title="Performance" />
       <Card padded={false} style={styles.group}>
-        <ListRow icon="stats-chart-outline" iconTone="positive" title="Analytics" onPress={() => router.push('/analytics')} />
+        <ListRow icon="stats-chart-outline" iconTone="positive" title="Analytics" onPress={() => router.push('/performance')} />
         <Divider />
         <ListRow icon="ribbon-outline" iconTone="positive" title="Discipline score" onPress={() => router.push('/discipline')} />
       </Card>
@@ -74,7 +74,7 @@ export default function ProfileScreen() {
       <Card padded={false} style={styles.group}>
         <ListRow icon="diamond-outline" title="Subscription" value={PLANS[plan].name} onPress={() => router.push('/paywall')} />
         <Divider />
-        <ListRow icon="notifications-outline" title="Notifications" onPress={() => router.push('/notifications')} />
+        <ListRow icon="notifications-outline" title="Notifications" onPress={() => router.push('/settings/notifications')} />
         <Divider />
         <ListRow icon="moon-outline" title="Appearance" value="Dark" chevron={false} />
         <Divider />

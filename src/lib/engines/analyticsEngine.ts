@@ -162,11 +162,56 @@ export function averageExcursions(trades: Trade[]): { mae: number | null; mfe: n
   return { mae: avg(maes), mfe: avg(mfes) };
 }
 
-export function filterByRange(trades: Trade[], range: 'week' | 'month' | 'all', now = new Date()): Trade[] {
+export function filterByRange(trades: Trade[], range: 'week' | 'month' | 'quarter' | 'all', now = new Date()): Trade[] {
   if (range === 'all') return trades;
-  const days = range === 'week' ? 7 : 30;
+  const days = range === 'week' ? 7 : range === 'month' ? 30 : 90;
   const cutoff = now.getTime() - days * 86_400_000;
   return trades.filter((t) => Date.parse(t.openedAt) >= cutoff);
+}
+
+/** Conditions met for a trade, from the setup check recorded at entry. */
+export function tradeConditions(t: Trade): { met: number; total: number } {
+  const met = t.rulesFollowed.filter((r) => r !== 'entry_window').length;
+  const missed = t.rulesViolated.filter((r) => r !== 'entry_window').length;
+  return { met, total: met + missed };
+}
+
+export interface ConditionBucket {
+  key: 'all' | 'one' | 'two_plus';
+  label: string;
+  count: number;
+  winRate: number | null;
+  netPnl: number;
+  totalR: number;
+  avgR: number | null;
+}
+
+/**
+ * Does following the strategy correlate with better results?
+ * Buckets closed trades by how many conditions were missed at entry.
+ */
+export function performanceByConditions(trades: Trade[]): ConditionBucket[] {
+  const closed = closedOnly(trades).filter((t) => tradeConditions(t).total > 0);
+  const totals = new Map<number, number>();
+  for (const t of closed) {
+    const n = tradeConditions(t).total;
+    totals.set(n, (totals.get(n) ?? 0) + 1);
+  }
+  const typical = [...totals.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 7;
+  const defs: { key: ConditionBucket['key']; label: string; test: (missed: number) => boolean }[] = [
+    { key: 'all', label: `${typical}/${typical}`, test: (m) => m === 0 },
+    { key: 'one', label: `${typical - 1}/${typical}`, test: (m) => m === 1 },
+    { key: 'two_plus', label: `${Math.max(0, typical - 2)}/${typical} or less`, test: (m) => m >= 2 },
+  ];
+  return defs.map((d) => {
+    const list = closed.filter((t) => {
+      const c = tradeConditions(t);
+      return d.test(c.total - c.met);
+    });
+    const s = computeStats(list);
+    const totalR = round2(list.reduce((sum, t) => sum + (t.realizedR ?? 0), 0));
+    return { key: d.key, label: d.label, count: s.count, winRate: s.winRate, netPnl: s.netPnl, totalR, avgR: s.avgR };
+  });
 }
 
 function round2(n: number) {

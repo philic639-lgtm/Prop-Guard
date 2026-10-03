@@ -1,3 +1,5 @@
+import { getTemplate } from '@/data/strategyLibrary';
+
 import { matchStrategies } from '../ai/strategyMatcher';
 import type { StrategyFinderAnswers } from '../ai/types';
 
@@ -22,7 +24,8 @@ describe('strategy matcher', () => {
 
   it('prefers pullbacks when asked', () => {
     const recs = matchStrategies({ ...base, preference: 'pullback', session: 'any', tradesPerDay: '2-3' });
-    expect(recs[0].templateId).toBe('trend-pullback');
+    expect(getTemplate(recs[0].templateId)?.style).toBe('pullback');
+    expect(getTemplate(recs[1].templateId)?.style).toBe('pullback');
   });
 
   it('warns when one mini contract risks too much of the daily budget', () => {

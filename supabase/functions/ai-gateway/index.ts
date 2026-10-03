@@ -7,7 +7,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach';
+type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach' | 'strategy_parse' | 'account_screenshot' | 'practice';
 
 const PROVIDER = (Deno.env.get('AI_PROVIDER') ?? 'anthropic').toLowerCase();
 const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-sonnet-5-5';
@@ -32,6 +32,15 @@ Explain fit only — never claim profitability. Use only ids from the library.
 Return JSON: {"recommendations": [{"templateId": string, "fitScore": number (0-100), "reasons": string[]}]}`,
   daily_coach: `Write a short coaching note that prioritizes discipline over generating trades.
 Return JSON: {"message": string (<=400 chars), "bestAction": string (<=160 chars)}`,
+  strategy_parse: `Convert the trader's plain-English strategy into MEASURABLE rules. Do not add rules they did not state.
+Times are US/Eastern 24h "HH:mm". Return JSON: {"name": string, "instrument": "ES"|"MES"|"NQ"|"MNQ"|null,
+"entryWindowStart": string|null, "entryWindowEnd": string|null, "biasRequirement": string, "requiresBiasAlignment": boolean,
+"stopMaxPoints": number|null, "minRR": number|null, "maxTrades": number|null, "conditions": string[] (yes/no checklist items, <=12)}`,
+  account_screenshot: `Read this prop-firm account dashboard screenshot. Use null for anything not clearly visible. Never guess.
+Return JSON: {"balance": number|null, "dailyPnl": number|null, "totalPnl": number|null, "drawdownRemaining": number|null,
+"accountType": string|null, "confidence": "low"|"medium"|"high", "notes": string}`,
+  practice: `Give specific feedback on this practice attempt: name exactly which conditions are missing and whether the plan says ENTER, WAIT or NO TRADE.
+Return JSON: {"feedback": string (<=400 chars)}`,
 };
 
 const cors = {
@@ -54,7 +63,7 @@ async function callAnthropic(task: Task, input: Record<string, unknown>) {
   const key = Deno.env.get('ANTHROPIC_API_KEY');
   if (!key) throw new Error('ANTHROPIC_API_KEY not set');
   const content: unknown[] = [];
-  if (task === 'screenshot') {
+  if (task === 'screenshot' || task === 'account_screenshot') {
     content.push({ type: 'image', source: { type: 'base64', media_type: input.mimeType, data: input.imageBase64 } });
     content.push({ type: 'text', text: TASK_PROMPTS[task] });
   } else {
@@ -75,7 +84,7 @@ async function callOpenAI(task: Task, input: Record<string, unknown>) {
   const key = Deno.env.get('OPENAI_API_KEY');
   if (!key) throw new Error('OPENAI_API_KEY not set');
   const userContent =
-    task === 'screenshot'
+    task === 'screenshot' || task === 'account_screenshot'
       ? [
           { type: 'text', text: TASK_PROMPTS[task] },
           { type: 'image_url', image_url: { url: `data:${input.mimeType};base64,${input.imageBase64}` } },
@@ -120,14 +129,14 @@ Deno.serve(async (req) => {
   if (!task || !(task in TASK_PROMPTS) || typeof body.input !== 'object' || body.input === null) {
     return json({ error: 'Invalid task' }, 400);
   }
-  if (task === 'screenshot' && String(body.input.imageBase64 ?? '').length > 6_000_000) {
+  if ((task === 'screenshot' || task === 'account_screenshot') && String(body.input.imageBase64 ?? '').length > 6_000_000) {
     return json({ error: 'Image too large' }, 413);
   }
 
   try {
     const result = PROVIDER === 'openai' ? await callOpenAI(task, body.input) : await callAnthropic(task, body.input);
     // Audit trail (input is already minimized by the client; screenshots are not stored here).
-    const summary = task === 'screenshot' ? { mimeType: body.input.mimeType } : body.input;
+    const summary = task === 'screenshot' || task === 'account_screenshot' ? { mimeType: body.input.mimeType } : body.input;
     await supabase.from('ai_analysis').insert({
       user_id: userData.user.id,
       kind: task,

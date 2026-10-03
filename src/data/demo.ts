@@ -2,6 +2,9 @@ import { getInstrument } from '@/lib/engines/instrumentEngine';
 import { realizedPnl } from '@/lib/engines/riskEngine';
 import type {
   Account,
+  AppAlert,
+  PracticeRun,
+  TradePlan,
   DisciplineEvent,
   Emotion,
   InstrumentSymbol,
@@ -30,6 +33,9 @@ export interface AppData {
   preferences: UserPreferences;
   activeAccountId: string | null;
   activeStrategyId: string | null;
+  plans: TradePlan[];
+  practiceRuns: PracticeRun[];
+  alerts: AppAlert[];
 }
 
 export const DEFAULT_TRADING_RULES: TradingRules = {
@@ -54,6 +60,15 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   tradingType: 'prop',
   propFirm: '',
   notifications: { preSession: true, lossLimit: true, tradeLimit: true, cooldown: true, journal: true },
+  tradingProfile: {
+    path: null,
+    style: 'intraday',
+    session: 'ny_open',
+    experience: 'intermediate',
+    holdTime: '5to30',
+    riskPreference: 'balanced',
+    connection: 'manual',
+  },
   onboarded: false,
 };
 
@@ -67,6 +82,9 @@ export const EMPTY_DATA: AppData = {
   preferences: DEFAULT_PREFERENCES,
   activeAccountId: null,
   activeStrategyId: null,
+  plans: [],
+  practiceRuns: [],
+  alerts: [],
 };
 
 function mulberry32(seed: number) {
@@ -168,9 +186,15 @@ export function createDemoData(now = new Date()): AppData {
       const sign = direction === 'long' ? 1 : -1;
       const stop = entry - sign * stopPts;
       const target = entry + sign * stopPts * rr;
+      // Conditions missed at entry. Trades that skipped conditions perform worse —
+      // this is the relationship the Performance screen is meant to reveal.
+      const missRoll = rand();
+      const misses = missRoll < 0.64 ? 0 : missRoll < 0.86 ? 1 : 2;
       // Realistic distribution: full targets, managed partial wins, planned losses, scratches.
+      const winP = [0.42, 0.27, 0.14][misses];
+      const partialP = winP + [0.16, 0.12, 0.08][misses];
       const roll = rand();
-      const outcome = roll < 0.36 ? 'win' : roll < 0.52 ? 'partial' : roll < 0.92 ? 'loss' : 'scratch';
+      const outcome = roll < winP ? 'win' : roll < partialP ? 'partial' : roll < 0.93 ? 'loss' : 'scratch';
       const exit =
         outcome === 'win'
           ? target
@@ -189,7 +213,11 @@ export function createDemoData(now = new Date()): AppData {
       const journaled = rand() < 0.85;
       const isLoss = pnl < 0;
 
-      const checklist = strategy.checklist.map((c) => ({ itemId: c.id, label: c.label, value: true }));
+      const checklist = strategy.checklist.map((c, ci) => ({
+        itemId: c.id,
+        label: c.label,
+        value: ci < strategy.checklist.length - misses,
+      }));
       const trade: Trade = {
         id: tradeId,
         accountId: DEMO_IDS.account25k,
@@ -214,11 +242,12 @@ export function createDemoData(now = new Date()): AppData {
         closedAt: closed.toISOString(),
         bias: direction === 'long' ? 'bullish' : 'bearish',
         checklist,
-        rulesFollowed: ['risk_per_trade', 'risk_daily', 'min_rr', 'target_set', ...checklist.map((c) => `check_${c.itemId}`)],
-        rulesViolated: [],
-        setupScore: 80 + Math.floor(rand() * 20),
-        setupGrade: rand() < 0.4 ? 'A_PLUS' : 'VALID',
-        disciplineScore: 100,
+        rulesFollowed: ['risk_per_trade', 'risk_daily', 'min_rr', 'target_set', ...checklist.filter((c) => c.value).map((c) => `check_${c.itemId}`)],
+        rulesViolated: checklist.filter((c) => !c.value).map((c) => `check_${c.itemId}`),
+        setupScore: misses === 0 ? 90 + Math.floor(rand() * 10) : misses === 1 ? 74 + Math.floor(rand() * 8) : 58 + Math.floor(rand() * 8),
+        setupGrade: misses === 0 ? (rand() < 0.45 ? 'A_PLUS' : 'VALID') : 'CAUTION',
+        disciplineScore: misses === 0 ? 100 : 75,
+        followedPlan: misses === 0,
         notes: journaled ? (isLoss ? NOTES_LOSS : NOTES_WIN)[Math.floor(rand() * 4)] : '',
         aiSummary: null,
         emotion: journaled ? EMOTIONS[Math.floor(rand() * EMOTIONS.length)] : null,
@@ -230,6 +259,18 @@ export function createDemoData(now = new Date()): AppData {
         mfe: Math.round((outcome === 'win' ? stopPts * rr : outcome === 'partial' ? stopPts * 1.3 : rand() * stopPts) * 4) / 4,
       };
       sessionTrades.push(trade);
+      if (misses > 0) {
+        events.push({
+          id: id('e0e'),
+          type: 'STRATEGY_VIOLATION',
+          category: 'entry',
+          accountId: trade.accountId,
+          tradeId,
+          sessionId,
+          detail: `Entered with ${misses} checklist condition${misses > 1 ? 's' : ''} unconfirmed.`,
+          at: opened.toISOString(),
+        });
+      }
       if (journaled) {
         events.push({ id: id('e0e'), type: 'JOURNAL_COMPLETED', category: 'journal', accountId: trade.accountId, tradeId, sessionId, detail: 'Journal completed', at: closed.toISOString() });
       }
@@ -240,18 +281,18 @@ export function createDemoData(now = new Date()): AppData {
     if (dayIndex === days.length - 4 && sessionTrades.length > 1) {
       const second = sessionTrades[1];
       events.push({ id: id('e0e'), type: 'COOLDOWN_BROKEN', category: 'cooldown', accountId: second.accountId, tradeId: second.id, sessionId, detail: 'Entered 6 minutes after a loss (15 minute cooldown).', at: second.openedAt });
-      second.rulesViolated = ['cooldown'];
+      second.rulesViolated = [...second.rulesViolated, 'cooldown'];
       second.disciplineScore = 75;
     }
     if (dayIndex === days.length - 9) {
       const widened = first.direction === 'long' ? first.stopPrice - 2 : first.stopPrice + 2;
       first.stopPrice = widened;
-      first.rulesViolated = ['stop_widened'];
+      first.rulesViolated = [...first.rulesViolated, 'stop_widened'];
       first.disciplineScore = 75;
       events.push({ id: id('e0e'), type: 'STOP_WIDENED', category: 'stop', accountId: first.accountId, tradeId: first.id, sessionId, detail: 'Stop moved 2 points further from entry.', at: first.openedAt });
     }
     if (dayIndex === days.length - 14) {
-      first.rulesViolated = ['bias_aligned'];
+      first.rulesViolated = [...first.rulesViolated, 'bias_aligned'];
       first.disciplineScore = 75;
       events.push({ id: id('e0e'), type: 'STRATEGY_VIOLATION', category: 'entry', accountId: first.accountId, tradeId: first.id, sessionId, detail: 'Entered against 1H bias.', at: first.openedAt });
     }
@@ -388,7 +429,51 @@ export function createDemoData(now = new Date()): AppData {
     },
   };
 
+  const minsAgo = (m: number) => new Date(now.getTime() - m * 60_000).toISOString();
+  const plans: TradePlan[] = [
+    {
+      id: '00000000-0000-4000-a000-0000000000a1',
+      accountId: account25k.id,
+      strategyId: orb.id,
+      instrument: 'MES',
+      direction: 'long',
+      entry: 6742.5,
+      stop: 6737.5,
+      target: 6752.5,
+      contracts: 2,
+      riskDollars: 50,
+      rewardDollars: 100,
+      rr: 2,
+      matchPct: 100,
+      grade: 'A_PLUS',
+      conditionsMet: 7,
+      conditionsTotal: 7,
+      notes: 'Retest of 5m OB after ORB. Good volume.',
+      status: 'saved',
+      createdAt: minsAgo(20),
+    },
+  ];
+  const practiceRuns: PracticeRun[] = [
+    { id: '00000000-0000-4000-a000-0000000000b1', strategyId: orb.id, screenshotUri: null, answers: {}, matchPct: 100, conditionsMet: 4, conditionsTotal: 4, verdict: 'match', feedback: 'All conditions present. This is the setup your plan describes.', createdAt: minsAgo(60 * 26) },
+    { id: '00000000-0000-4000-a000-0000000000b2', strategyId: orb.id, screenshotUri: null, answers: {}, matchPct: 75, conditionsMet: 3, conditionsTotal: 4, verdict: 'wait', feedback: 'Retest not yet confirmed. Your plan says wait.', createdAt: minsAgo(60 * 50) },
+    { id: '00000000-0000-4000-a000-0000000000b3', strategyId: orb.id, screenshotUri: null, answers: {}, matchPct: 50, conditionsMet: 2, conditionsTotal: 4, verdict: 'no_trade', feedback: 'No 5-minute close outside the range. Not a valid ORB setup.', createdAt: minsAgo(60 * 74) },
+  ];
+  const lastWin = [...trades].reverse().find((t) => (t.pnl ?? 0) > 0);
+  const alerts: AppAlert[] = [
+    { id: 'demo-alert-1', kind: 'cooldown', title: 'Cooldown complete', body: 'Your 15-minute cooldown has ended. Only take A-quality setups.', tradeId: null, at: minsAgo(60), read: false },
+    ...(lastWin
+      ? ([
+          { id: 'demo-alert-2', kind: 'take_profit', title: 'Take Profit Hit', body: `${lastWin.instrument} ${lastWin.direction === 'long' ? 'Long' : 'Short'} +${lastWin.points} pts | +$${Math.round(lastWin.pnl ?? 0)}`, tradeId: lastWin.id, at: lastWin.closedAt!, read: true },
+          { id: 'demo-alert-3', kind: 'move_stop_breakeven', title: 'Move Stop to Breakeven', body: `${lastWin.instrument} is +${Math.abs(lastWin.entryPrice - lastWin.originalStopPrice)} pts in profit. Consider moving your stop to breakeven.`, tradeId: lastWin.id, at: new Date(Date.parse(lastWin.closedAt!) - 6 * 60_000).toISOString(), read: true },
+          { id: 'demo-alert-4', kind: 'good_entry', title: 'Good Entry Confirmed', body: 'Your entry is performing well.', tradeId: lastWin.id, at: new Date(Date.parse(lastWin.openedAt) + 2 * 60_000).toISOString(), read: true },
+        ] as AppAlert[])
+      : []),
+  ];
+
   return {
+    plans,
+    practiceRuns,
+    alerts,
     accounts: [account25k, account50k],
     strategies: [orb, vwap],
     trades,

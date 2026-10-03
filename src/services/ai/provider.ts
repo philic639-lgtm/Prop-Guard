@@ -1,7 +1,11 @@
 import type { SessionReview } from '@/types/domain';
 
+import type { ParsedStrategy } from '@/lib/engines/strategyParser';
+
 import type {
+  AccountExtraction,
   DailyCoach,
+  PracticeInput,
   DailyCoachInput,
   ScreenshotExtraction,
   ScreenshotInput,
@@ -24,4 +28,10 @@ export interface AIProvider {
   generateSessionReview(input: SessionReviewInput): Promise<Omit<SessionReview, 'generatedAt'>>;
   recommendStrategies(answers: StrategyFinderAnswers): Promise<StrategyRecommendation[]>;
   generateDailyCoach(input: DailyCoachInput): Promise<DailyCoach>;
+  /** Convert a plain-English strategy into measurable rules. */
+  parseStrategyDescription(text: string): Promise<ParsedStrategy & { source: 'ai' | 'local' }>;
+  /** Read balance / P&L / drawdown from a prop-firm dashboard screenshot. */
+  analyzeAccountScreenshot(input: ScreenshotInput): Promise<AccountExtraction>;
+  /** Short, specific feedback for a practice attempt. */
+  practiceFeedback(input: PracticeInput): Promise<{ feedback: string; source: 'ai' | 'local' }>;
 }

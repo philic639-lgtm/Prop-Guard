@@ -8,11 +8,11 @@ import { AppText } from '@/components/ui';
 import { colors, radius, shadow, TAB_BAR_HEIGHT } from '@/constants/theme';
 
 const ICONS: Record<string, { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap; label: string }> = {
-  home: { on: 'grid', off: 'grid-outline', label: 'Home' },
-  session: { on: 'shield-checkmark', off: 'shield-checkmark', label: 'Session' },
+  home: { on: 'home', off: 'home-outline', label: 'Home' },
   strategy: { on: 'git-branch', off: 'git-branch-outline', label: 'Strategy' },
+  analyze: { on: 'shield-checkmark', off: 'shield-checkmark', label: 'Analyze' },
   journal: { on: 'book', off: 'book-outline', label: 'Journal' },
-  profile: { on: 'person-circle', off: 'person-circle-outline', label: 'Profile' },
+  performance: { on: 'stats-chart', off: 'stats-chart-outline', label: 'Performance' },
 };
 
 export function TabBar({ state, navigation }: BottomTabBarProps) {
@@ -23,7 +23,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
         const cfg = ICONS[route.name];
         if (!cfg) return null;
         const focused = state.index === index;
-        const center = route.name === 'session';
+        const center = route.name === 'analyze';
         const onPress = () => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (Platform.OS !== 'web') void Haptics.selectionAsync();
@@ -36,7 +36,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
               onPress={onPress}
               accessibilityRole="tab"
               accessibilityState={{ selected: focused }}
-              accessibilityLabel="Session"
+              accessibilityLabel="Analyze"
               style={styles.centerWrap}>
               <View style={[styles.center, focused && styles.centerFocused]}>
                 <Ionicons name={cfg.on} size={26} color={colors.accentOn} />
@@ -55,7 +55,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
             accessibilityState={{ selected: focused }}
             accessibilityLabel={cfg.label}
             style={styles.tab}>
-            <Ionicons name={focused ? cfg.on : cfg.off} size={22} color={focused ? colors.accent : colors.textTertiary} />
+            <Ionicons name={focused ? cfg.on : cfg.off} size={22} color={focused ? colors.accentBright : colors.textTertiary} />
             <AppText variant="caption" style={[styles.label, { color: focused ? colors.text : colors.textTertiary }]}>
               {cfg.label}
             </AppText>
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     flexDirection: 'row',
-    backgroundColor: 'rgba(12, 15, 20, 0.97)',
+    backgroundColor: 'rgba(8, 13, 24, 0.98)',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
@@ -92,5 +92,5 @@ const styles = StyleSheet.create({
     borderColor: colors.bg,
     ...shadow,
   },
-  centerFocused: { backgroundColor: '#6AB8FF' },
+  centerFocused: { backgroundColor: colors.accentBright },
 });

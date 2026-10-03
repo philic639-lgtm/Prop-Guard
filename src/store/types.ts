@@ -13,6 +13,9 @@ export interface PreTradeDraft {
   contracts: string;
   source: TradeSource;
   screenshotUri: string | null;
+  notes?: string;
+  /** Set when the draft was loaded from a saved trade plan. */
+  planId?: string | null;
 }
 
 export type AppMode = 'demo' | 'local' | 'cloud';

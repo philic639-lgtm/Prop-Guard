@@ -6,3 +6,5 @@ export * from './propRuleEngine';
 export * from './riskEngine';
 export * from './sessionEngine';
 export * from './strategyEngine';
+export * from './liveTradeEngine';
+export * from './strategyParser';

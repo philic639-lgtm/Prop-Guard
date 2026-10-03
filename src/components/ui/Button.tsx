@@ -6,7 +6,7 @@ import { colors, radius, spacing } from '@/constants/theme';
 
 import { AppText } from './AppText';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning' | 'success' | 'caution';
 
 interface ButtonProps {
   label: string;
@@ -24,7 +24,9 @@ const VARIANTS: Record<Variant, { bg: string; fg: string; border: string; presse
   primary: { bg: colors.accent, fg: colors.accentOn, border: colors.accent, pressed: colors.accentPressed },
   secondary: { bg: colors.surface, fg: colors.text, border: colors.borderStrong, pressed: colors.card },
   ghost: { bg: 'transparent', fg: colors.accent, border: 'transparent', pressed: colors.accentMuted },
-  danger: { bg: colors.danger, fg: '#fff', border: colors.danger, pressed: '#c9443d' },
+  danger: { bg: colors.danger, fg: '#fff', border: colors.danger, pressed: '#c93a3a' },
+  success: { bg: colors.positive, fg: '#03140A', border: colors.positive, pressed: colors.positivePressed },
+  caution: { bg: colors.warning, fg: '#1A1200', border: colors.warning, pressed: '#d99f06' },
   warning: { bg: colors.warningMuted, fg: colors.warning, border: colors.warning + '66', pressed: colors.warningMuted },
 };
 

@@ -105,7 +105,7 @@ export default function JournalScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <AppHeader title="Journal" right={<HeaderIconButton icon="stats-chart-outline" label="Analytics" onPress={() => router.push('/analytics')} />} />
+      <AppHeader title="Journal" right={<HeaderIconButton icon="stats-chart-outline" label="Analytics" onPress={() => router.push('/performance')} />} />
       <FlatList
         data={capped}
         keyExtractor={(t) => t.id}
@@ -126,7 +126,7 @@ export default function JournalScreen() {
                 title="No trades yet"
                 message="Your journal will automatically organize your trading history."
                 actionLabel="Start first session"
-                onAction={() => router.push('/session')}
+                onAction={() => router.push('/analyze')}
               />
             ) : (
               <EmptyState icon="filter-outline" title="Nothing matches" message="Try a different filter or day." />

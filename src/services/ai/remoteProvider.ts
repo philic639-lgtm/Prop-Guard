@@ -6,19 +6,23 @@ import { supabase } from '@/services/supabase/client';
 import { MockAIProvider } from './mockProvider';
 import type { AIProvider } from './provider';
 import {
+  AccountExtractionSchema,
   DailyCoachSchema,
+  ParsedStrategySchema,
+  PracticeFeedbackSchema,
   ScreenshotExtractionSchema,
   SessionReviewSchema,
   SetupAnalysisSchema,
   StrategyRecommendationSchema,
   type DailyCoachInput,
+  type PracticeInput,
   type ScreenshotInput,
   type SessionReviewInput,
   type SetupAnalysisInput,
   type StrategyFinderAnswers,
 } from './types';
 
-type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach';
+type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach' | 'strategy_parse' | 'account_screenshot' | 'practice';
 
 /**
  * Calls the `ai-gateway` Supabase Edge Function. Provider API keys live ONLY
@@ -52,7 +56,8 @@ export class RemoteAIProvider implements AIProvider {
   }
 
   async analyzeScreenshot(input: ScreenshotInput) {
-    const r = await this.call('screenshot', input, ScreenshotExtractionSchema);
+    const { demo: _demo, ...payload } = input;
+    const r = await this.call('screenshot', payload, ScreenshotExtractionSchema);
     return r ? { ...r, source: 'ai' as const } : this.fallback.analyzeScreenshot(input);
   }
 
@@ -83,5 +88,22 @@ export class RemoteAIProvider implements AIProvider {
     if (input.guardStatus === 'STOP') return local;
     const r = await this.call('daily_coach', input, DailyCoachSchema);
     return r ? { ...r, source: 'ai' as const } : local;
+  }
+
+  async parseStrategyDescription(text: string) {
+    const r = await this.call('strategy_parse', { text: text.slice(0, 2000) }, ParsedStrategySchema);
+    if (!r) return this.fallback.parseStrategyDescription(text);
+    return { ...r, unparsed: [], source: 'ai' as const };
+  }
+
+  async analyzeAccountScreenshot(input: ScreenshotInput) {
+    const { demo: _demo, ...payload } = input;
+    const r = await this.call('account_screenshot', payload, AccountExtractionSchema);
+    return r ? { ...r, source: 'ai' as const } : this.fallback.analyzeAccountScreenshot(input);
+  }
+
+  async practiceFeedback(input: PracticeInput) {
+    const r = await this.call('practice', input, PracticeFeedbackSchema);
+    return r ? { feedback: r.feedback, source: 'ai' as const } : this.fallback.practiceFeedback(input);
   }
 }

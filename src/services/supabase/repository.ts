@@ -2,12 +2,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { AppData } from '@/data/demo';
 import { DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES } from '@/data/demo';
-import type { Account, DisciplineEvent, Strategy, Trade, TradingSession, UserPreferences } from '@/types/domain';
+import type { Account, DisciplineEvent, PracticeRun, Strategy, Trade, TradePlan, TradingSession, UserPreferences } from '@/types/domain';
 
 import {
   accountToRows,
   eventToRow,
+  planToRow,
+  practiceToRow,
   preferencesToRow,
+  rowToPlan,
+  rowToPractice,
   rowsToAccount,
   rowsToStrategy,
   rowsToTrade,
@@ -36,6 +40,10 @@ export class SupabaseRepository {
 
   async loadAll(): Promise<Partial<AppData>> {
     const db = this.db;
+    const [plans, practice] = await Promise.all([
+      db.from('trade_plans').select('*').order('created_at', { ascending: false }).limit(200),
+      db.from('practice_runs').select('*').order('created_at', { ascending: false }).limit(100),
+    ]);
     const [accounts, rules, strategies, items, sessions, trades, events, prefs, profile] = await Promise.all([
       db.from('accounts').select('*').order('created_at'),
       db.from('prop_rules').select('*'),
@@ -74,6 +82,7 @@ export class SupabaseRepository {
       tradingType: (p?.trading_type as UserPreferences['tradingType']) ?? 'prop',
       propFirm: String(p?.prop_firm ?? ''),
       notifications: { ...DEFAULT_PREFERENCES.notifications, ...((p?.notifications as object) ?? {}) },
+      tradingProfile: { ...DEFAULT_PREFERENCES.tradingProfile, ...((p?.trading_profile as object) ?? {}) },
       onboarded: p?.onboarded === true,
     };
 
@@ -87,6 +96,9 @@ export class SupabaseRepository {
       tradingRules: { ...DEFAULT_TRADING_RULES, ...((p?.trading_rules as object) ?? {}) },
       activeAccountId: (p?.active_account_id as string | null) ?? null,
       activeStrategyId: (p?.active_strategy_id as string | null) ?? null,
+      // Older projects may not have these tables yet; treat errors as empty.
+      plans: plans.error ? [] : ((plans.data ?? []) as Row[]).map(rowToPlan),
+      practiceRuns: practice.error ? [] : ((practice.data ?? []) as Row[]).map(rowToPractice),
     };
   }
 
@@ -124,6 +136,14 @@ export class SupabaseRepository {
 
   async insertEvent(e: DisciplineEvent) {
     check(await this.db.from('discipline_events').upsert(eventToRow(e, this.userId)));
+  }
+
+  async upsertPlan(p: TradePlan) {
+    check(await this.db.from('trade_plans').upsert(planToRow(p, this.userId)));
+  }
+
+  async insertPracticeRun(p: PracticeRun) {
+    check(await this.db.from('practice_runs').upsert(practiceToRow(p, this.userId)));
   }
 
   async savePreferences(state: Pick<AppData, 'preferences' | 'tradingRules' | 'activeAccountId' | 'activeStrategyId'>) {

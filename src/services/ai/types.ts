@@ -52,6 +52,8 @@ export type SetupAnalysis = z.infer<typeof SetupAnalysisSchema> & { source: AISo
 export interface ScreenshotInput {
   imageBase64: string;
   mimeType: 'image/jpeg' | 'image/png';
+  /** Demo Mode: the local provider returns a clearly-labelled sample so flows can be previewed. */
+  demo?: boolean;
 }
 
 const nullableNum = z.number().finite().positive().nullable();
@@ -131,5 +133,38 @@ export const DailyCoachSchema = z.object({
   bestAction: z.string().min(1).max(160),
 });
 export type DailyCoach = z.infer<typeof DailyCoachSchema> & { source: AISource };
+
+// ---------- Strategy description → rules ----------
+export const ParsedStrategySchema = z.object({
+  name: z.string().min(1).max(60),
+  instrument: z.enum(['ES', 'MES', 'NQ', 'MNQ']).nullable(),
+  entryWindowStart: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
+  entryWindowEnd: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
+  biasRequirement: z.string().max(60),
+  requiresBiasAlignment: z.boolean(),
+  stopMaxPoints: z.number().positive().nullable(),
+  minRR: z.number().positive().nullable(),
+  maxTrades: z.number().int().positive().max(20).nullable(),
+  conditions: z.array(z.string().min(1).max(120)).max(12),
+});
+
+// ---------- Account screenshot import ----------
+export const AccountExtractionSchema = z.object({
+  balance: z.number().nonnegative().nullable(),
+  dailyPnl: z.number().nullable(),
+  totalPnl: z.number().nullable(),
+  drawdownRemaining: z.number().nonnegative().nullable(),
+  accountType: z.string().max(40).nullable(),
+  confidence: z.enum(['low', 'medium', 'high']),
+  notes: z.string().max(300),
+});
+export type AccountExtraction = z.infer<typeof AccountExtractionSchema> & { source: AISource };
+
+// ---------- Practice feedback ----------
+export interface PracticeInput {
+  strategyName: string;
+  conditions: { label: string; met: boolean }[];
+}
+export const PracticeFeedbackSchema = z.object({ feedback: z.string().min(1).max(400) });
 
 export type AISource = 'ai' | 'local';
