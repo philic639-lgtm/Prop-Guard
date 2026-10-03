@@ -66,9 +66,16 @@ export function accountToForm(a: Account | null, defaults?: Partial<AccountFormV
   };
 }
 
-export function formToAccount(v: AccountFormValues, base: Account | null, id: string): Account {
+/**
+ * @param drawdownRemaining Optional current buffer (e.g. from a dashboard). When given for a
+ * trailing account, the high-water mark is derived so the engine reproduces that buffer.
+ */
+export function formToAccount(v: AccountFormValues, base: Account | null, id: string, drawdownRemaining?: number | null): Account {
   const size = parseNum(v.size)!;
   const balance = parseNum(v.balance)!;
+  const maxDd = parseNum(v.maxDrawdown);
+  const derivedHwm =
+    drawdownRemaining != null && maxDd != null && v.drawdownType !== 'static' ? Math.max(size, balance + maxDd - drawdownRemaining) : null;
   return {
     id,
     name: v.name,
@@ -78,14 +85,14 @@ export function formToAccount(v: AccountFormValues, base: Account | null, id: st
     startingBalance: base?.startingBalance ?? size,
     balance,
     cycleStartBalance: base?.cycleStartBalance ?? size,
-    highWaterMark: Math.max(base?.highWaterMark ?? 0, balance, base ? 0 : size),
+    highWaterMark: derivedHwm ?? Math.max(base?.highWaterMark ?? 0, balance, base ? 0 : size),
     status: base?.status ?? 'active',
     createdAt: base?.createdAt ?? new Date().toISOString(),
     rules: {
       dailyLossLimit: parseNum(v.dailyLossLimit),
       maxDrawdown: parseNum(v.maxDrawdown),
       drawdownType: v.drawdownType as DrawdownType,
-      trailingLocksAtStart: base?.rules.trailingLocksAtStart ?? true,
+      trailingLocksAtStart: derivedHwm != null ? false : (base?.rules.trailingLocksAtStart ?? true),
       profitTarget: parseNum(v.profitTarget),
       maxContracts: parseNum(v.maxContracts),
       consistencyPct: parseNum(v.consistencyPct),

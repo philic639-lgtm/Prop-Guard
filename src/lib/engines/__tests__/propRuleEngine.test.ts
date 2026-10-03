@@ -1,3 +1,4 @@
+import { accountToForm, formToAccount } from '@/features/accounts/accountSchema';
 import { NOW, makeAccount, makeTrade } from '@/test/fixtures';
 
 import { drawdownBuffer, drawdownFloor, evaluateAccount } from '../propRuleEngine';
@@ -79,5 +80,13 @@ describe('evaluateAccount', () => {
   it('flags max contract breaches', () => {
     const ev = evaluateAccount(makeAccount(), [makeTrade({ pnl: 10, contracts: 15 })], NOW);
     expect(ev.rules.find((r) => r.id === 'max_contracts')!.status).toBe('breached');
+  });
+});
+
+describe('drawdown remaining import', () => {
+  it('reproduces an imported drawdown buffer', () => {
+    const form = { ...accountToForm(null), size: '25000', balance: '26420', maxDrawdown: '1500', drawdownType: 'eod_trailing' as const };
+    const a = formToAccount(form, null, 'x', 1300);
+    expect(drawdownBuffer(a)).toBe(1300);
   });
 });

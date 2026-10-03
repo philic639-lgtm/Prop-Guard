@@ -33,7 +33,7 @@ export default function ProfileScreen() {
   const modeLabel = mode === 'cloud' ? 'Synced' : mode === 'demo' ? 'Demo mode' : 'On this device';
 
   return (
-    <Screen tabBar header={<AppHeader title="Profile" />}>
+    <Screen header={<AppHeader title="Profile & settings" back />}>
       <Card>
         <View style={styles.user}>
           <View style={styles.avatar}>
@@ -68,13 +68,19 @@ export default function ProfileScreen() {
         <ListRow icon="stats-chart-outline" iconTone="positive" title="Analytics" onPress={() => router.push('/performance')} />
         <Divider />
         <ListRow icon="ribbon-outline" iconTone="positive" title="Discipline score" onPress={() => router.push('/discipline')} />
+        <Divider />
+        <ListRow icon="sparkles-outline" iconTone="positive" title="AI session summary" onPress={() => router.push('/session/review')} />
+        <Divider />
+        <ListRow icon="school-outline" iconTone="positive" title="Practice mode" onPress={() => router.push('/practice')} />
       </Card>
 
       <SectionHeader title="App" />
       <Card padded={false} style={styles.group}>
         <ListRow icon="diamond-outline" title="Subscription" value={PLANS[plan].name} onPress={() => router.push('/paywall')} />
         <Divider />
-        <ListRow icon="notifications-outline" title="Notifications" onPress={() => router.push('/settings/notifications')} />
+        <ListRow icon="notifications-outline" title="Alerts" onPress={() => router.push('/alerts')} />
+        <Divider />
+        <ListRow icon="options-outline" title="Notification settings" onPress={() => router.push('/settings/notifications')} />
         <Divider />
         <ListRow icon="moon-outline" title="Appearance" value="Dark" chevron={false} />
         <Divider />

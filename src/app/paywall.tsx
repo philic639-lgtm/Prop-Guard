@@ -3,12 +3,42 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Button, Card, Screen, SegmentedControl, StatusBadge } from '@/components/ui';
+import { AppHeader, AppText, Button, Card, Logo, Screen, SegmentedControl, StatusBadge } from '@/components/ui';
 import { PLANS } from '@/config/plans';
 import { DISCLAIMER } from '@/constants/legal';
-import { colors, spacing } from '@/constants/theme';
+import { colors, radius, spacing } from '@/constants/theme';
 import { subscriptionService, type Offering } from '@/services/subscriptionService';
 import { useSubscriptionStore } from '@/store/useSubscriptionStore';
+
+type Cell = boolean | string;
+
+/** Feature comparison. Mirrors entitlements in config/plans.ts — no hidden limits. */
+const ROWS: { label: string; free: Cell; pro: Cell }[] = [
+  { label: 'Rule-based trade check', free: true, pro: true },
+  { label: 'Risk & position calculator', free: true, pro: true },
+  { label: 'Daily Guard & cooldowns', free: true, pro: true },
+  { label: 'AI setup analysis', free: false, pro: 'Unlimited' },
+  { label: 'Strategy builder (plain English → rules)', free: '1 strategy', pro: 'Unlimited' },
+  { label: 'Screenshot analysis', free: false, pro: 'Unlimited' },
+  { label: 'AI trade journaling', free: false, pro: true },
+  { label: 'Journal history', free: 'Latest 50', pro: 'Unlimited' },
+  { label: 'Performance insights', free: 'Basic', pro: 'Advanced' },
+  { label: 'Practice mode', free: false, pro: true },
+  { label: 'AI session summaries', free: false, pro: true },
+  { label: 'Discipline Score & AI Coach', free: false, pro: true },
+  { label: 'Trading accounts', free: '1', pro: 'Unlimited' },
+  { label: 'Strategy library templates', free: '3', pro: 'All' },
+];
+
+function CellView({ value, pro }: { value: Cell; pro?: boolean }) {
+  if (value === true) return <Ionicons name="checkmark-circle" size={18} color={pro ? colors.accentBright : colors.positive} />;
+  if (value === false) return <Ionicons name="remove" size={18} color={colors.textTertiary} />;
+  return (
+    <AppText variant="caption" align="center" style={{ color: pro ? colors.accentBright : colors.textSecondary, fontWeight: '600', fontSize: 11.5 }}>
+      {value}
+    </AppText>
+  );
+}
 
 export default function Paywall() {
   const plan = useSubscriptionStore((s) => s.plan);
@@ -23,7 +53,6 @@ export default function Paywall() {
   }, []);
 
   const offering = offerings[0];
-  const pro = PLANS.pro;
 
   return (
     <Screen
@@ -48,42 +77,65 @@ export default function Paywall() {
         )
       }>
       <View style={styles.hero}>
-        <View style={styles.icon}>
-          <Ionicons name="shield-checkmark" size={30} color={colors.accent} />
-        </View>
+        <Logo size="lg" />
         <AppText variant="title" align="center">
-          {pro.tagline}
+          {PLANS.pro.tagline}
         </AppText>
         <AppText variant="body" tone="secondary" align="center">
-          Everything in Free, plus the full discipline engine.
+          Every check, every rule, every insight — so you trade your strategy, not your emotions.
         </AppText>
       </View>
 
-      <Card tone="accent">
-        {pro.highlights.map((h) => (
-          <View key={h} style={styles.feature}>
-            <Ionicons name="checkmark-circle" size={18} color={colors.accent} />
-            <AppText variant="body">{h}</AppText>
+      <View style={styles.plans}>
+        <View style={[styles.planCard, plan === 'free' && styles.planCurrent]}>
+          <AppText variant="label">Free</AppText>
+          <AppText variant="number">$0</AppText>
+          <AppText variant="caption">Core risk tools</AppText>
+        </View>
+        <View style={[styles.planCard, styles.planPro, plan === 'pro' && styles.planCurrent]}>
+          <View style={styles.row}>
+            <AppText variant="label" tone="accent">
+              Pro
+            </AppText>
+            <StatusBadge label="Best" tone="accent" size="sm" />
           </View>
-        ))}
-      </Card>
+          <AppText variant="number">{offering?.priceLabel ?? PLANS.pro.fallbackPriceLabel}</AppText>
+          <AppText variant="caption">Full discipline engine</AppText>
+        </View>
+      </View>
 
-      <Card>
-        <AppText variant="label">Free</AppText>
-        {PLANS.free.highlights.map((h) => (
-          <AppText key={h} variant="caption" style={{ marginTop: spacing.xs }}>
-            • {h}
+      <Card padded={false}>
+        <View style={[styles.tr, styles.th]}>
+          <AppText variant="label" style={styles.feature}>
+            Feature
           </AppText>
+          <AppText variant="label" style={styles.col} align="center">
+            Free
+          </AppText>
+          <AppText variant="label" tone="accent" style={styles.col} align="center">
+            Pro
+          </AppText>
+        </View>
+        {ROWS.map((r) => (
+          <View key={r.label} style={styles.tr} accessible accessibilityLabel={`${r.label}: Free ${r.free === true ? 'included' : r.free === false ? 'not included' : r.free}; Pro ${r.pro === true ? 'included' : r.pro}`}>
+            <AppText variant="body" style={[styles.feature, { fontSize: 14 }]}>
+              {r.label}
+            </AppText>
+            <View style={styles.col}>
+              <CellView value={r.free} />
+            </View>
+            <View style={styles.col}>
+              <CellView value={r.pro} pro />
+            </View>
+          </View>
         ))}
       </Card>
 
       {subscriptionService.isDevelopment ? (
         <Card>
-          <View style={styles.devHead}>
-            <StatusBadge label="Development billing" tone="warning" size="sm" />
-          </View>
+          <StatusBadge label="Development billing" tone="warning" size="sm" />
           <AppText variant="caption" style={{ marginVertical: spacing.sm }}>
-            RevenueCat is not configured. Preview either tier below — no charges are made.
+            RevenueCat is not configured. Preview either tier — no charges are made.
           </AppText>
           <SegmentedControl
             options={[
@@ -105,7 +157,13 @@ export default function Paywall() {
 
 const styles = StyleSheet.create({
   hero: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.md },
-  icon: { width: 64, height: 64, borderRadius: 22, backgroundColor: colors.accentMuted, alignItems: 'center', justifyContent: 'center' },
-  feature: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 6 },
-  devHead: { flexDirection: 'row' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  plans: { flexDirection: 'row', gap: spacing.md },
+  planCard: { flex: 1, gap: 4, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.card },
+  planPro: { borderColor: colors.accent, backgroundColor: '#0D1B33' },
+  planCurrent: { borderColor: colors.positive },
+  tr: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  th: { borderTopWidth: 0 },
+  feature: { flex: 1 },
+  col: { width: 74, alignItems: 'center' },
 });

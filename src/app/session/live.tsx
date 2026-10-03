@@ -177,7 +177,7 @@ function LiveMonitor({ trade }: { trade: Trade }) {
         header={<AppHeader title="Live trade monitor" back right={<StatusBadge label="Active" tone="positive" />} />}
         footer={
           <View style={styles.actions}>
-            <Button label="Move to Breakeven" variant="secondary" size="md" style={styles.flex} disabled={atBreakeven || live.r <= 0} onPress={() => applyStop(false, trade.entryPrice)} />
+            <Button label="Breakeven" icon="shield-outline" variant="secondary" size="md" style={styles.flex} disabled={atBreakeven || live.r <= 0} onPress={() => applyStop(false, trade.entryPrice)} />
             <Button label="Close Trade" variant="danger" size="md" style={styles.flex} onPress={() => { setExit(String(markPrice)); setSheet('close'); }} />
           </View>
         }>

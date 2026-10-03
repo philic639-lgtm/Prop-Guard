@@ -19,12 +19,14 @@ import {
   Screen,
   SectionHeader,
   StatusBadge,
+  VerdictBanner,
 } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useStrategy, useTrade } from '@/hooks/useAppData';
+import { tradeConditions } from '@/lib/engines';
 import { pickScreenshot } from '@/services/screenshotService';
 import { useAppStore } from '@/store/useAppStore';
-import type { Emotion } from '@/types/domain';
+import type { Emotion, Trade } from '@/types/domain';
 import { longDate, money, points, price, rMultiple, rr, time } from '@/utils/format';
 
 const EMOTIONS: { value: Emotion; label: string }[] = [
@@ -87,6 +89,9 @@ export default function TradeDetail() {
     ...trade.rulesViolated.map((r) => ({ id: `v_${r}`, label: label(r), state: 'fail' as const })),
   ];
   const grade = trade.setupGrade ? GRADE_UI[trade.setupGrade] : null;
+  const cond = tradeConditions(trade);
+  const followed = trade.followedPlan ?? trade.rulesViolated.filter((r) => r !== 'entry_window').length === 0;
+  const aiNotes = trade.aiSummary ?? tradeNotes(trade, cond, followed, strategy?.name ?? null);
 
   const save = () => {
     journalTrade(trade.id, { notes: notes.trim(), emotion, setupRating: rating });
@@ -126,6 +131,27 @@ export default function TradeDetail() {
           {points(trade.points, true)} · {rMultiple(trade.realizedR)}
         </AppText>
       </View>
+
+      {trade.status === 'closed' ? (
+        <VerdictBanner
+          tone={followed ? 'positive' : 'danger'}
+          title={followed ? 'Strategy followed' : 'Plan not followed'}
+          subtitle={cond.total > 0 ? `${cond.met}/${cond.total} conditions matched at entry` : followed ? 'You reported following your plan' : 'You reported breaking your plan'}
+          badge={trade.rMultiple != null ? `1:${trade.rMultiple} R:R` : undefined}
+        />
+      ) : null}
+
+      <Card>
+        <View style={styles.row}>
+          <Ionicons name="sparkles" size={16} color={colors.accentBright} />
+          <AppText variant="label" tone="accent" style={{ marginRight: 'auto' }}>
+            AI notes
+          </AppText>
+        </View>
+        <AppText variant="body" style={{ marginTop: spacing.sm }}>
+          {aiNotes}
+        </AppText>
+      </Card>
 
       <Card>
         <View style={styles.grid}>
@@ -256,3 +282,16 @@ const styles = StyleSheet.create({
   stars: { flexDirection: 'row', gap: spacing.md },
   shot: { width: '100%', height: 220, borderRadius: radius.md, backgroundColor: colors.surface },
 });
+
+/** Deterministic, specific trade notes (used when no AI summary was stored). */
+function tradeNotes(t: Trade, cond: { met: number; total: number }, followed: boolean, strategyName: string | null): string {
+  const parts: string[] = [];
+  if (cond.total > 0) parts.push(`Entered ${strategyName ?? 'the trade'} with ${cond.met}/${cond.total} conditions confirmed.`);
+  if (t.riskDollars > 0) parts.push(`Planned risk ${money(t.riskDollars)}${t.rMultiple ? ` for a 1:${t.rMultiple} target` : ''}.`);
+  if (t.stopPrice !== t.originalStopPrice) parts.push('The stop was moved after entry.');
+  if (t.exitPrice != null && t.targetPrice != null && t.exitPrice === t.targetPrice) parts.push('Exited at the planned target.');
+  else if (t.exitPrice != null && t.exitPrice === t.stopPrice) parts.push('Stopped out at the planned stop — a disciplined loss.');
+  else if (t.realizedR != null) parts.push(`Closed at ${t.realizedR > 0 ? '+' : ''}${t.realizedR}R.`);
+  parts.push(followed ? 'Plan followed.' : 'Plan not followed — review what pulled you off your rules.');
+  return parts.join(' ');
+}

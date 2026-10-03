@@ -21,6 +21,20 @@ Without Supabase credentials the app starts in **Demo Mode**. On the welcome scr
 
 Requirements: Node 20+ and the Expo Go app (SDK 57) or an iOS/Android simulator.
 
+### What you can click through
+
+| Area | Screens |
+| --- | --- |
+| Onboarding | Welcome → instruments → choose path (I have a strategy / Help me build) → account & risk (manual, screenshot import, connected *coming soon*) → trading preferences → rules |
+| Strategy | Describe in plain English → AI converts to measurable rules → review/edit/add/delete → practice or use · Help-me-build generator · Library (15M ORB Retest, VWAP Pullback, Breakout + Retest, Key Level Rejection, …) · Finder |
+| Home | Account progress, balance, daily P&L, risk/trades/drawdown remaining, consistency, trading plan, Check Trade / Analyze Setup, insight, recent trades |
+| Analyze (center tab) | Manual Entry / From Chart → AI entry analysis (GOOD ENTRY / CAUTION / RULE VIOLATION, per-condition ✓ ⚠ ✗, trade details, suggested adjustment) → Save Trade Plan or enter → Live Trade Monitor (chart, demo price feed, alerts) → loss cooldown |
+| Journal | Calendar + filters, journal a trade (screenshot or manual: emotion, followed plan, notes), entry detail with strategy-followed badge and AI notes |
+| Performance | Net R/P&L, win rate, trades, avg R, equity curve, **results by conditions met (7/7 vs 6/7 vs ≤5/7)**, insight, advanced breakdowns |
+| More | AI Session Summary (Today / Weekly / Insights, revenge/overtrading flags), Practice Mode, Alerts feed, Risk & Position calculator, Discipline, Accounts, Paywall (Free vs Pro), Profile (gear icon on Home) |
+
+**Demo / mock data while backends are not configured:** demo account, trades, plans, practice history and alerts; on-device AI provider (rule-based parsing, reviews, coaching; screenshot reads return a clearly-labelled sample in Demo Mode and always require confirmation); simulated live price feed on the Live Trade Monitor; development billing (toggle Free/Pro on the paywall). Broker connections are UI placeholders marked *Coming soon*.
+
 ### Scripts
 
 | Command | What it does |

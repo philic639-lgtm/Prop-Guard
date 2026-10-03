@@ -1,7 +1,7 @@
 import { forwardRef, useState } from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
-import { colors, radius, spacing } from '@/constants/theme';
+import { colors, webNoOutline, radius, spacing } from '@/constants/theme';
 
 import { AppText } from './AppText';
 
@@ -100,6 +100,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingVertical: spacing.md,
     fontVariant: ['tabular-nums'],
+    ...webNoOutline,
   },
   large: { fontSize: 22, fontWeight: '600' },
   multiline: { minHeight: 88, textAlignVertical: 'top' },

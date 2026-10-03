@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { colors, radius, spacing } from '@/constants/theme';
+import { colors, webNoOutline, radius, spacing } from '@/constants/theme';
 
 interface StepperProps {
   value: number;
@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
     height: 46,
     overflow: 'hidden',
   },
-  input: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '600', paddingHorizontal: spacing.md, fontVariant: ['tabular-nums'] },
+  input: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '600', paddingHorizontal: spacing.md, fontVariant: ['tabular-nums'], ...webNoOutline },
   btn: { width: 46, alignItems: 'center', justifyContent: 'center' },
   divider: { borderLeftWidth: 1, borderLeftColor: colors.border },
 });

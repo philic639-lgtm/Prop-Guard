@@ -5,6 +5,10 @@ import { AppHeader, AppText, Button, Card, EmptyState, Metric, RuleChecklist, Sc
 import { LIBRARY_DISCLAIMER } from '@/constants/legal';
 import { spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
+import { strategyFromTemplate } from '@/features/strategy/fromTemplate';
+import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
+import { useAppStore } from '@/store/useAppStore';
+import type { InstrumentSymbol } from '@/types/domain';
 import { formatClock } from '@/utils/dates';
 
 export default function TemplateDetail() {
@@ -20,7 +24,17 @@ export default function TemplateDetail() {
   return (
     <Screen
       header={<AppHeader title="Educational template" back />}
-      footer={<Button label="Use strategy" icon="add-circle-outline" onPress={() => router.replace({ pathname: '/strategy/[id]', params: { id: 'new', template: t.id } })} />}>
+      footer={
+        <Button
+          label="Use this strategy"
+          icon="add-circle-outline"
+          onPress={() => {
+            const markets = useAppStore.getState().preferences.markets.filter((m): m is InstrumentSymbol => m !== 'OTHER');
+            useStrategyDraftStore.getState().setDraft(strategyFromTemplate(t, markets), 'template', 'local');
+            router.replace('/strategy/review');
+          }}
+        />
+      }>
       <View style={{ gap: spacing.sm }}>
         <AppText variant="title">{t.name}</AppText>
         <View style={styles.badges}>

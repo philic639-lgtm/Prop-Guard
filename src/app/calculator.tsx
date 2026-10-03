@@ -1,116 +1,128 @@
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Card, Metric, NumericInput, Screen, SegmentedControl } from '@/components/ui';
-import { spacing } from '@/constants/theme';
-import { useActiveAccount } from '@/hooks/useAppData';
+import { AppHeader, AppText, Button, Card, DetailTable, FieldRow, Screen, SegmentedControl, Stepper } from '@/components/ui';
+import { colors, spacing } from '@/constants/theme';
+import { newDraft } from '@/features/session/draft';
+import { useActiveAccount, useActiveStrategy } from '@/hooks/useAppData';
 import { calculateTradeRisk, getInstrument, INSTRUMENT_SYMBOLS, maxContractsForRisk } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { Direction, InstrumentSymbol } from '@/types/domain';
 import { money, parseNum, points, rr } from '@/utils/format';
 
-/** Fast, free-tier risk calculator. All multipliers come from the instrument engine. */
+/** Risk & position calculator. All multipliers come from the instrument engine. */
 export default function CalculatorScreen() {
   const account = useActiveAccount();
+  const strategy = useActiveStrategy();
   const defaultInstrument = useAppStore((s) => s.preferences.defaultInstrument);
-  const maxRisk = useAppStore((s) => s.tradingRules.maxRiskPerTrade);
+  const ruleMaxRisk = useAppStore((s) => s.tradingRules.maxRiskPerTrade);
+  const setDraft = useAppStore((s) => s.setDraft);
   const [instrument, setInstrument] = useState<InstrumentSymbol>(defaultInstrument);
   const [direction, setDirection] = useState<Direction>('long');
-  const [entry, setEntry] = useState('6040');
-  const [stop, setStop] = useState('6035');
-  const [target, setTarget] = useState('');
-  const [contracts, setContracts] = useState('1');
-  const [balance, setBalance] = useState(String(account?.balance ?? 25000));
+  const [entry, setEntry] = useState('6742.50');
+  const [stop, setStop] = useState('6737.50');
+  const [target, setTarget] = useState('6752.50');
+  const [contracts, setContracts] = useState(2);
+  const [accountSize, setAccountSize] = useState(String(account?.balance ?? 25000));
+  const [maxRisk, setMaxRisk] = useState(String(ruleMaxRisk));
 
   const spec = getInstrument(instrument);
+  const limit = parseNum(maxRisk) ?? ruleMaxRisk;
   const r = calculateTradeRisk({
     instrument,
     direction,
     entry: parseNum(entry),
     stop: parseNum(stop),
     target: parseNum(target),
-    contracts: parseNum(contracts),
-    accountBalance: parseNum(balance),
+    contracts,
+    accountBalance: parseNum(accountSize),
   });
   const e = parseNum(entry);
   const s = parseNum(stop);
-  const sized = e != null && s != null && e !== s ? maxContractsForRisk(instrument, e, s, maxRisk, account?.rules.maxContracts) : null;
+  const sized = e != null && s != null && e !== s ? maxContractsForRisk(instrument, e, s, limit, account?.rules.maxContracts) : null;
+  const overRisk = r.valid && (r.riskDollars ?? 0) > limit;
+  const overContracts = account?.rules.maxContracts != null && contracts > account.rules.maxContracts;
+  const compliant = r.valid && !overRisk && !overContracts;
 
   return (
-    <Screen header={<AppHeader title="Risk calculator" back />}>
-      <SegmentedControl label="Instrument" options={INSTRUMENT_SYMBOLS.map((x) => ({ value: x, label: x }))} value={instrument} onChange={setInstrument} />
+    <Screen
+      header={<AppHeader title="Risk & position" back />}
+      footer={
+        <Button
+          label="Check this trade"
+          icon="shield-checkmark"
+          disabled={!r.valid}
+          onPress={() => {
+            setDraft({ ...newDraft(strategy, instrument), instrument, direction, entry, stop, target, contracts: String(contracts) });
+            router.push('/analyze');
+          }}
+        />
+      }>
+      <SegmentedControl options={INSTRUMENT_SYMBOLS.map((x) => ({ value: x, label: x }))} value={instrument} onChange={setInstrument} />
       <AppText variant="caption">
         {spec.name} · ${spec.pointValue}/pt · tick {spec.tickSize} = ${spec.tickValue}
       </AppText>
       <SegmentedControl
-        label="Direction"
         options={[
-          { value: 'long', label: 'Long', tone: 'positive' },
-          { value: 'short', label: 'Short', tone: 'danger' },
+          { value: 'long', label: 'LONG', tone: 'positive' },
+          { value: 'short', label: 'SHORT', tone: 'danger' },
         ]}
         value={direction}
         onChange={setDirection}
       />
-      <View style={styles.row}>
-        <View style={styles.flex}>
-          <NumericInput label="Entry" value={entry} onChangeText={setEntry} large />
-        </View>
-        <View style={styles.flex}>
-          <NumericInput label="Stop" value={stop} onChangeText={setStop} large />
-        </View>
-      </View>
-      <View style={styles.row}>
-        <View style={styles.flex}>
-          <NumericInput label="Target (optional)" value={target} onChangeText={setTarget} large />
-        </View>
-        <View style={styles.flex}>
-          <NumericInput label="Contracts" value={contracts} onChangeText={(t) => setContracts(t.replace(/\D/g, ''))} keyboardType="number-pad" large />
-        </View>
-      </View>
-      <NumericInput label="Account balance" prefix="$" value={balance} onChangeText={setBalance} />
 
-      <Card raised>
-        <AppText variant="label">Risk</AppText>
-        <AppText variant="hero" tone={r.riskDollars != null && r.riskDollars > maxRisk ? 'danger' : 'primary'}>
-          {money(r.riskDollars)}
-        </AppText>
-        <View style={[styles.row, { marginTop: spacing.lg }]}>
-          <Metric label="Distance" value={points(r.pointsRisk)} compact />
-          <Metric label="Ticks" value={r.ticksRisk != null ? String(r.ticksRisk) : '—'} compact />
-          <Metric label="Account risk" value={r.accountRiskPct != null ? `${r.accountRiskPct.toFixed(2)}%` : '—'} compact />
-        </View>
-        {r.rr != null ? (
-          <View style={[styles.row, { marginTop: spacing.lg }]}>
-            <Metric label="Reward" value={money(r.rewardDollars)} tone="positive" compact />
-            <Metric label="R:R" value={rr(r.rr)} compact />
-            <Metric label="Pts reward" value={points(r.pointsReward)} compact />
-          </View>
-        ) : null}
-        {!r.valid && r.errors.length ? (
-          <AppText variant="caption" tone="danger" style={{ marginTop: spacing.md }}>
-            {r.errors[0]}
-          </AppText>
-        ) : null}
+      <Card>
+        <FieldRow label="Entry Price" value={entry} onChangeText={setEntry} />
+        <FieldRow label="Stop Price" value={stop} onChangeText={setStop} />
+        <FieldRow label="Target Price" value={target} onChangeText={setTarget} placeholder="Optional" />
+        <FieldRow label="Contracts" control={<Stepper label="Contracts" value={contracts} onChange={setContracts} />} />
+        <FieldRow label="Account Size" prefix="$" value={accountSize} onChangeText={setAccountSize} />
+        <FieldRow label="Max Risk" prefix="$" value={maxRisk} onChangeText={setMaxRisk} />
       </Card>
 
-      {sized != null ? (
-        <Card>
-          <AppText variant="label">Position size for your {money(maxRisk)} max risk</AppText>
-          <AppText variant="display" style={{ marginTop: spacing.xs }}>
-            {sized} {instrument}
+      <Card raised>
+        <DetailTable
+          rows={[
+            { label: 'Stop distance', value: r.pointsRisk != null ? `${points(r.pointsRisk)} · ${r.ticksRisk} ticks` : '—' },
+            { label: 'Dollar risk', value: money(r.riskDollars), tone: overRisk ? 'danger' : 'primary', bold: true },
+            { label: 'Dollar reward', value: money(r.rewardDollars), tone: r.rewardDollars ? 'positive' : 'primary' },
+            { label: 'Risk : Reward', value: rr(r.rr) },
+            { label: 'Account risk', value: r.accountRiskPct != null ? `${r.accountRiskPct.toFixed(2)}%` : '—' },
+            { label: 'Max position size', value: sized != null ? `${sized} ${instrument}` : '—' },
+          ]}
+        />
+      </Card>
+
+      {!r.valid ? (
+        <Card tone="warning">
+          <AppText variant="body">{r.errors[0]}</AppText>
+        </Card>
+      ) : (
+        <Card tone={compliant ? 'positive' : 'danger'}>
+          <View style={styles.row}>
+            <Ionicons name={compliant ? 'checkmark-circle' : 'close-circle'} size={22} color={compliant ? colors.positive : colors.danger} />
+            <AppText variant="heading" style={{ color: compliant ? colors.positive : colors.danger }}>
+              {compliant ? 'PLAN COMPLIANT' : 'RISK LIMIT EXCEEDED'}
+            </AppText>
+          </View>
+          <AppText variant="body" style={{ marginTop: spacing.xs }}>
+            {compliant
+              ? `This trade is within your ${money(limit)} risk limit.`
+              : overRisk
+                ? `${money(r.riskDollars)} risk exceeds your ${money(limit)} limit. Use ${sized ?? 0} ${instrument} or a closer stop.`
+                : `${contracts} contracts exceeds your account maximum of ${account?.rules.maxContracts}.`}
           </AppText>
-          {spec.micro && sized === 0 ? (
-            <AppText variant="caption">
-              Too wide for 1 {instrument}. Consider {spec.micro}: {maxContractsForRisk(spec.micro, e!, s!, maxRisk)} contracts.
+          {!compliant && spec.micro && sized === 0 && e != null && s != null ? (
+            <AppText variant="caption" style={{ marginTop: spacing.xs }}>
+              Consider {spec.micro}: up to {maxContractsForRisk(spec.micro, e, s, limit)} contracts fit your limit.
             </AppText>
           ) : null}
         </Card>
-      ) : null}
+      )}
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: spacing.md },
-  flex: { flex: 1 },
-});
+const styles = StyleSheet.create({ row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm } });

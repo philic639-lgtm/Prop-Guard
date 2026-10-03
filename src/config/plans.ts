@@ -15,7 +15,8 @@ export type Feature =
   | 'aiCoach'
   | 'notifications'
   | 'unlimitedJournal'
-  | 'customStrategies';
+  | 'customStrategies'
+  | 'practiceMode';
 
 export interface PlanConfig {
   id: PlanId;
@@ -42,7 +43,7 @@ export const PLANS: Record<PlanId, PlanConfig> = {
     fallbackPriceLabel: null,
     features: [],
     limits: { accounts: 1, journalTrades: 50, libraryTemplates: 3, customStrategies: 1 },
-    highlights: ['Risk calculator', 'Daily Guard', '1 trading account', 'Limited journal', '3 strategy templates'],
+    highlights: ['Rule-based trade check', 'Risk calculator', 'Daily Guard', '1 trading account', 'Journal (latest 50 trades)', '3 strategy templates'],
   },
   pro: {
     id: 'pro',
@@ -60,19 +61,20 @@ export const PLANS: Record<PlanId, PlanConfig> = {
       'notifications',
       'unlimitedJournal',
       'customStrategies',
+      'practiceMode',
     ],
     limits: { accounts: Infinity, journalTrades: Infinity, libraryTemplates: Infinity, customStrategies: Infinity },
     highlights: [
-      'AI Trade Checker',
-      'AI Strategy Finder',
-      'Screenshot analysis',
+      'Unlimited AI setup checks',
+      'Advanced AI strategy builder',
+      'Unlimited screenshot analysis',
+      'AI trade journaling',
+      'Performance insights by conditions met',
+      'Multiple saved strategies',
+      'Practice mode',
+      'Advanced session summaries',
+      'Discipline Score & AI Coach',
       'Unlimited accounts',
-      'Advanced analytics',
-      'Discipline Score',
-      'AI Coach',
-      'Smart notifications',
-      'Unlimited journal',
-      'Custom strategies',
     ],
   },
 };

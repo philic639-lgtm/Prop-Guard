@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
-import { colors, radius, spacing } from '@/constants/theme';
+import { colors, webNoOutline, radius, spacing } from '@/constants/theme';
 
 import { AppText } from './AppText';
 
@@ -68,6 +68,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     height: 46,
   },
-  input: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  input: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'], ...webNoOutline },
   error: { textAlign: 'right' },
 });

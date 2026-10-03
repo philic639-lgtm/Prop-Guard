@@ -8,6 +8,9 @@ import { AppHeader, AppText, Button, Card, Chip, LoadingState, NumericInput, Scr
 import { LIBRARY_DISCLAIMER } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
+import { strategyFromTemplate } from '@/features/strategy/fromTemplate';
+import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
+import type { InstrumentSymbol } from '@/types/domain';
 import { useActiveAccount } from '@/hooks/useAppData';
 import { aiService, type StrategyFinderAnswers, type StrategyRecommendation } from '@/services/ai';
 import { useAppStore } from '@/store/useAppStore';
@@ -102,7 +105,10 @@ export default function StrategyFinder() {
                   size="md"
                   variant={i === 0 ? 'primary' : 'secondary'}
                   style={{ marginTop: spacing.lg }}
-                  onPress={() => router.replace({ pathname: '/strategy/[id]', params: { id: 'new', template: t.id } })}
+                  onPress={() => {
+                    useStrategyDraftStore.getState().setDraft(strategyFromTemplate(t, [answers.market as InstrumentSymbol]), 'template', 'local');
+                    router.replace('/strategy/review');
+                  }}
                 />
               </Card>
             );

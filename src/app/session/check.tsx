@@ -253,8 +253,8 @@ export default function SetupCheckScreen() {
         <>
           <Button label={verdict.cta} variant={verdict.button} icon={verdict.ctaIcon} disabled={!canEnter} onPress={onEnterPress} />
           <View style={styles.footerRow}>
-            <Button label="Save Trade Plan" variant="secondary" size="md" icon="bookmark-outline" style={styles.flex} disabled={!risk.valid} onPress={() => router.push('/session/plan')} />
-            <Button label="Adjust Trade" variant="secondary" size="md" icon="create-outline" style={styles.flex} onPress={() => router.back()} />
+            <Button label="Save Plan" variant="secondary" size="md" icon="bookmark-outline" style={styles.flex} disabled={!risk.valid} onPress={() => router.push('/session/plan')} />
+            <Button label="Adjust" variant="secondary" size="md" icon="create-outline" style={styles.flex} onPress={() => router.back()} />
           </View>
         </>
       }>

@@ -4,8 +4,8 @@ import type { InstrumentSymbol } from '@/types/domain';
 
 import { useOnboardingStore } from './useOnboardingStore';
 
-/** Commit onboarding answers as the user's real data (replacing demo data). */
-export function finishOnboarding() {
+/** Commit onboarding answers as the user's real data (replacing demo data). Returns the chosen path. */
+export function finishOnboarding(): 'have_strategy' | 'build' | null {
   const o = useOnboardingStore.getState();
   const app = useAppStore.getState();
   const mode = app.user ? 'cloud' : 'local';
@@ -23,9 +23,12 @@ export function finishOnboarding() {
     markets: o.markets,
     tradingType: o.tradingType,
     propFirm: o.propFirm,
-    defaultInstrument: instruments.includes('MES') ? 'MES' : (instruments[0] ?? 'MES'),
+    defaultInstrument: instruments[0] ?? 'MES',
+    tradingProfile: o.profile,
     onboarded: true,
   });
   if (syncService.enabled) syncService.savePreferences(useAppStore.getState());
+  const path = o.profile.path;
   o.reset();
+  return path;
 }

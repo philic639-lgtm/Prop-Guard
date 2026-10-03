@@ -11,21 +11,23 @@ interface ChoiceGridProps<T extends string> {
   value: T | null;
   onChange: (v: T) => void;
   columns?: number;
+  /** Multi-select: overrides `value` to decide which cells are on. */
+  isSelected?: (v: T) => boolean;
 }
 
 /** Grid of square-ish selectable buttons ($10K / $25K / $50K, Scalp / Intraday / Swing). */
-export function ChoiceGrid<T extends string>({ label, options, value, onChange, columns = 3 }: ChoiceGridProps<T>) {
+export function ChoiceGrid<T extends string>({ label, options, value, onChange, columns = 3, isSelected }: ChoiceGridProps<T>) {
   return (
     <View style={styles.wrap}>
       {label ? <AppText variant="label">{label}</AppText> : null}
       <View style={styles.grid} accessibilityRole="radiogroup" accessibilityLabel={label}>
         {options.map((o) => {
-          const on = o.value === value;
+          const on = isSelected ? isSelected(o.value) : o.value === value;
           return (
             <Pressable
               key={o.value}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: on }}
+              accessibilityRole={isSelected ? 'checkbox' : 'radio'}
+              accessibilityState={isSelected ? { checked: on } : { selected: on }}
               accessibilityLabel={o.label}
               onPress={() => {
                 if (Platform.OS !== 'web') void Haptics.selectionAsync();

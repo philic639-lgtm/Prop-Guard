@@ -139,9 +139,13 @@ export default function ReviewStrategy() {
           <AppText variant="title" style={styles.flex} numberOfLines={1}>
             {s.name}
           </AppText>
-          {origin === 'build' && !isSaved ? <StatusBadge label="Starter plan" tone="positive" size="sm" /> : null}
           <Ionicons name="pencil" size={16} color={colors.textSecondary} />
         </Pressable>
+        {origin === 'build' && !isSaved ? (
+          <View style={{ marginBottom: spacing.sm }}>
+            <StatusBadge label="Starter plan" tone="positive" size="sm" />
+          </View>
+        ) : null}
         <DetailTable
           rows={[
             { label: 'Instrument', value: s.markets.join(', ') },

@@ -171,8 +171,10 @@ export function filterByRange(trades: Trade[], range: 'week' | 'month' | 'quarte
 
 /** Conditions met for a trade, from the setup check recorded at entry. */
 export function tradeConditions(t: Trade): { met: number; total: number } {
-  const met = t.rulesFollowed.filter((r) => r !== 'entry_window').length;
-  const missed = t.rulesViolated.filter((r) => r !== 'entry_window').length;
+  // Context-only and self-reported items are not strategy conditions.
+  const ignore = (r: string) => r === 'entry_window' || r === 'followed_plan';
+  const met = t.rulesFollowed.filter((r) => !ignore(r)).length;
+  const missed = t.rulesViolated.filter((r) => !ignore(r)).length;
   return { met, total: met + missed };
 }
 

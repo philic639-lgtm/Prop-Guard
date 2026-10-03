@@ -33,7 +33,7 @@ export function LiveTradeChart({ prices, entry, stop, target, height = 220 }: Li
     <>
       <Line x1={0} x2={plotW} y1={y(v)} y2={y(v)} stroke={color} strokeWidth={1.2} strokeDasharray="5 5" />
       <Rect x={plotW + 4} y={y(v) - 10} width={labelW - 6} height={20} rx={5} fill={color + '33'} stroke={color} strokeWidth={1} />
-      <SvgText x={plotW + 4 + (labelW - 6) / 2} y={y(v) + 4} fontSize={10} fontWeight="700" fill={colors.text} textAnchor="middle">
+      <SvgText x={plotW + 4 + (labelW - 6) / 2} y={y(v) + 4} fontSize={10} fontWeight="700" fontFamily="Helvetica, Arial, sans-serif" fill={colors.text} textAnchor="middle">
         {label}
       </SvgText>
     </>

@@ -464,6 +464,7 @@ export function createDemoData(now = new Date()): AppData {
     ...(lastWin
       ? ([
           { id: 'demo-alert-2', kind: 'take_profit', title: 'Take Profit Hit', body: `${lastWin.instrument} ${lastWin.direction === 'long' ? 'Long' : 'Short'} +${lastWin.points} pts | +$${Math.round(lastWin.pnl ?? 0)}`, tradeId: lastWin.id, at: lastWin.closedAt!, read: true },
+          { id: 'demo-alert-5', kind: 'partial_taken', title: 'Partial Taken', body: `${lastWin.instrument} +${Math.abs(lastWin.entryPrice - lastWin.originalStopPrice)} pts | partial exit at 1R`, tradeId: lastWin.id, at: new Date(Date.parse(lastWin.closedAt!) - 3 * 60_000).toISOString(), read: true },
           { id: 'demo-alert-3', kind: 'move_stop_breakeven', title: 'Move Stop to Breakeven', body: `${lastWin.instrument} is +${Math.abs(lastWin.entryPrice - lastWin.originalStopPrice)} pts in profit. Consider moving your stop to breakeven.`, tradeId: lastWin.id, at: new Date(Date.parse(lastWin.closedAt!) - 6 * 60_000).toISOString(), read: true },
           { id: 'demo-alert-4', kind: 'good_entry', title: 'Good Entry Confirmed', body: 'Your entry is performing well.', tradeId: lastWin.id, at: new Date(Date.parse(lastWin.openedAt) + 2 * 60_000).toISOString(), read: true },
         ] as AppAlert[])

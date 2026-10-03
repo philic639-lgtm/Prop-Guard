@@ -36,6 +36,7 @@ export default function RootLayout() {
               <Stack.Screen name="session/check" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
               <Stack.Screen name="session/loss" options={{ presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />
               <Stack.Screen name="paywall" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+              <Stack.Screen name="strategy/generating" options={{ animation: 'fade', gestureEnabled: false }} />
             </Stack>
           ) : null}
         </ThemeProvider>

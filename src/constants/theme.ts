@@ -103,3 +103,6 @@ export const shadow = Platform.select({
 });
 
 export const TAB_BAR_HEIGHT = 64;
+
+/** Remove the browser focus ring on web text inputs (the field border shows focus instead). */
+export const webNoOutline = (Platform.OS === 'web' ? { outlineStyle: 'none' } : {}) as TextStyle;

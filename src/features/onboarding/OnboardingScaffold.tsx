@@ -16,7 +16,7 @@ interface Props {
   secondary?: { label: string; onPress: () => void };
 }
 
-export function OnboardingScaffold({ step, total = 7, title, subtitle, children, cta, onNext, disabled, secondary }: Props) {
+export function OnboardingScaffold({ step, total = 6, title, subtitle, children, cta, onNext, disabled, secondary }: Props) {
   return (
     <Screen
       header={
