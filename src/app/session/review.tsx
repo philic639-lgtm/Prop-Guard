@@ -87,7 +87,7 @@ export default function SessionReviewScreen() {
     const t = setTimeout(() => void generate(), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id]);
+  }, [session?.id, aiAllowed]);
 
   const onEnd = async () => {
     if (!session) return router.replace('/home');

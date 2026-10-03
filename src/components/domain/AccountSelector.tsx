@@ -42,7 +42,7 @@ export function AccountSelector() {
           {money(account.balance)}
         </AppText>
         <AppText variant="label">Account balance</AppText>
-        <AppText variant="bodyStrong" tone={cycle >= 0 ? 'positive' : 'danger'} style={styles.cycle}>
+        <AppText variant="bodyStrong" tone={cycle > 0 ? 'positive' : cycle < 0 ? 'danger' : 'secondary'} style={styles.cycle}>
           {money(cycle, { sign: true })} this cycle
         </AppText>
       </Card>

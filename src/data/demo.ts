@@ -126,7 +126,7 @@ export function createDemoData(now = new Date()): AppData {
   const rand = mulberry32(25_000);
   const nowIso = now.toISOString();
 
-  const orb = { ...strategyFromTemplate('orb-15', DEMO_IDS.orb, nowIso), notes: 'Primary strategy. One trade per day max. Skip FOMC and CPI mornings.' };
+  const orb = { ...strategyFromTemplate('orb-15', DEMO_IDS.orb, nowIso), maxTrades: 2, notes: 'Primary strategy. Skip FOMC and CPI mornings. A second attempt only after a full reset.' };
   const vwap = { ...strategyFromTemplate('vwap-reclaim', DEMO_IDS.vwap, nowIso), maxTrades: 1 };
 
   const trades: Trade[] = [];
@@ -168,10 +168,17 @@ export function createDemoData(now = new Date()): AppData {
       const sign = direction === 'long' ? 1 : -1;
       const stop = entry - sign * stopPts;
       const target = entry + sign * stopPts * rr;
+      // Realistic distribution: full targets, managed partial wins, planned losses, scratches.
       const roll = rand();
-      const outcome = roll < 0.52 ? 'win' : roll < 0.9 ? 'loss' : 'scratch';
+      const outcome = roll < 0.36 ? 'win' : roll < 0.52 ? 'partial' : roll < 0.92 ? 'loss' : 'scratch';
       const exit =
-        outcome === 'win' ? target : outcome === 'loss' ? stop : Math.round((entry + sign * stopPts * 0.4) * 4) / 4;
+        outcome === 'win'
+          ? target
+          : outcome === 'partial'
+            ? entry + sign * stopPts
+            : outcome === 'loss'
+              ? stop
+              : Math.round((entry + sign * stopPts * 0.25) * 4) / 4;
 
       const opened = addMinutes(sessionStart, 8 + k * (outcome === 'loss' ? 25 : 40) + Math.floor(rand() * 12));
       const closed = addMinutes(opened, 6 + Math.floor(rand() * 30));
@@ -220,7 +227,7 @@ export function createDemoData(now = new Date()): AppData {
         source: 'manual',
         journaled,
         mae: Math.round(rand() * stopPts * 4) / 4,
-        mfe: Math.round((outcome === 'win' ? stopPts * rr : rand() * stopPts) * 4) / 4,
+        mfe: Math.round((outcome === 'win' ? stopPts * rr : outcome === 'partial' ? stopPts * 1.3 : rand() * stopPts) * 4) / 4,
       };
       sessionTrades.push(trade);
       if (journaled) {
@@ -344,7 +351,7 @@ export function createDemoData(now = new Date()): AppData {
       maxDrawdown: 1_500,
       drawdownType: 'eod_trailing',
       trailingLocksAtStart: true,
-      profitTarget: 1_500,
+      profitTarget: 3_000,
       maxContracts: 20,
       consistencyPct: 40,
       minTradingDays: 5,
