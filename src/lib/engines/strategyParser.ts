@@ -1,6 +1,8 @@
 import type { ChecklistItem, InstrumentSymbol, Strategy } from '@/types/domain';
 import { formatClock, parseClock } from '@/utils/dates';
 
+import { allInstruments } from './instrumentEngine';
+
 /**
  * Deterministic natural-language → measurable rules converter.
  * Used on-device and as the fallback/validator for the AI parser.
@@ -33,7 +35,13 @@ export interface ReviewRule {
   deletable: boolean;
 }
 
-const INSTRUMENT_RE = /\b(MNQ|MES|NQ|ES)\b/i;
+/** Ticker regex from the instrument registry, longest first so MNQ wins over NQ. */
+function instrumentRegex(): RegExp {
+  const tickers = allInstruments()
+    .map((s) => s.symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .sort((a, b) => b.length - a.length);
+  return new RegExp(`(?:^|[^A-Za-z0-9])(${tickers.join('|')})(?![A-Za-z0-9])`);
+}
 
 function toClock(h: number, m: number): string {
   // Futures day traders write "9:45" meaning AM and "1:30" meaning PM.
@@ -77,8 +85,8 @@ export function parseStrategyText(input: string): ParsedStrategy {
   };
   if (!text) return result;
 
-  const inst = INSTRUMENT_RE.exec(text);
-  if (inst) result.instrument = inst[1].toUpperCase() as InstrumentSymbol;
+  const inst = instrumentRegex().exec(text);
+  if (inst) result.instrument = inst[1];
 
   // Opening range
   const orb = /(\d+)\s*-?\s*(?:min(?:ute)?s?|m)\s*(?:ORB|opening range(?: breakout)?)/i.exec(text);

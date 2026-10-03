@@ -49,7 +49,7 @@ export default function LiveTradeScreen() {
         <EmptyState
           icon="checkmark-done-outline"
           title="Trade closed"
-          message={`Closed at ${price(trade.exitPrice)} for ${money(trade.pnl, { sign: true })}.`}
+          message={`Closed at ${price(trade.exitPrice, trade.instrument)} for ${money(trade.pnl, { sign: true })}.`}
           actionLabel="Open journal entry"
           onAction={() => router.replace({ pathname: '/journal/[id]', params: { id: trade.id } })}
         />
@@ -144,7 +144,7 @@ function LiveMonitor({ trade }: { trade: Trade }) {
         accountId: trade.accountId,
         tradeId: trade.id,
         sessionId: trade.sessionId,
-        detail: `Stop moved from ${price(trade.stopPrice)} to ${price(value)} (+${money(delta)} risk).`,
+        detail: `Stop moved from ${price(trade.stopPrice, trade.instrument)} to ${price(value, trade.instrument)} (+${money(delta)} risk).`,
       });
     }
     setNewStop('');
@@ -202,14 +202,14 @@ function LiveMonitor({ trade }: { trade: Trade }) {
         </Card>
 
         <TileGrid>
-          <MetricTile label="Entry" value={price(trade.entryPrice)} />
-          <MetricTile label="Stop" value={price(trade.stopPrice)} tone={atBreakeven ? 'positive' : 'danger'} sub={trade.stopPrice !== trade.originalStopPrice ? `orig ${price(trade.originalStopPrice)}` : undefined} />
-          <MetricTile label="Target" value={price(trade.targetPrice)} tone="positive" />
-          <MetricTile label="Current" value={price(markPrice)} onPress={() => { setMarkInput(String(markPrice)); setSheet('mark'); }} sub="Tap to update" />
+          <MetricTile label="Entry" value={price(trade.entryPrice, trade.instrument)} />
+          <MetricTile label="Stop" value={price(trade.stopPrice, trade.instrument)} tone={atBreakeven ? 'positive' : 'danger'} sub={trade.stopPrice !== trade.originalStopPrice ? `orig ${price(trade.originalStopPrice, trade.instrument)}` : undefined} />
+          <MetricTile label="Target" value={price(trade.targetPrice, trade.instrument)} tone="positive" />
+          <MetricTile label="Current" value={price(markPrice, trade.instrument)} onPress={() => { setMarkInput(String(markPrice)); setSheet('mark'); }} sub="Tap to update" />
         </TileGrid>
 
         <Card>
-          <LiveTradeChart prices={prices} entry={trade.entryPrice} stop={trade.stopPrice} target={trade.targetPrice} />
+          <LiveTradeChart prices={prices} entry={trade.entryPrice} stop={trade.stopPrice} target={trade.targetPrice} decimals={getInstrument(trade.instrument).priceDecimals} />
           {demo ? <ToggleRow label="Demo price feed" description="Simulated prices so you can preview live alerts." value={feed} onChange={setFeed} /> : null}
         </Card>
 
@@ -237,7 +237,7 @@ function LiveMonitor({ trade }: { trade: Trade }) {
         ) : null}
 
       <Sheet visible={sheet === 'mark'} onClose={() => setSheet('none')} title="Current price">
-        <NumericInput label="Mark price" value={markInput} onChangeText={setMarkInput} autoFocus large placeholder={price(trade.entryPrice)} />
+        <NumericInput label="Mark price" value={markInput} onChangeText={setMarkInput} autoFocus large placeholder={price(trade.entryPrice, trade.instrument)} />
         <AppText variant="caption">Live prices arrive with Connected Broker mode. Enter the price from your platform, or use the demo feed.</AppText>
         <Button
           label="Update"
@@ -252,8 +252,8 @@ function LiveMonitor({ trade }: { trade: Trade }) {
 
       <Sheet visible={sheet === 'stop'} onClose={() => setSheet('none')} title="Moving stop">
         <View style={styles.grid}>
-          <Metric label="Original stop" value={price(trade.originalStopPrice)} />
-          <Metric label="Current stop" value={price(trade.stopPrice)} />
+          <Metric label="Original stop" value={price(trade.originalStopPrice, trade.instrument)} />
+          <Metric label="Current stop" value={price(trade.stopPrice, trade.instrument)} />
         </View>
         <NumericInput label="New stop" value={newStop} onChangeText={setNewStop} autoFocus large />
         {stopVal != null && delta !== 0 ? (
@@ -282,8 +282,8 @@ function LiveMonitor({ trade }: { trade: Trade }) {
         onOverride={() => applyStop(true)}
         onCancel={() => setSheet('none')}>
         <View style={styles.grid}>
-          <Metric label="Original stop" value={price(trade.originalStopPrice)} />
-          <Metric label="New stop" value={price(stopVal)} tone="danger" />
+          <Metric label="Original stop" value={price(trade.originalStopPrice, trade.instrument)} />
+          <Metric label="New stop" value={price(stopVal, trade.instrument)} tone="danger" />
         </View>
       </WarningSheet>
 

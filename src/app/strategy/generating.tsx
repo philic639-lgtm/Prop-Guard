@@ -11,7 +11,6 @@ import { strategyFromTemplate } from '@/features/strategy/fromTemplate';
 import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
 import { aiService, type StrategyFinderAnswers } from '@/services/ai';
 import { useAppStore } from '@/store/useAppStore';
-import type { InstrumentSymbol } from '@/types/domain';
 
 const STEPS = [
   'Analyzing your preferences…',
@@ -36,7 +35,7 @@ export default function GeneratingPlan() {
 
     const st = useAppStore.getState();
     const p = st.preferences.tradingProfile;
-    const instrument = (st.preferences.markets.find((m) => m !== 'OTHER') ?? st.preferences.defaultInstrument) as InstrumentSymbol;
+    const instrument = st.preferences.markets[0] ?? st.preferences.defaultInstrument;
     const answers: StrategyFinderAnswers = {
       market: instrument,
       tradesPerDay: st.tradingRules.maxTradesPerDay <= 1 ? '1' : st.tradingRules.maxTradesPerDay <= 3 ? '2-3' : '4+',

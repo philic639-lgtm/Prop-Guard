@@ -321,6 +321,7 @@ export function preferencesToRow(
     notifications: p.notifications,
     trading_rules: rules,
     trading_profile: p.tradingProfile,
+    custom_instruments: p.customInstruments,
     onboarded: p.onboarded,
     active_account_id: activeAccountId,
     active_strategy_id: activeStrategyId,

@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 
 import { DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES } from '@/data/demo';
+import type { InstrumentSpec } from '@/data/instruments';
 import type { Account, InstrumentSymbol, TradingProfile, TradingRules, TradingType } from '@/types/domain';
 
 /** Transient onboarding answers. Committed to the app store on the final step. */
 interface OnboardingState {
-  markets: (InstrumentSymbol | 'OTHER')[];
+  markets: InstrumentSymbol[];
+  customInstruments: InstrumentSpec[];
   tradingType: TradingType;
   propFirm: string;
   account: Account | null;
@@ -19,7 +21,8 @@ interface OnboardingState {
 }
 
 const initial = {
-  markets: ['ES', 'MES'] as (InstrumentSymbol | 'OTHER')[],
+  markets: ['ES', 'MES'] as InstrumentSymbol[],
+  customInstruments: [] as InstrumentSpec[],
   tradingType: 'prop' as TradingType,
   propFirm: '',
   account: null,

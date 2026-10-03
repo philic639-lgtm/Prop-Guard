@@ -1,3 +1,5 @@
+import { formatPrice } from '@/lib/engines/instrumentEngine';
+
 /** Display formatting. Trading numbers must be easy to scan. */
 
 export function money(value: number | null | undefined, opts: { cents?: boolean; sign?: boolean } = {}): string {
@@ -16,7 +18,13 @@ export function signedMoney(value: number | null | undefined): string {
 
 export function points(value: number | null | undefined, sign = false): string {
   if (value == null || !Number.isFinite(value)) return '—';
-  const s = Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/0$/, '');
+  // Index points read as 5 / 5.25; FX and rates need more precision (0.0001).
+  const abs = Math.abs(value);
+  const s = Number.isInteger(value)
+    ? value.toString()
+    : abs >= 1
+      ? value.toFixed(2).replace(/\.?0+$/, '')
+      : String(Number(value.toPrecision(4)));
   return `${sign && value > 0 ? '+' : ''}${s} pts`;
 }
 
@@ -41,9 +49,10 @@ export function factor(value: number | null | undefined): string {
   return value.toFixed(2);
 }
 
-export function price(value: number | null | undefined): string {
+/** Format a price using the contract's decimals when a symbol is given (6J → 7, ZN → 6, ES → 2). */
+export function price(value: number | null | undefined, symbol?: string): string {
   if (value == null || !Number.isFinite(value)) return '—';
-  return value.toFixed(2);
+  return symbol ? formatPrice(symbol, value) : value.toFixed(2);
 }
 
 export function shortDate(iso: string): string {

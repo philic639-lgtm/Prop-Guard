@@ -88,9 +88,9 @@ export default function SavePlanScreen() {
         <DetailTable
           rows={[
             { label: 'Direction', value: draft.direction === 'long' ? 'LONG' : 'SHORT', tone: draft.direction === 'long' ? 'positive' : 'danger' },
-            { label: 'Entry', value: price(n.entry) },
-            { label: 'Stop', value: price(n.stop) },
-            { label: 'Target', value: price(n.target) },
+            { label: 'Entry', value: price(n.entry, draft.instrument) },
+            { label: 'Stop', value: price(n.stop, draft.instrument) },
+            { label: 'Target', value: price(n.target, draft.instrument) },
             { label: 'Contracts', value: String(n.contracts) },
             { label: 'Risk', value: money(risk.riskDollars), tone: compliant ? 'primary' : 'danger' },
             { label: 'Reward', value: money(risk.rewardDollars), tone: 'positive' },

@@ -1,0 +1,138 @@
+/**
+ * Futures contract catalog — the single source of truth for contract specs.
+ *
+ * To add a contract, append one entry below. Every risk, sizing, stop,
+ * target, journaling and analytics calculation reads from this catalog via
+ * `src/lib/engines/instrumentEngine.ts`, so no other code needs to change.
+ *
+ * Invariant (enforced by tests): tickValue === tickSize × pointValue.
+ * Specs are CME Group standard contract specifications.
+ */
+
+export type InstrumentCategory = 'indices' | 'metals' | 'energy' | 'treasuries' | 'currencies' | 'crypto' | 'custom';
+
+export interface InstrumentSpec {
+  /** Root ticker, e.g. "ES". */
+  symbol: string;
+  name: string;
+  category: InstrumentCategory;
+  exchange: string;
+  /** Minimum price increment. */
+  tickSize: number;
+  /** Dollar value of one tick for one contract. */
+  tickValue: number;
+  /** Dollar value of a 1.0 price move for one contract. */
+  pointValue: number;
+  /** Micro contract (smaller size of a standard contract). */
+  isMicro: boolean;
+  /** Ticker of the micro version of this standard contract, if any. */
+  micro: string | null;
+  /** Ticker of the standard contract for this micro, if any. */
+  mini: string | null;
+  /** How many of this contract equal one standard contract (1 for standards). */
+  miniEquivalentRatio: number;
+  /** Decimals used to display prices. */
+  priceDecimals: number;
+  /** User-defined (not part of the built-in catalog). */
+  custom?: boolean;
+}
+
+export const CATEGORY_LABEL: Record<InstrumentCategory, string> = {
+  indices: 'Indices',
+  metals: 'Metals',
+  energy: 'Energy',
+  treasuries: 'Treasuries',
+  currencies: 'Currencies',
+  crypto: 'Crypto',
+  custom: 'Custom',
+};
+
+export const CATEGORY_ORDER: InstrumentCategory[] = ['indices', 'metals', 'energy', 'treasuries', 'currencies', 'crypto', 'custom'];
+
+type Def = Omit<InstrumentSpec, 'pointValue' | 'micro' | 'mini' | 'miniEquivalentRatio' | 'isMicro' | 'exchange'> & {
+  exchange?: string;
+  /** For micros: the standard contract and how many micros equal one standard. */
+  microOf?: { symbol: string; ratio: number };
+};
+
+const DEFS: Def[] = [
+  // Indices (CME / CBOT)
+  { symbol: 'ES', name: 'E-mini S&P 500', category: 'indices', tickSize: 0.25, tickValue: 12.5, priceDecimals: 2 },
+  { symbol: 'MES', name: 'Micro E-mini S&P 500', category: 'indices', tickSize: 0.25, tickValue: 1.25, priceDecimals: 2, microOf: { symbol: 'ES', ratio: 10 } },
+  { symbol: 'NQ', name: 'E-mini Nasdaq-100', category: 'indices', tickSize: 0.25, tickValue: 5, priceDecimals: 2 },
+  { symbol: 'MNQ', name: 'Micro E-mini Nasdaq-100', category: 'indices', tickSize: 0.25, tickValue: 0.5, priceDecimals: 2, microOf: { symbol: 'NQ', ratio: 10 } },
+  { symbol: 'YM', name: 'E-mini Dow', category: 'indices', exchange: 'CBOT', tickSize: 1, tickValue: 5, priceDecimals: 0 },
+  { symbol: 'MYM', name: 'Micro E-mini Dow', category: 'indices', exchange: 'CBOT', tickSize: 1, tickValue: 0.5, priceDecimals: 0, microOf: { symbol: 'YM', ratio: 10 } },
+  { symbol: 'RTY', name: 'E-mini Russell 2000', category: 'indices', tickSize: 0.1, tickValue: 5, priceDecimals: 1 },
+  { symbol: 'M2K', name: 'Micro E-mini Russell 2000', category: 'indices', tickSize: 0.1, tickValue: 0.5, priceDecimals: 1, microOf: { symbol: 'RTY', ratio: 10 } },
+  // Metals (COMEX)
+  { symbol: 'GC', name: 'Gold', category: 'metals', exchange: 'COMEX', tickSize: 0.1, tickValue: 10, priceDecimals: 1 },
+  { symbol: 'MGC', name: 'Micro Gold', category: 'metals', exchange: 'COMEX', tickSize: 0.1, tickValue: 1, priceDecimals: 1, microOf: { symbol: 'GC', ratio: 10 } },
+  { symbol: 'SI', name: 'Silver', category: 'metals', exchange: 'COMEX', tickSize: 0.005, tickValue: 25, priceDecimals: 3 },
+  // Energy (NYMEX)
+  { symbol: 'CL', name: 'Crude Oil', category: 'energy', exchange: 'NYMEX', tickSize: 0.01, tickValue: 10, priceDecimals: 2 },
+  { symbol: 'MCL', name: 'Micro Crude Oil', category: 'energy', exchange: 'NYMEX', tickSize: 0.01, tickValue: 1, priceDecimals: 2, microOf: { symbol: 'CL', ratio: 10 } },
+  { symbol: 'NG', name: 'Natural Gas', category: 'energy', exchange: 'NYMEX', tickSize: 0.001, tickValue: 10, priceDecimals: 3 },
+  // Treasuries (CBOT) — prices in decimal points (1/32 = 0.03125)
+  { symbol: 'ZB', name: '30-Year Treasury Bond', category: 'treasuries', exchange: 'CBOT', tickSize: 0.03125, tickValue: 31.25, priceDecimals: 5 },
+  { symbol: 'ZN', name: '10-Year Treasury Note', category: 'treasuries', exchange: 'CBOT', tickSize: 0.015625, tickValue: 15.625, priceDecimals: 6 },
+  // Currencies (CME)
+  { symbol: '6E', name: 'Euro FX', category: 'currencies', tickSize: 0.00005, tickValue: 6.25, priceDecimals: 5 },
+  { symbol: '6B', name: 'British Pound', category: 'currencies', tickSize: 0.0001, tickValue: 6.25, priceDecimals: 4 },
+  { symbol: '6J', name: 'Japanese Yen', category: 'currencies', tickSize: 0.0000005, tickValue: 6.25, priceDecimals: 7 },
+  // Crypto (CME)
+  { symbol: 'BTC', name: 'Bitcoin Futures', category: 'crypto', tickSize: 5, tickValue: 25, priceDecimals: 0 },
+  { symbol: 'MBT', name: 'Micro Bitcoin Futures', category: 'crypto', tickSize: 5, tickValue: 0.5, priceDecimals: 0, microOf: { symbol: 'BTC', ratio: 50 } },
+  { symbol: 'ETH', name: 'Ether Futures', category: 'crypto', tickSize: 0.5, tickValue: 25, priceDecimals: 2 },
+  { symbol: 'MET', name: 'Micro Ether Futures', category: 'crypto', tickSize: 0.5, tickValue: 0.05, priceDecimals: 2, microOf: { symbol: 'ETH', ratio: 500 } },
+];
+
+const round10 = (n: number) => Math.round(n * 1e10) / 1e10;
+
+function build(defs: Def[]): InstrumentSpec[] {
+  const micros = new Map(defs.filter((d) => d.microOf).map((d) => [d.microOf!.symbol, d.symbol]));
+  return defs.map((d) => {
+    const { microOf, exchange, ...rest } = d;
+    return {
+      ...rest,
+      exchange: exchange ?? 'CME',
+      pointValue: round10(d.tickValue / d.tickSize),
+      isMicro: !!microOf,
+      micro: micros.get(d.symbol) ?? null,
+      mini: microOf?.symbol ?? null,
+      miniEquivalentRatio: microOf?.ratio ?? 1,
+    };
+  });
+}
+
+export const INSTRUMENT_CATALOG: readonly InstrumentSpec[] = build(DEFS);
+
+/** Shown first on onboarding Step 1. */
+export const POPULAR_INSTRUMENTS = ['ES', 'MES', 'NQ', 'MNQ', 'CL', 'GC'];
+
+/** Build a spec for a user-defined contract (point value derived from tick size/value). */
+export function makeCustomInstrument(input: {
+  symbol: string;
+  name: string;
+  tickSize: number;
+  tickValue: number;
+  isMicro: boolean;
+  priceDecimals?: number;
+}): InstrumentSpec {
+  const decimals = input.priceDecimals ?? Math.min(8, Math.max(0, (String(input.tickSize).split('.')[1] ?? '').length));
+  return {
+    symbol: input.symbol.trim().toUpperCase(),
+    name: input.name.trim() || input.symbol.trim().toUpperCase(),
+    category: 'custom',
+    exchange: 'Custom',
+    tickSize: input.tickSize,
+    tickValue: input.tickValue,
+    pointValue: round10(input.tickValue / input.tickSize),
+    isMicro: input.isMicro,
+    micro: null,
+    mini: null,
+    miniEquivalentRatio: 1,
+    priceDecimals: decimals,
+    custom: true,
+  };
+}

@@ -22,7 +22,8 @@ import {
 import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
 import { blankStrategy, strategyFromTemplate } from '@/features/strategy/fromTemplate';
-import { INSTRUMENT_SYMBOLS, validateStrategy } from '@/lib/engines';
+import { InstrumentBrowser } from '@/features/instruments/InstrumentBrowser';
+import { validateStrategy } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { ChecklistItem, InstrumentSymbol, Strategy } from '@/types/domain';
 import { numToInput, parseNum } from '@/utils/format';
@@ -93,7 +94,7 @@ export default function StrategyBuilder() {
   const initial = useMemo<Strategy>(() => {
     if (existing) return existing;
     const t = template ? getTemplate(template) : undefined;
-    return t ? strategyFromTemplate(t, markets.filter((m): m is InstrumentSymbol => m !== 'OTHER')) : blankStrategy();
+    return t ? strategyFromTemplate(t, markets) : blankStrategy();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, template]);
 
@@ -101,6 +102,7 @@ export default function StrategyBuilder() {
   const [checklist, setChecklist] = useState<ChecklistItem[]>(initial.checklist);
   const [requiresBias, setRequiresBias] = useState(initial.requiresBiasAlignment);
   const [newItem, setNewItem] = useState('');
+  const [browsing, setBrowsing] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -158,10 +160,12 @@ export default function StrategyBuilder() {
       <View style={{ gap: spacing.sm }}>
         <AppText variant="label">Markets</AppText>
         <View style={styles.chips}>
-          {INSTRUMENT_SYMBOLS.map((m) => (
+          {[...new Set([...markets, ...selectedMarkets])].map((m) => (
             <Chip key={m} label={m} selected={selectedMarkets.includes(m)} onPress={() => toggleMarket(m)} />
           ))}
+          <Chip label="Browse all" icon="search" onPress={() => setBrowsing(true)} />
         </View>
+        <InstrumentBrowser visible={browsing} selected={selectedMarkets} onToggle={toggleMarket} onClose={() => setBrowsing(false)} />
       </View>
 
       <View style={styles.row}>

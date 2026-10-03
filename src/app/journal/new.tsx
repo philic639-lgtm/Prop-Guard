@@ -23,7 +23,7 @@ import {
 import { colors, spacing } from '@/constants/theme';
 import { ChartImport } from '@/features/analyze/ChartImport';
 import { useActiveAccount } from '@/hooks/useAppData';
-import { INSTRUMENT_SYMBOLS, pointsToDollars, realizedPnl, realizedR } from '@/lib/engines';
+import { instrumentOptions, pointsToDollars, realizedPnl, realizedR } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { Direction, Emotion, InstrumentSymbol, Trade } from '@/types/domain';
 import { addDays } from '@/utils/dates';
@@ -45,6 +45,7 @@ export default function JournalNew() {
   const strategies = useAppStore((s) => s.strategies);
   const activeStrategyId = useAppStore((s) => s.activeStrategyId);
   const defaultInstrument = useAppStore((s) => s.preferences.defaultInstrument);
+  const markets = useAppStore((s) => s.preferences.markets);
   const addJournalTrade = useAppStore((s) => s.addJournalTrade);
 
   const [mode, setMode] = useState<'screenshot' | 'manual'>('manual');
@@ -210,7 +211,7 @@ export default function JournalNew() {
           <Card>
             <FieldRow
               label="Instrument"
-              control={<SelectField label="Instrument" value={instrument} options={INSTRUMENT_SYMBOLS.map((s) => ({ value: s, label: s }))} onChange={setInstrument} />}
+              control={<SelectField label="Instrument" value={instrument} options={instrumentOptions(markets)} onChange={setInstrument} />}
             />
             <FieldRow
               label="Direction"
@@ -225,8 +226,8 @@ export default function JournalNew() {
                 />
               }
             />
-            <FieldRow label="Entry" value={entry} onChangeText={setEntry} placeholder="6845.25" />
-            <FieldRow label="Exit" value={exit} onChangeText={setExit} placeholder="6855.25" />
+            <FieldRow label="Entry" value={entry} onChangeText={setEntry} placeholder="Price" />
+            <FieldRow label="Exit" value={exit} onChangeText={setExit} placeholder="Price" />
             <FieldRow label="Stop (optional)" value={stop} onChangeText={setStop} placeholder="For R multiple" error={stopValid ? null : 'Stop is on the wrong side of entry'} />
             <FieldRow label="Contracts" control={<Stepper label="Contracts" value={contracts} onChange={setContracts} />} />
             <View style={styles.pnlRow}>

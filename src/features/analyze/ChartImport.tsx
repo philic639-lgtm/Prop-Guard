@@ -16,7 +16,7 @@ import {
   ToggleRow,
 } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
-import { INSTRUMENT_SYMBOLS } from '@/lib/engines';
+import { instrumentOptions } from '@/lib/engines';
 import { aiService, type ScreenshotExtraction } from '@/services/ai';
 import { pickScreenshot } from '@/services/screenshotService';
 import { useAppStore } from '@/store/useAppStore';
@@ -43,6 +43,7 @@ export const SUPPORTED_PLATFORMS = ['TradingView', 'Tradovate', 'NinjaTrader', '
 export function ChartImport({ onUse, cta = 'Use confirmed values' }: { onUse: (v: ConfirmedChartValues) => void; cta?: string }) {
   const demo = useAppStore((s) => s.mode === 'demo');
   const defaultInstrument = useAppStore((s) => s.preferences.defaultInstrument);
+  const markets = useAppStore((s) => s.preferences.markets);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -126,7 +127,7 @@ export function ChartImport({ onUse, cta = 'Use confirmed values' }: { onUse: (v
               <SelectField
                 label="Instrument"
                 value={instrument}
-                options={INSTRUMENT_SYMBOLS.map((s) => ({ value: s, label: s }))}
+                options={instrumentOptions(markets)}
                 onChange={(v) => {
                   setInstrument(v);
                   reset();

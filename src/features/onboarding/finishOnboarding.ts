@@ -1,6 +1,6 @@
+import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
 import { useAppStore } from '@/store/useAppStore';
 import { syncService } from '@/services/syncService';
-import type { InstrumentSymbol } from '@/types/domain';
 
 import { useOnboardingStore } from './useOnboardingStore';
 
@@ -17,10 +17,11 @@ export function finishOnboarding(): 'have_strategy' | 'build' | null {
     s.setActiveAccount(o.account.id);
   }
   s.setTradingRules(o.rules);
-  const instruments = o.markets.filter((m): m is InstrumentSymbol => m !== 'OTHER');
+  const instruments = o.markets;
   s.setPreferences({
     displayName: keepName,
     markets: o.markets,
+    customInstruments: o.customInstruments,
     tradingType: o.tradingType,
     propFirm: o.propFirm,
     defaultInstrument: instruments[0] ?? 'MES',
@@ -29,6 +30,8 @@ export function finishOnboarding(): 'have_strategy' | 'build' | null {
   });
   if (syncService.enabled) syncService.savePreferences(useAppStore.getState());
   const path = o.profile.path;
+  // Draft custom instruments are now saved in preferences.
+  setCustomInstruments([], 'draft');
   o.reset();
   return path;
 }

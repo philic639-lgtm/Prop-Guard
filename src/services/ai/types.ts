@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { StrategyStyle } from '@/data/strategyLibrary';
+import { isInstrumentSymbol } from '@/lib/engines/instrumentEngine';
 import type { SetupGrade } from '@/types/domain';
 
 /**
@@ -58,7 +59,7 @@ export interface ScreenshotInput {
 
 const nullableNum = z.number().finite().positive().nullable();
 export const ScreenshotExtractionSchema = z.object({
-  instrument: z.enum(['ES', 'MES', 'NQ', 'MNQ']).nullable(),
+  instrument: z.string().max(8).nullable().transform((v) => (v && isInstrumentSymbol(v.toUpperCase()) ? v.toUpperCase() : null)),
   direction: z.enum(['long', 'short']).nullable(),
   entry: nullableNum,
   stop: nullableNum,
@@ -90,7 +91,7 @@ export const SessionReviewSchema = z.object({
 
 // ---------- Strategy finder ----------
 export interface StrategyFinderAnswers {
-  market: 'ES' | 'MES' | 'NQ' | 'MNQ';
+  market: string;
   tradesPerDay: '1' | '2-3' | '4+';
   session: 'open' | 'morning' | 'any';
   style: 'scalp' | 'intraday';
@@ -137,7 +138,7 @@ export type DailyCoach = z.infer<typeof DailyCoachSchema> & { source: AISource }
 // ---------- Strategy description → rules ----------
 export const ParsedStrategySchema = z.object({
   name: z.string().min(1).max(60),
-  instrument: z.enum(['ES', 'MES', 'NQ', 'MNQ']).nullable(),
+  instrument: z.string().max(8).nullable().transform((v) => (v && isInstrumentSymbol(v.toUpperCase()) ? v.toUpperCase() : null)),
   entryWindowStart: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
   entryWindowEnd: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
   biasRequirement: z.string().max(60),

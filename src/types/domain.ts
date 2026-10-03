@@ -1,3 +1,5 @@
+import type { InstrumentSpec } from '@/data/instruments';
+
 /**
  * Core domain model for Prop Guard.
  *
@@ -5,7 +7,11 @@
  * Supabase repositories all map to and from these shapes.
  */
 
-export type InstrumentSymbol = 'ES' | 'MES' | 'NQ' | 'MNQ';
+/**
+ * Futures root ticker (e.g. "ES", "CL", "6E"). Valid values are the built-in
+ * catalog in `src/data/instruments.ts` plus the trader's custom instruments.
+ */
+export type InstrumentSymbol = string;
 export type Direction = 'long' | 'short';
 export type Bias = 'bullish' | 'bearish' | 'neutral';
 
@@ -306,7 +312,9 @@ export interface UserPreferences {
   email: string;
   timezone: string;
   defaultInstrument: InstrumentSymbol;
-  markets: (InstrumentSymbol | 'OTHER')[];
+  markets: InstrumentSymbol[];
+  /** User-defined contracts (tick size / value) beyond the built-in catalog. */
+  customInstruments: InstrumentSpec[];
   tradingType: TradingType;
   propFirm: string;
   notifications: NotificationPrefs;

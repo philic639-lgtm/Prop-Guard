@@ -10,13 +10,15 @@ interface LiveTradeChartProps {
   stop: number;
   target: number | null;
   height?: number;
+  /** Price decimals for level labels (from the instrument spec). */
+  decimals?: number;
 }
 
 /** Price path with entry / stop / target levels (mockup "Live Trade Monitor"). */
-export function LiveTradeChart({ prices, entry, stop, target, height = 220 }: LiveTradeChartProps) {
+export function LiveTradeChart({ prices, entry, stop, target, height = 220, decimals = 2 }: LiveTradeChartProps) {
   const [width, setWidth] = useState(0);
   const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
-  const labelW = 64;
+  const labelW = Math.max(64, 22 + (entry.toFixed(decimals).length + 2) * 6);
   const plotW = Math.max(0, width - labelW);
   const levels = [entry, stop, ...(target != null ? [target] : [])];
   const all = [...prices, ...levels];
@@ -48,9 +50,9 @@ export function LiveTradeChart({ prices, entry, stop, target, height = 220 }: Li
       accessibilityLabel={`Price chart. Entry ${entry}, stop ${stop}${target != null ? `, target ${target}` : ''}, current ${last}`}>
       {width > 0 && prices.length > 0 ? (
         <Svg width={width} height={height}>
-          {target != null ? level(target, colors.positive, `T ${target.toFixed(2)}`) : null}
-          {level(entry, colors.accentBright, `E ${entry.toFixed(2)}`)}
-          {level(stop, colors.danger, `S ${stop.toFixed(2)}`)}
+          {target != null ? level(target, colors.positive, `T ${target.toFixed(decimals)}`) : null}
+          {level(entry, colors.accentBright, `E ${entry.toFixed(decimals)}`)}
+          {level(stop, colors.danger, `S ${stop.toFixed(decimals)}`)}
           <Path d={path} stroke={up ? colors.positive : colors.danger} strokeWidth={2.25} fill="none" strokeLinejoin="round" />
           <Circle cx={x(prices.length - 1)} cy={y(last)} r={4.5} fill={up ? colors.positive : colors.danger} stroke={colors.bg} strokeWidth={2} />
         </Svg>

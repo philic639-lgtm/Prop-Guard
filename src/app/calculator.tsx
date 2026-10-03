@@ -3,11 +3,11 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Button, Card, DetailTable, FieldRow, Screen, SegmentedControl, Stepper } from '@/components/ui';
+import { AppHeader, AppText, Button, Card, DetailTable, FieldRow, Screen, SegmentedControl, SelectField, Stepper } from '@/components/ui';
 import { colors, spacing } from '@/constants/theme';
 import { newDraft } from '@/features/session/draft';
 import { useActiveAccount, useActiveStrategy } from '@/hooks/useAppData';
-import { calculateTradeRisk, getInstrument, INSTRUMENT_SYMBOLS, maxContractsForRisk } from '@/lib/engines';
+import { calculateTradeRisk, getInstrument, instrumentOptions, maxContractsForRisk, specSummary } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { Direction, InstrumentSymbol } from '@/types/domain';
 import { money, parseNum, points, rr } from '@/utils/format';
@@ -17,13 +17,16 @@ export default function CalculatorScreen() {
   const account = useActiveAccount();
   const strategy = useActiveStrategy();
   const defaultInstrument = useAppStore((s) => s.preferences.defaultInstrument);
+  const markets = useAppStore((s) => s.preferences.markets);
   const ruleMaxRisk = useAppStore((s) => s.tradingRules.maxRiskPerTrade);
   const setDraft = useAppStore((s) => s.setDraft);
   const [instrument, setInstrument] = useState<InstrumentSymbol>(defaultInstrument);
   const [direction, setDirection] = useState<Direction>('long');
-  const [entry, setEntry] = useState('6742.50');
-  const [stop, setStop] = useState('6737.50');
-  const [target, setTarget] = useState('6752.50');
+  // Sample S&P prices only make sense for S&P contracts; other markets start blank.
+  const sp = defaultInstrument === 'ES' || defaultInstrument === 'MES';
+  const [entry, setEntry] = useState(sp ? '6742.50' : '');
+  const [stop, setStop] = useState(sp ? '6737.50' : '');
+  const [target, setTarget] = useState(sp ? '6752.50' : '');
   const [contracts, setContracts] = useState(2);
   const [accountSize, setAccountSize] = useState(String(account?.balance ?? 25000));
   const [maxRisk, setMaxRisk] = useState(String(ruleMaxRisk));
@@ -60,9 +63,23 @@ export default function CalculatorScreen() {
           }}
         />
       }>
-      <SegmentedControl options={INSTRUMENT_SYMBOLS.map((x) => ({ value: x, label: x }))} value={instrument} onChange={setInstrument} />
+      <SelectField
+        label="Instrument"
+        value={instrument}
+        options={instrumentOptions(markets)}
+        onChange={(v) => {
+          // Prices from a different underlying are meaningless — clear them (ES ↔ MES keeps them).
+          const underlying = (sym: string) => getInstrument(sym).mini ?? sym;
+          if (underlying(v) !== underlying(instrument)) {
+            setEntry('');
+            setStop('');
+            setTarget('');
+          }
+          setInstrument(v);
+        }}
+      />
       <AppText variant="caption">
-        {spec.name} · ${spec.pointValue}/pt · tick {spec.tickSize} = ${spec.tickValue}
+        {spec.name}{spec.isMicro ? ' (micro)' : ''} · {specSummary(instrument)}
       </AppText>
       <SegmentedControl
         options={[

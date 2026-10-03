@@ -1,5 +1,5 @@
 import { STRATEGY_LIBRARY, type LibraryTemplate } from '@/data/strategyLibrary';
-import { getInstrument } from '@/lib/engines/instrumentEngine';
+import { findInstrument } from '@/lib/engines/instrumentEngine';
 
 import type { StrategyFinderAnswers, StrategyRecommendation } from './types';
 
@@ -73,7 +73,8 @@ export function scoreTemplate(t: LibraryTemplate, a: StrategyFinderAnswers): Str
 
   // Risk sanity: can the typical stop be taken within the trader's per-trade budget on 1 contract?
   const perTradeBudget = a.dailyRisk / 2;
-  const minContractRisk = t.stopRange[0] * getInstrument(a.market).pointValue;
+  const spec = findInstrument(a.market);
+  const minContractRisk = spec && t.markets.includes(a.market) ? t.stopRange[0] * spec.pointValue : 0;
   if (minContractRisk > perTradeBudget) {
     score -= 15;
     reasons.push(

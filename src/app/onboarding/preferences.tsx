@@ -3,21 +3,20 @@ import { router } from 'expo-router';
 import { ChoiceGrid } from '@/components/ui';
 import { OnboardingScaffold } from '@/features/onboarding/OnboardingScaffold';
 import { useOnboardingStore } from '@/features/onboarding/useOnboardingStore';
-import type { InstrumentSymbol } from '@/types/domain';
 
 export default function TradingPreferences() {
   const profile = useOnboardingStore((s) => s.profile);
   const setProfile = useOnboardingStore((s) => s.setProfile);
   const markets = useOnboardingStore((s) => s.markets);
   const set = useOnboardingStore((s) => s.set);
-  const primary = (markets.find((m) => m !== 'OTHER') ?? 'ES') as InstrumentSymbol;
+  const primary = markets[0] ?? 'ES';
 
   return (
     <OnboardingScaffold step={4} title="Tell us about your trading style" subtitle="This helps Prop Guard create rules and checks that fit you." cta="Continue" onNext={() => router.push('/onboarding/rules')}>
       <ChoiceGrid
         label="Primary instrument"
-        columns={4}
-        options={(['ES', 'MES', 'NQ', 'MNQ'] as InstrumentSymbol[]).map((m) => ({ value: m, label: m }))}
+        columns={Math.min(4, Math.max(2, markets.length))}
+        options={markets.map((m) => ({ value: m, label: m }))}
         value={primary}
         onChange={(m) => set({ markets: [m, ...markets.filter((x) => x !== m)] })}
       />

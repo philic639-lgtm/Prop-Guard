@@ -83,6 +83,7 @@ export class SupabaseRepository {
       propFirm: String(p?.prop_firm ?? ''),
       notifications: { ...DEFAULT_PREFERENCES.notifications, ...((p?.notifications as object) ?? {}) },
       tradingProfile: { ...DEFAULT_PREFERENCES.tradingProfile, ...((p?.trading_profile as object) ?? {}) },
+      customInstruments: Array.isArray(p?.custom_instruments) ? (p!.custom_instruments as UserPreferences['customInstruments']) : [],
       onboarded: p?.onboarded === true,
     };
 

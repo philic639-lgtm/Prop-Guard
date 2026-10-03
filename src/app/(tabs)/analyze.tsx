@@ -30,7 +30,7 @@ import { ChartImport } from '@/features/analyze/ChartImport';
 import { newDraft } from '@/features/session/draft';
 import { useSetupEvaluation } from '@/features/session/useSetupEvaluation';
 import { useActiveAccount, useActiveStrategy, useDailyGuard, useOpenTrade } from '@/hooks/useAppData';
-import { getInstrument, INSTRUMENT_SYMBOLS, maxContractsForRisk } from '@/lib/engines';
+import { instrumentOptions, maxContractsForRisk, specSummary } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import { formatDuration } from '@/utils/dates';
 import { money, parseNum, points, rr } from '@/utils/format';
@@ -49,6 +49,7 @@ export default function AnalyzeScreen() {
   const setPlanStatus = useAppStore((s) => s.setPlanStatus);
   const rules = useAppStore((s) => s.tradingRules);
   const defaultInstrument = useAppStore((s) => s.preferences.defaultInstrument);
+  const markets = useAppStore((s) => s.preferences.markets);
   const guard = useDailyGuard(true);
   const openTrade = useOpenTrade();
   const { risk, strategy } = useSetupEvaluation(draft);
@@ -173,7 +174,7 @@ export default function AnalyzeScreen() {
                 <SelectField
                   label="Instrument"
                   value={draft.instrument}
-                  options={INSTRUMENT_SYMBOLS.map((s) => ({ value: s, label: s === 'ES' ? 'ES (S&P 500)' : s === 'NQ' ? 'NQ (Nasdaq)' : s, sub: getInstrument(s).name }))}
+                  options={instrumentOptions(markets)}
                   onChange={(v) => patchDraft({ instrument: v })}
                 />
               </View>
@@ -188,15 +189,18 @@ export default function AnalyzeScreen() {
                 />
               </View>
             </View>
+            <AppText variant="caption" tone="tertiary" style={{ marginTop: spacing.sm }}>
+              {specSummary(draft.instrument)}
+            </AppText>
             {draft.source === 'screenshot' ? (
               <View style={{ marginTop: spacing.md }}>
                 <StatusBadge label="Values confirmed from chart" tone="accent" icon="scan" size="sm" />
               </View>
             ) : null}
             <View style={styles.fields}>
-              <FieldRow label="Entry Price" value={draft.entry} onChangeText={(t) => patchDraft({ entry: t })} placeholder="6742.00" />
-              <FieldRow label="Stop Price" value={draft.stop} onChangeText={(t) => patchDraft({ stop: t })} placeholder="6737.00" />
-              <FieldRow label="Target Price" value={draft.target} onChangeText={(t) => patchDraft({ target: t })} placeholder="6752.00" />
+              <FieldRow label="Entry Price" value={draft.entry} onChangeText={(t) => patchDraft({ entry: t })} placeholder="Price" />
+              <FieldRow label="Stop Price" value={draft.stop} onChangeText={(t) => patchDraft({ stop: t })} placeholder="Price" />
+              <FieldRow label="Target Price" value={draft.target} onChangeText={(t) => patchDraft({ target: t })} placeholder="Price" />
               <FieldRow label="Contracts" control={<Stepper label="Contracts" value={contracts} onChange={(n) => patchDraft({ contracts: String(n) })} max={account.rules.maxContracts ?? 99} />} />
               {strategies.length > 0 ? (
                 <FieldRow

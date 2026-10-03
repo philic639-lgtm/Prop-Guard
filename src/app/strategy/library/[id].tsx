@@ -8,7 +8,6 @@ import { getTemplate } from '@/data/strategyLibrary';
 import { strategyFromTemplate } from '@/features/strategy/fromTemplate';
 import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
 import { useAppStore } from '@/store/useAppStore';
-import type { InstrumentSymbol } from '@/types/domain';
 import { formatClock } from '@/utils/dates';
 
 export default function TemplateDetail() {
@@ -29,7 +28,7 @@ export default function TemplateDetail() {
           label="Use this strategy"
           icon="add-circle-outline"
           onPress={() => {
-            const markets = useAppStore.getState().preferences.markets.filter((m): m is InstrumentSymbol => m !== 'OTHER');
+            const markets = useAppStore.getState().preferences.markets;
             useStrategyDraftStore.getState().setDraft(strategyFromTemplate(t, markets), 'template', 'local');
             router.replace('/strategy/review');
           }}

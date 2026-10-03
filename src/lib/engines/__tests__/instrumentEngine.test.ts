@@ -63,6 +63,6 @@ describe('instrumentEngine', () => {
   });
 
   it('throws on unknown instruments', () => {
-    expect(() => getInstrument('CL' as never)).toThrow();
+    expect(() => getInstrument('XYZ')).toThrow();
   });
 });

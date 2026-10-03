@@ -155,13 +155,13 @@ export default function TradeDetail() {
 
       <Card>
         <View style={styles.grid}>
-          <Metric label="Entry" value={price(trade.entryPrice)} compact />
-          <Metric label="Exit" value={price(trade.exitPrice)} compact />
+          <Metric label="Entry" value={price(trade.entryPrice, trade.instrument)} compact />
+          <Metric label="Exit" value={price(trade.exitPrice, trade.instrument)} compact />
           <Metric label="Contracts" value={String(trade.contracts)} compact />
         </View>
         <View style={[styles.grid, { marginTop: spacing.lg }]}>
-          <Metric label="Stop" value={price(trade.stopPrice)} sub={trade.stopPrice !== trade.originalStopPrice ? `orig ${price(trade.originalStopPrice)}` : undefined} compact />
-          <Metric label="Target" value={price(trade.targetPrice)} compact />
+          <Metric label="Stop" value={price(trade.stopPrice, trade.instrument)} sub={trade.stopPrice !== trade.originalStopPrice ? `orig ${price(trade.originalStopPrice, trade.instrument)}` : undefined} compact />
+          <Metric label="Target" value={price(trade.targetPrice, trade.instrument)} compact />
           <Metric label="Planned" value={rr(trade.rMultiple)} compact />
         </View>
         <View style={[styles.grid, { marginTop: spacing.lg }]}>

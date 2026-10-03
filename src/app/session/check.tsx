@@ -234,9 +234,9 @@ export default function SetupCheckScreen() {
   const details: DetailRow[] = [
     { label: 'Instrument', value: draft.instrument },
     { label: 'Direction', value: draft.direction === 'long' ? 'Long' : 'Short', tone: draft.direction === 'long' ? 'positive' : 'danger' },
-    { label: 'Entry', value: price(n.entry) },
-    { label: 'Stop', value: `${price(n.stop)}${risk.pointsRisk != null ? ` (${risk.pointsRisk} pts)` : ''}` },
-    { label: 'Target', value: `${price(n.target)}${risk.pointsReward != null ? ` (${risk.pointsReward} pts)` : ''}` },
+    { label: 'Entry', value: price(n.entry, draft.instrument) },
+    { label: 'Stop', value: `${price(n.stop, draft.instrument)}${risk.pointsRisk != null ? ` (${risk.pointsRisk} pts)` : ''}` },
+    { label: 'Target', value: `${price(n.target, draft.instrument)}${risk.pointsReward != null ? ` (${risk.pointsReward} pts)` : ''}` },
     { label: 'Contracts', value: String(n.contracts ?? '—') },
     { label: 'Dollar risk', value: money(risk.riskDollars), tone: riskFailed ? 'danger' : 'primary' },
     { label: 'Potential reward', value: money(risk.rewardDollars), tone: risk.rewardDollars ? 'positive' : 'primary' },

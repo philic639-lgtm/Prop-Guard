@@ -43,6 +43,7 @@ Docs: https://docs.expo.dev/eas/index.md
 ## Prop Guard conventions
 
 - All contract math goes through `src/lib/engines/instrumentEngine.ts` — never hard-code multipliers in screens.
+- Contract specs (tick size, tick value, point value, micro/mini links) live in `src/data/instruments.ts`. Add a contract by adding one entry to `DEFS`; users can register custom contracts, stored in `preferences.customInstruments`.
 - Domain logic lives in pure engines under `src/lib/engines` with tests in `__tests__`. Screens stay thin.
 - Setup grades come from `strategyEngine` (deterministic). AI may explain, never decide or encourage rule-breaking.
 - Zustand selectors must return stable references; derive collections with `useMemo` (see `src/hooks/useAppData.ts`).

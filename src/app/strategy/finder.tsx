@@ -4,13 +4,13 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ProGate } from '@/components/domain/ProGate';
-import { AppHeader, AppText, Button, Card, Chip, LoadingState, NumericInput, Screen, StatusBadge } from '@/components/ui';
+import { AppHeader, AppText, Button, Card, Chip, LoadingState, NumericInput, Screen, SelectField, StatusBadge } from '@/components/ui';
+import { instrumentOptions } from '@/lib/engines';
 import { LIBRARY_DISCLAIMER } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
 import { strategyFromTemplate } from '@/features/strategy/fromTemplate';
 import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
-import type { InstrumentSymbol } from '@/types/domain';
 import { useActiveAccount } from '@/hooks/useAppData';
 import { aiService, type StrategyFinderAnswers, type StrategyRecommendation } from '@/services/ai';
 import { useAppStore } from '@/store/useAppStore';
@@ -19,15 +19,14 @@ import { parseNum } from '@/utils/format';
 type Choice<K extends keyof StrategyFinderAnswers> = { value: StrategyFinderAnswers[K]; label: string };
 
 const QUESTIONS: {
-  key: 'market' | 'tradesPerDay' | 'session' | 'style' | 'stopSize' | 'target' | 'preference';
+  key: 'tradesPerDay' | 'session' | 'style' | 'stopSize' | 'target' | 'preference';
   title: string;
   options: Choice<keyof StrategyFinderAnswers>[];
 }[] = [
-  { key: 'market', title: 'What market do you trade?', options: [{ value: 'ES', label: 'ES' }, { value: 'MES', label: 'MES' }, { value: 'NQ', label: 'NQ' }, { value: 'MNQ', label: 'MNQ' }] },
   { key: 'tradesPerDay', title: 'How many trades per day?', options: [{ value: '1', label: '1' }, { value: '2-3', label: '2–3' }, { value: '4+', label: '4+' }] },
   { key: 'session', title: 'Preferred trading session?', options: [{ value: 'open', label: 'The open' }, { value: 'morning', label: 'Morning' }, { value: 'any', label: 'Flexible' }] },
   { key: 'style', title: 'Scalping or intraday?', options: [{ value: 'scalp', label: 'Scalping' }, { value: 'intraday', label: 'Intraday' }] },
-  { key: 'stopSize', title: 'Preferred stop size (ES points)?', options: [{ value: 'tight', label: 'Tight (2–5)' }, { value: 'medium', label: 'Medium (4–8)' }, { value: 'wide', label: 'Wide (7–12)' }] },
+  { key: 'stopSize', title: 'Preferred stop size?', options: [{ value: 'tight', label: 'Tight (2–5)' }, { value: 'medium', label: 'Medium (4–8)' }, { value: 'wide', label: 'Wide (7–12)' }] },
   { key: 'target', title: 'Preferred target?', options: [{ value: '1.5R', label: '1.5R' }, { value: '2R', label: '2R' }, { value: '3R', label: '3R' }] },
   {
     key: 'preference',
@@ -52,6 +51,8 @@ export default function StrategyFinder() {
   const [results, setResults] = useState<StrategyRecommendation[] | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const markets = useAppStore((s) => s.preferences.markets);
+  const [market, setMarket] = useState<string>(markets[0] ?? 'ES');
   const total = QUESTIONS.length + 1;
   const q = QUESTIONS[step];
 
@@ -60,6 +61,7 @@ export default function StrategyFinder() {
     try {
       const recs = await aiService.recommendStrategies({
         ...(answers as StrategyFinderAnswers),
+        market,
         accountSize: parseNum(accountSize) ?? 25000,
         dailyRisk: parseNum(dailyRisk) ?? 400,
       });
@@ -106,7 +108,7 @@ export default function StrategyFinder() {
                   variant={i === 0 ? 'primary' : 'secondary'}
                   style={{ marginTop: spacing.lg }}
                   onPress={() => {
-                    useStrategyDraftStore.getState().setDraft(strategyFromTemplate(t, [answers.market as InstrumentSymbol]), 'template', 'local');
+                    useStrategyDraftStore.getState().setDraft(strategyFromTemplate(t, [market]), 'template', 'local');
                     router.replace('/strategy/review');
                   }}
                 />
@@ -141,6 +143,7 @@ export default function StrategyFinder() {
     return (
       <>
         <AppText variant="title">Account size and daily risk tolerance?</AppText>
+        <SelectField label="Market" value={market} options={instrumentOptions(markets).filter((o) => markets.includes(o.value) || o.value === market)} onChange={setMarket} />
         <NumericInput label="Account size" prefix="$" value={accountSize} onChangeText={setAccountSize} large />
         <NumericInput label="Daily risk tolerance" prefix="$" value={dailyRisk} onChangeText={setDailyRisk} large />
         <Button label="Find my strategy" icon="sparkles" onPress={() => void submit()} />

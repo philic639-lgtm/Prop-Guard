@@ -2,9 +2,11 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Button, Chip, Input, Screen, SegmentedControl } from '@/components/ui';
+import { AppHeader, AppText, Button, Chip, Input, Screen, SegmentedControl, SelectField } from '@/components/ui';
 import { spacing } from '@/constants/theme';
-import { INSTRUMENT_SYMBOLS } from '@/lib/engines';
+import { CustomInstrumentSheet } from '@/features/instruments/CustomInstrumentSheet';
+import { InstrumentBrowser } from '@/features/instruments/InstrumentBrowser';
+import { instrumentOptions } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { InstrumentSymbol, UserPreferences } from '@/types/domain';
 
@@ -18,6 +20,9 @@ export default function PreferencesSettings() {
   const [markets, setMarkets] = useState<UserPreferences['markets']>(prefs.markets);
   const [timezone, setTimezone] = useState(prefs.timezone);
   const [tradingType, setTradingType] = useState(prefs.tradingType);
+  const [browsing, setBrowsing] = useState(false);
+  const [addingCustom, setAddingCustom] = useState(false);
+  const customInstruments = prefs.customInstruments;
 
   const toggle = (m: InstrumentSymbol) => setMarkets((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]));
 
@@ -28,8 +33,10 @@ export default function PreferencesSettings() {
         <Button
           label="Save"
           icon="checkmark"
+          disabled={markets.length === 0}
           onPress={() => {
-            setPreferences({ displayName: name.trim(), defaultInstrument: instrument, markets, timezone, tradingType });
+            const defaultInstrument = markets.includes(instrument) ? instrument : markets[0];
+            setPreferences({ displayName: name.trim(), defaultInstrument, markets, timezone, tradingType });
             router.back();
           }}
         />
@@ -38,12 +45,37 @@ export default function PreferencesSettings() {
       <View style={{ gap: spacing.sm }}>
         <AppText variant="label">Markets you trade</AppText>
         <View style={styles.chips}>
-          {INSTRUMENT_SYMBOLS.map((m) => (
-            <Chip key={m} label={m} selected={markets.includes(m)} onPress={() => toggle(m)} />
+          {markets.map((m) => (
+            <Chip key={m} label={m} selected onPress={() => toggle(m)} />
           ))}
+          <Chip label="Browse all" icon="search" onPress={() => setBrowsing(true)} />
+          <Chip label="Custom" icon="add" onPress={() => setAddingCustom(true)} />
         </View>
+        <AppText variant="caption">Tap a selected instrument to remove it.</AppText>
       </View>
-      <SegmentedControl label="Default market" options={INSTRUMENT_SYMBOLS.map((s) => ({ value: s, label: s }))} value={instrument} onChange={setInstrument} />
+      <View style={{ gap: spacing.sm }}>
+        <AppText variant="label">Default market</AppText>
+        <SelectField label="Default market" value={instrument} options={instrumentOptions(markets).filter((o) => markets.includes(o.value))} onChange={setInstrument} />
+      </View>
+      <InstrumentBrowser
+        visible={browsing}
+        selected={markets}
+        onToggle={toggle}
+        onClose={() => setBrowsing(false)}
+        onAddCustom={() => {
+          setBrowsing(false);
+          setAddingCustom(true);
+        }}
+      />
+      <CustomInstrumentSheet
+        visible={addingCustom}
+        onClose={() => setAddingCustom(false)}
+        onSave={(spec) => {
+          setPreferences({ customInstruments: [...customInstruments.filter((c) => c.symbol !== spec.symbol), spec] });
+          setMarkets((cur) => (cur.includes(spec.symbol) ? cur : [...cur, spec.symbol]));
+          setAddingCustom(false);
+        }}
+      />
       <SegmentedControl
         label="How you trade"
         options={[

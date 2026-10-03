@@ -59,6 +59,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   markets: ['ES', 'MES'],
   tradingType: 'prop',
   propFirm: '',
+  customInstruments: [],
   notifications: { preSession: true, lossLimit: true, tradeLimit: true, cooldown: true, journal: true },
   tradingProfile: {
     path: null,

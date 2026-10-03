@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { createDemoData, DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES, EMPTY_DATA, type AppData } from '@/data/demo';
+import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
 import { realizedPnl, realizedR } from '@/lib/engines/riskEngine';
 import { syncService } from '@/services/syncService';
 import type {
@@ -348,16 +349,22 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'prop-guard-store',
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         const st = (persisted ?? {}) as Partial<AppState>;
-        if (version < 2) {
+        if (version < 3) {
           return {
             ...st,
             plans: st.plans ?? [],
             practiceRuns: st.practiceRuns ?? [],
             alerts: st.alerts ?? [],
-            preferences: { ...DEFAULT_PREFERENCES, ...(st.preferences ?? {}), tradingProfile: { ...DEFAULT_PREFERENCES.tradingProfile, ...(st.preferences?.tradingProfile ?? {}) } },
+            preferences: {
+              ...DEFAULT_PREFERENCES,
+              ...(st.preferences ?? {}),
+              markets: (st.preferences?.markets ?? DEFAULT_PREFERENCES.markets).filter((m) => m !== 'OTHER'),
+              customInstruments: st.preferences?.customInstruments ?? [],
+              tradingProfile: { ...DEFAULT_PREFERENCES.tradingProfile, ...(st.preferences?.tradingProfile ?? {}) },
+            },
           } as AppState;
         }
         return st as AppState;
@@ -387,3 +394,8 @@ export const useAppStore = create<AppState>()(
     },
   ),
 );
+
+// Keep the instrument registry in sync with the trader's custom contracts so every
+// engine (risk, sizing, journaling, analytics) can price them.
+setCustomInstruments(useAppStore.getState().preferences.customInstruments);
+useAppStore.subscribe((s) => setCustomInstruments(s.preferences.customInstruments));
