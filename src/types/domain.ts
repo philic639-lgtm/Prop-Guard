@@ -122,7 +122,13 @@ export interface ChecklistAnswer {
 }
 
 export type TradeStatus = 'open' | 'closed' | 'cancelled';
-export type TradeSource = 'manual' | 'screenshot';
+/**
+ * How a trade's values entered Prop Guard.
+ * - manual / screenshot: journaled by hand (or from a confirmed screenshot)
+ * - auto: completed from a pending trade the trader checked in Analyze / Risk Calculator
+ * - broker: imported from a connected broker with no manual entry
+ */
+export type TradeSource = 'manual' | 'screenshot' | 'auto' | 'broker';
 export type Emotion = 'calm' | 'confident' | 'anxious' | 'frustrated' | 'fomo' | 'tired';
 
 export interface Trade {
@@ -168,6 +174,63 @@ export interface Trade {
   mfe: number | null;
   /** Trader's own answer to "Did you follow your plan?" (null = not answered). */
   followedPlan?: boolean | null;
+  /** Account balance when the trade was planned. */
+  accountBalance?: number | null;
+  /** Pending trade this was created from (auto-journaling). */
+  pendingId?: string | null;
+  /** Broker's id for the closed trade — prevents duplicate imports. */
+  externalId?: string | null;
+}
+
+export type PendingOrigin = 'analyze' | 'calculator';
+/**
+ * pending   — checked, waiting for a result
+ * entered   — opened in the live monitor (the live trade owns it now)
+ * completed — turned into a journal entry (tradeId set)
+ * dismissed — trader said they didn't take it
+ */
+export type PendingStatus = 'pending' | 'entered' | 'completed' | 'dismissed';
+
+/** Discipline event recorded when a pending trade becomes a real trade. */
+export interface PendingRuleEvent {
+  type: DisciplineEventType;
+  category: DisciplineCategory;
+  detail: string;
+}
+
+/**
+ * Snapshot of a trade the user created or checked in Analyze / Risk Calculator.
+ * Holds everything the journal needs so only the result has to be added later
+ * (by the trader, a screenshot, or a broker import).
+ */
+export interface PendingTrade {
+  id: string;
+  accountId: string;
+  strategyId: string | null;
+  instrument: InstrumentSymbol;
+  direction: Direction;
+  entry: number;
+  stop: number;
+  target: number | null;
+  contracts: number;
+  accountBalance: number | null;
+  riskDollars: number;
+  rewardDollars: number | null;
+  rr: number | null;
+  bias: Bias | null;
+  checklist: ChecklistAnswer[];
+  rulesFollowed: string[];
+  rulesViolated: string[];
+  setupScore: number | null;
+  setupGrade: SetupGrade | null;
+  ruleEvents: PendingRuleEvent[];
+  notes: string;
+  screenshotUri: string | null;
+  origin: PendingOrigin;
+  status: PendingStatus;
+  tradeId: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** A trade planned and checked before execution. */

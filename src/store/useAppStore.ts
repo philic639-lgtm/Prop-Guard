@@ -4,11 +4,13 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { createDemoData, DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES, EMPTY_DATA, type AppData } from '@/data/demo';
 import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
+import type { BrokerImportAction } from '@/lib/engines/journalEngine';
 import { realizedPnl, realizedR } from '@/lib/engines/riskEngine';
 import { syncService } from '@/services/syncService';
 import type {
   Account,
   AppAlert,
+  PendingTrade,
   PracticeRun,
   TradePlan,
   DisciplineEvent,
@@ -63,7 +65,7 @@ export interface AppState extends AppData {
   setSessionReview: (sessionId: string, review: SessionReview) => void;
   openTrade: (trade: Trade) => void;
   updateTrade: (id: string, patch: Partial<Trade>) => void;
-  closeTrade: (id: string, exitPrice: number, at?: Date) => Trade | null;
+  closeTrade: (id: string, exitPrice: number, at?: Date, extra?: { pnl?: number | null; externalId?: string | null }) => Trade | null;
   cancelTrade: (id: string) => void;
   journalTrade: (id: string, entry: { notes: string; emotion: Emotion | null; setupRating: number | null }) => void;
   deleteTrade: (id: string) => void;
@@ -79,6 +81,15 @@ export interface AppState extends AppData {
   markAlertsRead: () => void;
   /** Record an already-closed trade (manual or screenshot journaling). Updates balance. */
   addJournalTrade: (trade: Trade) => void;
+
+  // automatic journaling
+  /** Create or refresh the pending journal entry for a checked trade. */
+  upsertPendingTrade: (pending: PendingTrade) => void;
+  setPendingStatus: (id: string, status: PendingTrade['status'], tradeId?: string | null) => void;
+  /** Turn a pending trade into its closed journal entry (records its rule events). */
+  completePending: (pendingId: string, trade: Trade) => void;
+  /** Apply a planned broker import (see journalEngine.planBrokerImport). */
+  applyBrokerImport: (actions: BrokerImportAction[]) => number;
 }
 
 const nowIso = () => new Date().toISOString();
@@ -243,10 +254,10 @@ export const useAppStore = create<AppState>()(
         if (updated) syncService.upsertTrade(updated);
       },
 
-      closeTrade: (id, exitPrice, at = new Date()) => {
+      closeTrade: (id, exitPrice, at = new Date(), extra) => {
         const trade = get().trades.find((t) => t.id === id);
         if (!trade || trade.status !== 'open') return null;
-        const pnl = realizedPnl(trade.instrument, trade.direction, trade.entryPrice, exitPrice, trade.contracts);
+        const pnl = extra?.pnl ?? realizedPnl(trade.instrument, trade.direction, trade.entryPrice, exitPrice, trade.contracts);
         const pts = trade.direction === 'long' ? exitPrice - trade.entryPrice : trade.entryPrice - exitPrice;
         const closed: Trade = {
           ...trade,
@@ -256,6 +267,7 @@ export const useAppStore = create<AppState>()(
           realizedR: realizedR(pnl, trade.riskDollars),
           status: 'closed',
           closedAt: at.toISOString(),
+          externalId: extra?.externalId ?? trade.externalId ?? null,
         };
         set((s) => ({
           trades: s.trades.map((t) => (t.id === id ? closed : t)),
@@ -268,6 +280,7 @@ export const useAppStore = create<AppState>()(
         syncService.upsertTrade(closed);
         const account = get().accounts.find((a) => a.id === trade.accountId);
         if (account) syncService.upsertAccount(account);
+        if (trade.pendingId) get().setPendingStatus(trade.pendingId, 'completed', trade.id);
         return closed;
       },
 
@@ -341,6 +354,51 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      upsertPendingTrade: (pending) => {
+        set((s) => ({ pendingTrades: [pending, ...s.pendingTrades.filter((p) => p.id !== pending.id)].slice(0, 200) }));
+        syncService.upsertPendingTrade(pending);
+      },
+
+      setPendingStatus: (id, status, tradeId) => {
+        let updated: PendingTrade | undefined;
+        set((s) => ({
+          pendingTrades: s.pendingTrades.map((p) => {
+            if (p.id !== id) return p;
+            updated = { ...p, status, tradeId: tradeId === undefined ? p.tradeId : tradeId, updatedAt: nowIso() };
+            return updated;
+          }),
+        }));
+        if (updated) syncService.upsertPendingTrade(updated);
+      },
+
+      completePending: (pendingId, trade) => {
+        const pending = get().pendingTrades.find((p) => p.id === pendingId);
+        if (!pending || pending.status === 'completed') return;
+        get().addJournalTrade(trade);
+        const base = { accountId: trade.accountId, tradeId: trade.id, sessionId: trade.sessionId, at: trade.openedAt };
+        if (pending.ruleEvents.length === 0 && pending.setupGrade) {
+          get().recordEvent({ ...base, type: 'RULE_FOLLOWED', category: 'strategy', detail: 'Trade taken as checked — all rules followed.' });
+        }
+        for (const e of pending.ruleEvents) get().recordEvent({ ...base, ...e });
+        get().setPendingStatus(pendingId, 'completed', trade.id);
+      },
+
+      applyBrokerImport: (actions) => {
+        let applied = 0;
+        for (const a of actions) {
+          if (a.kind === 'complete-pending') {
+            get().completePending(a.pendingId, a.trade);
+            applied++;
+          } else if (a.kind === 'close-open') {
+            if (get().closeTrade(a.tradeId, a.exitPrice, new Date(a.closedAt), { pnl: a.pnl, externalId: a.externalId })) applied++;
+          } else if (!get().trades.some((t) => t.externalId && t.externalId === a.trade.externalId)) {
+            get().addJournalTrade(a.trade);
+            applied++;
+          }
+        }
+        return applied;
+      },
+
       recordEvent: (event) => {
         const full: DisciplineEvent = { ...event, id: uuid(), at: event.at ?? nowIso() };
         set((s) => ({ events: [...s.events, full] }));
@@ -349,13 +407,14 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'prop-guard-store',
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => {
         const st = (persisted ?? {}) as Partial<AppState>;
         if (version < 3) {
           return {
             ...st,
             plans: st.plans ?? [],
+            pendingTrades: st.pendingTrades ?? [],
             practiceRuns: st.practiceRuns ?? [],
             alerts: st.alerts ?? [],
             preferences: {
@@ -367,6 +426,7 @@ export const useAppStore = create<AppState>()(
             },
           } as AppState;
         }
+        if (version < 4) return { ...st, pendingTrades: st.pendingTrades ?? [] } as AppState;
         return st as AppState;
       },
       storage: createJSONStorage(() => AsyncStorage),
@@ -381,6 +441,7 @@ export const useAppStore = create<AppState>()(
         activeAccountId: s.activeAccountId,
         activeStrategyId: s.activeStrategyId,
         plans: s.plans,
+        pendingTrades: s.pendingTrades,
         practiceRuns: s.practiceRuns,
         alerts: s.alerts,
         mode: s.mode,

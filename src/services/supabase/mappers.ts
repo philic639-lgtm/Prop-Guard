@@ -1,5 +1,6 @@
 import type {
   Account,
+  PendingTrade,
   PracticeRun,
   TradePlan,
   ChecklistItem,
@@ -194,6 +195,9 @@ export function tradeToRows(t: Trade, userId: string) {
       mae: t.mae,
       mfe: t.mfe,
       followed_plan: t.followedPlan ?? null,
+      account_balance: t.accountBalance ?? null,
+      pending_id: t.pendingId ?? null,
+      external_id: t.externalId ?? null,
     },
     checklist: t.checklist.map((c) => ({ trade_id: t.id, item_key: c.itemId, user_id: userId, label: c.label, value: c.value })),
     journal: {
@@ -242,11 +246,83 @@ export function rowsToTrade(r: Row, checklist: Row[], journal: Row | undefined):
     emotion: (journal?.emotion as Trade['emotion']) ?? null,
     setupRating: numOrNull(journal?.setup_rating),
     screenshotUri: (r.screenshot_url as string | null) ?? null,
-    source: r.source === 'screenshot' ? 'screenshot' : 'manual',
+    source: TRADE_SOURCES.includes(r.source as Trade['source']) ? (r.source as Trade['source']) : 'manual',
     journaled: journal?.completed_at != null,
     mae: numOrNull(r.mae),
     mfe: numOrNull(r.mfe),
     followedPlan: r.followed_plan == null ? null : r.followed_plan === true,
+    // Optional columns: only present on trades that carry them.
+    ...(r.account_balance != null ? { accountBalance: num(r.account_balance) } : {}),
+    ...(r.pending_id != null ? { pendingId: str(r.pending_id) } : {}),
+    ...(r.external_id != null ? { externalId: str(r.external_id) } : {}),
+  };
+}
+
+const TRADE_SOURCES: Trade['source'][] = ['manual', 'screenshot', 'auto', 'broker'];
+
+export function pendingToRow(p: PendingTrade, userId: string) {
+  return {
+    id: p.id,
+    user_id: userId,
+    account_id: p.accountId,
+    strategy_id: p.strategyId,
+    instrument: p.instrument,
+    direction: p.direction,
+    entry: p.entry,
+    stop: p.stop,
+    target: p.target,
+    contracts: p.contracts,
+    account_balance: p.accountBalance,
+    risk_dollars: p.riskDollars,
+    reward_dollars: p.rewardDollars,
+    rr: p.rr,
+    bias: p.bias,
+    checklist: p.checklist,
+    rules_followed: p.rulesFollowed,
+    rules_violated: p.rulesViolated,
+    setup_score: p.setupScore,
+    setup_grade: p.setupGrade,
+    rule_events: p.ruleEvents,
+    notes: p.notes,
+    // Local file URIs are device-specific; only storage paths are synced.
+    screenshot_url: p.screenshotUri && !p.screenshotUri.startsWith('file:') ? p.screenshotUri : null,
+    origin: p.origin,
+    status: p.status,
+    trade_id: p.tradeId,
+    created_at: p.createdAt,
+    updated_at: p.updatedAt,
+  };
+}
+
+export function rowToPending(r: Row): PendingTrade {
+  return {
+    id: str(r.id),
+    accountId: str(r.account_id),
+    strategyId: (r.strategy_id as string | null) ?? null,
+    instrument: str(r.instrument),
+    direction: r.direction === 'short' ? 'short' : 'long',
+    entry: num(r.entry),
+    stop: num(r.stop),
+    target: numOrNull(r.target),
+    contracts: num(r.contracts),
+    accountBalance: numOrNull(r.account_balance),
+    riskDollars: num(r.risk_dollars),
+    rewardDollars: numOrNull(r.reward_dollars),
+    rr: numOrNull(r.rr),
+    bias: (r.bias as PendingTrade['bias']) ?? null,
+    checklist: Array.isArray(r.checklist) ? (r.checklist as PendingTrade['checklist']) : [],
+    rulesFollowed: (r.rules_followed as string[]) ?? [],
+    rulesViolated: (r.rules_violated as string[]) ?? [],
+    setupScore: numOrNull(r.setup_score),
+    setupGrade: (r.setup_grade as PendingTrade['setupGrade']) ?? null,
+    ruleEvents: Array.isArray(r.rule_events) ? (r.rule_events as PendingTrade['ruleEvents']) : [],
+    notes: str(r.notes),
+    screenshotUri: (r.screenshot_url as string | null) ?? null,
+    origin: r.origin === 'calculator' ? 'calculator' : 'analyze',
+    status: (r.status as PendingTrade['status']) ?? 'pending',
+    tradeId: (r.trade_id as string | null) ?? null,
+    createdAt: str(r.created_at),
+    updatedAt: str(r.updated_at),
   };
 }
 

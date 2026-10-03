@@ -23,7 +23,7 @@ import {
 } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useStrategy, useTrade } from '@/hooks/useAppData';
-import { tradeConditions } from '@/lib/engines';
+import { OUTCOME_LABEL, tradeConditions, tradeOutcome } from '@/lib/engines';
 import { pickScreenshot } from '@/services/screenshotService';
 import { useAppStore } from '@/store/useAppStore';
 import type { Emotion, Trade } from '@/types/domain';
@@ -91,6 +91,7 @@ export default function TradeDetail() {
   const grade = trade.setupGrade ? GRADE_UI[trade.setupGrade] : null;
   const cond = tradeConditions(trade);
   const followed = trade.followedPlan ?? trade.rulesViolated.filter((r) => r !== 'entry_window').length === 0;
+  const outcome = trade.status === 'closed' ? tradeOutcome(trade.pnl) : null;
   const aiNotes = trade.aiSummary ?? tradeNotes(trade, cond, followed, strategy?.name ?? null);
 
   const save = () => {
@@ -130,6 +131,19 @@ export default function TradeDetail() {
         <AppText variant="bodyStrong" tone="secondary">
           {points(trade.points, true)} · {rMultiple(trade.realizedR)}
         </AppText>
+        {outcome || SOURCE_LABEL[trade.source] ? (
+          <View style={[styles.badges, { marginTop: spacing.sm }]}>
+            {outcome ? (
+              <StatusBadge
+                label={OUTCOME_LABEL[outcome]}
+                tone={outcome === 'win' ? 'positive' : outcome === 'loss' ? 'danger' : 'neutral'}
+                icon={outcome === 'win' ? 'trending-up' : outcome === 'loss' ? 'trending-down' : 'remove'}
+                size="sm"
+              />
+            ) : null}
+            {SOURCE_LABEL[trade.source] ? <StatusBadge label={SOURCE_LABEL[trade.source]!} tone="accent" icon={trade.source === 'broker' ? 'link' : 'sparkles'} size="sm" /> : null}
+          </View>
+        ) : null}
       </View>
 
       {trade.status === 'closed' ? (
@@ -168,6 +182,11 @@ export default function TradeDetail() {
           <Metric label="Risk" value={money(trade.riskDollars)} compact />
           <Metric label="Strategy" value={strategy?.name ?? '—'} compact />
           <Metric label="Discipline" value={`${trade.disciplineScore ?? 100}%`} tone={(trade.disciplineScore ?? 100) >= 100 ? 'positive' : 'warning'} compact />
+        </View>
+        <View style={[styles.grid, { marginTop: spacing.lg }]}>
+          <Metric label="Reward" value={money(trade.rewardDollars)} compact />
+          <Metric label="Account" value={money(trade.accountBalance)} compact />
+          <Metric label="Result" value={outcome ? OUTCOME_LABEL[outcome] : '—'} tone={outcome === 'win' ? 'positive' : outcome === 'loss' ? 'danger' : undefined} compact />
         </View>
       </Card>
 
@@ -274,8 +293,14 @@ export default function TradeDetail() {
   );
 }
 
+const SOURCE_LABEL: Partial<Record<Trade['source'], string>> = {
+  auto: 'Auto-journaled',
+  broker: 'Broker import',
+};
+
 const styles = StyleSheet.create({
   hero: { gap: 4 },
+  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   grid: { flexDirection: 'row', gap: spacing.md },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

@@ -16,6 +16,8 @@ export interface PreTradeDraft {
   notes?: string;
   /** Set when the draft was loaded from a saved trade plan. */
   planId?: string | null;
+  /** Pending journal entry created when this draft was checked. */
+  pendingId?: string | null;
 }
 
 export type AppMode = 'demo' | 'local' | 'cloud';

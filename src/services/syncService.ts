@@ -1,5 +1,5 @@
 import type { AppData } from '@/data/demo';
-import type { Account, DisciplineEvent, PracticeRun, Strategy, Trade, TradePlan, TradingSession } from '@/types/domain';
+import type { Account, DisciplineEvent, PendingTrade, PracticeRun, Strategy, Trade, TradePlan, TradingSession } from '@/types/domain';
 
 import { supabase } from './supabase/client';
 import { SupabaseRepository } from './supabase/repository';
@@ -74,6 +74,7 @@ class SyncService {
   upsertTrade = (t: Trade) => this.enqueue('trade', (r) => r.upsertTrade(t));
   insertEvent = (e: DisciplineEvent) => this.enqueue('event', (r) => r.insertEvent(e));
   upsertPlan = (p: TradePlan) => this.enqueue('plan', (r) => r.upsertPlan(p));
+  upsertPendingTrade = (p: PendingTrade) => this.enqueue('pending trade', (r) => r.upsertPendingTrade(p));
   insertPracticeRun = (p: PracticeRun) => this.enqueue('practice', (r) => r.insertPracticeRun(p));
   savePreferences = (s: Pick<AppData, 'preferences' | 'tradingRules' | 'activeAccountId' | 'activeStrategyId'>) =>
     this.enqueue('preferences', (r) =>
@@ -95,6 +96,7 @@ class SyncService {
     data.events.forEach(this.insertEvent);
     data.plans.forEach(this.upsertPlan);
     data.practiceRuns.forEach(this.insertPracticeRun);
+    data.pendingTrades.forEach(this.upsertPendingTrade);
     this.savePreferences(data);
   }
 }

@@ -3,6 +3,7 @@ import { realizedPnl } from '@/lib/engines/riskEngine';
 import type {
   Account,
   AppAlert,
+  PendingTrade,
   PracticeRun,
   TradePlan,
   DisciplineEvent,
@@ -34,6 +35,8 @@ export interface AppData {
   activeAccountId: string | null;
   activeStrategyId: string | null;
   plans: TradePlan[];
+  /** Checked trades waiting for a result (automatic journaling). */
+  pendingTrades: PendingTrade[];
   practiceRuns: PracticeRun[];
   alerts: AppAlert[];
 }
@@ -84,6 +87,7 @@ export const EMPTY_DATA: AppData = {
   activeAccountId: null,
   activeStrategyId: null,
   plans: [],
+  pendingTrades: [],
   practiceRuns: [],
   alerts: [],
 };
@@ -454,6 +458,37 @@ export function createDemoData(now = new Date()): AppData {
       createdAt: minsAgo(20),
     },
   ];
+  const pendingTrades: PendingTrade[] = [
+    {
+      id: '00000000-0000-4000-a000-0000000000c1',
+      accountId: account25k.id,
+      strategyId: orb.id,
+      instrument: 'MES',
+      direction: 'long',
+      entry: 6748.25,
+      stop: 6744.25,
+      target: 6756.25,
+      contracts: 2,
+      accountBalance: account25k.balance,
+      riskDollars: 40,
+      rewardDollars: 80,
+      rr: 2,
+      bias: 'bullish',
+      checklist: orb.checklist.filter((c) => c.kind === 'yesno').map((c) => ({ itemId: c.id, label: c.label, value: true })),
+      rulesFollowed: ['risk_per_trade', 'risk_daily', 'min_rr', 'target_set', 'max_contracts'],
+      rulesViolated: [],
+      setupScore: 100,
+      setupGrade: 'A_PLUS',
+      ruleEvents: [],
+      notes: 'ORB retest long. Checked before entry.',
+      screenshotUri: null,
+      origin: 'analyze',
+      status: 'pending',
+      tradeId: null,
+      createdAt: minsAgo(45),
+      updatedAt: minsAgo(45),
+    },
+  ];
   const practiceRuns: PracticeRun[] = [
     { id: '00000000-0000-4000-a000-0000000000b1', strategyId: orb.id, screenshotUri: null, answers: {}, matchPct: 100, conditionsMet: 4, conditionsTotal: 4, verdict: 'match', feedback: 'All conditions present. This is the setup your plan describes.', createdAt: minsAgo(60 * 26) },
     { id: '00000000-0000-4000-a000-0000000000b2', strategyId: orb.id, screenshotUri: null, answers: {}, matchPct: 75, conditionsMet: 3, conditionsTotal: 4, verdict: 'wait', feedback: 'Retest not yet confirmed. Your plan says wait.', createdAt: minsAgo(60 * 50) },
@@ -474,6 +509,7 @@ export function createDemoData(now = new Date()): AppData {
 
   return {
     plans,
+    pendingTrades,
     practiceRuns,
     alerts,
     accounts: [account25k, account50k],

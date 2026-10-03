@@ -26,7 +26,7 @@ import {
 import { colors, GUTTER, radius, spacing, toneColor } from '@/constants/theme';
 import { CoachCard } from '@/features/home/CoachCard';
 import { TradingPlanCard } from '@/features/home/TradingPlanCard';
-import { useAccountTrades, useActiveAccount, useActiveStrategy, useDailyGuard, useDiscipline, useOpenTrade } from '@/hooks/useAppData';
+import { useAccountTrades, useActiveAccount, useActiveStrategy, useDailyGuard, useDiscipline, useOpenTrade, usePendingTrades } from '@/hooks/useAppData';
 import { evaluateAccount } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import { dayKey, formatDuration } from '@/utils/dates';
@@ -45,6 +45,7 @@ export default function HomeScreen() {
   const strategy = useActiveStrategy();
   const trades = useAccountTrades();
   const openTrade = useOpenTrade();
+  const pending = usePendingTrades();
   const { score } = useDiscipline(30);
 
   const recent = useMemo(() => trades.slice(0, 3), [trades]);
@@ -166,6 +167,23 @@ export default function HomeScreen() {
             {openTrade.instrument} {openTrade.direction === 'long' ? 'Long' : 'Short'} {openTrade.contracts}
           </AppText>
           <AppText variant="caption">Tap to monitor the open position.</AppText>
+        </Card>
+      ) : null}
+
+      {pending.length > 0 ? (
+        <Card
+          onPress={() =>
+            pending.length === 1 ? router.push({ pathname: '/journal/complete/[id]', params: { id: pending[0].id } }) : router.push('/journal')
+          }>
+          <View style={styles.row}>
+            <Ionicons name="book" size={16} color={colors.warning} />
+            <AppText variant="label" tone="warning">
+              {pending.length} trade{pending.length === 1 ? '' : 's'} waiting for a result
+            </AppText>
+          </View>
+          <AppText variant="caption" style={{ marginTop: spacing.xs }}>
+            {pending[0].instrument} {pending[0].direction === 'long' ? 'Long' : 'Short'} @ {pending[0].entry} — add the exit or a screenshot to finish the journal entry.
+          </AppText>
         </Card>
       ) : null}
 

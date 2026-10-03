@@ -307,7 +307,7 @@ export default function AnalyzeScreen() {
           <AppText variant="label">Connected broker — coming soon</AppText>
         </View>
         <AppText variant="caption" style={{ marginTop: spacing.xs }}>
-          Tradovate, NinjaTrader, ProjectX and Rithmic connections are planned. Manual and chart modes work today.
+          Tradovate, NinjaTrader, ProjectX and Rithmic connections are planned. Once connected, completed trades import into your Journal automatically and match the setups you checked here.
         </AppText>
       </Card>
     </Screen>

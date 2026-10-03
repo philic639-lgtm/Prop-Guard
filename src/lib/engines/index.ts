@@ -8,3 +8,4 @@ export * from './sessionEngine';
 export * from './strategyEngine';
 export * from './liveTradeEngine';
 export * from './strategyParser';
+export * from './journalEngine';

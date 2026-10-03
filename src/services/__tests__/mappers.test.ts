@@ -1,6 +1,6 @@
 import { createDemoData } from '@/data/demo';
 
-import { accountToRows, rowsToAccount, rowsToStrategy, rowsToTrade, strategyToRows, tradeToRows } from '../supabase/mappers';
+import { accountToRows, pendingToRow, rowToPending, rowsToAccount, rowsToStrategy, rowsToTrade, strategyToRows, tradeToRows } from '../supabase/mappers';
 
 const data = createDemoData(new Date('2026-10-02T15:30:00Z'));
 
@@ -32,5 +32,13 @@ describe('supabase mappers', () => {
     const back = rowsToTrade({ ...trade, entry_price: String(t.entryPrice), pnl: String(t.pnl) }, [], undefined);
     expect(back.entryPrice).toBe(t.entryPrice);
     expect(back.pnl).toBe(t.pnl);
+  });
+
+  it('round-trips pending trades and auto-journal trade fields', () => {
+    const p = data.pendingTrades[0];
+    expect(rowToPending(pendingToRow(p, 'user'))).toEqual(p);
+    const t = { ...data.trades[0], source: 'auto' as const, accountBalance: 25_000, pendingId: p.id, externalId: 'B-1' };
+    const { trade, checklist, journal } = tradeToRows(t, 'user');
+    expect(rowsToTrade(trade, checklist, journal)).toMatchObject({ source: 'auto', accountBalance: 25_000, pendingId: p.id, externalId: 'B-1' });
   });
 });

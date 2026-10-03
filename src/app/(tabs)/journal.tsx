@@ -4,11 +4,12 @@ import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TradeCard } from '@/components/domain/TradeCard';
-import { AppHeader, AppText, Button, Card, Chip, EmptyState, HeaderIconButton } from '@/components/ui';
+import { AppHeader, AppText, Button, Card, Chip, EmptyState, HeaderIconButton, SectionHeader } from '@/components/ui';
 import { PLANS } from '@/config/plans';
 import { colors, GUTTER, spacing, TAB_BAR_HEIGHT } from '@/constants/theme';
 import { MonthCalendar } from '@/features/journal/MonthCalendar';
-import { useAccountTrades } from '@/hooks/useAppData';
+import { PendingTradeCard } from '@/features/journal/PendingTradeCard';
+import { useAccountTrades, usePendingTrades } from '@/hooks/useAppData';
 import { dailyPnl } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import { useSubscriptionStore } from '@/store/useSubscriptionStore';
@@ -22,6 +23,8 @@ const PAGE = 20;
 export default function JournalScreen() {
   const insets = useSafeAreaInsets();
   const trades = useAccountTrades();
+  const pending = usePendingTrades();
+  const [showAllPending, setShowAllPending] = useState(false);
   const strategies = useAppStore((s) => s.strategies);
   const plan = useSubscriptionStore((s) => s.plan);
   const [outcome, setOutcome] = useState<Outcome>('all');
@@ -69,6 +72,24 @@ export default function JournalScreen() {
 
   const header = (
     <View style={styles.headerContent}>
+      {pending.length > 0 ? (
+        <View style={styles.pending}>
+          <SectionHeader
+            title={`Pending results · ${pending.length}`}
+            action={pending.length > 2 ? (showAllPending ? 'Show less' : 'Show all') : undefined}
+            onAction={() => setShowAllPending((v) => !v)}
+          />
+          <AppText variant="caption">Trades you checked in Prop Guard. Add the result and the journal entry is created for you.</AppText>
+          {(showAllPending ? pending : pending.slice(0, 2)).map((p) => (
+            <PendingTradeCard
+              key={p.id}
+              pending={p}
+              strategyName={p.strategyId ? names.get(p.strategyId) : null}
+              onPress={() => router.push({ pathname: '/journal/complete/[id]', params: { id: p.id } })}
+            />
+          ))}
+        </View>
+      ) : null}
       <MonthCalendar
         month={month}
         pnlByDay={pnlByDay}
@@ -162,6 +183,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   list: { paddingHorizontal: GUTTER },
   headerContent: { gap: spacing.md, marginBottom: spacing.md },
+  pending: { gap: spacing.sm, marginBottom: spacing.sm },
   monthNet: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.xs },
   filters: { gap: spacing.sm },
 });

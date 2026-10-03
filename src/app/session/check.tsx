@@ -28,7 +28,7 @@ import { aiService, type SetupAnalysis } from '@/services/ai';
 import { notificationService } from '@/services/notificationService';
 import { useAppStore } from '@/store/useAppStore';
 import { useEntitlement } from '@/store/useSubscriptionStore';
-import { GRADE_LABEL, maxContractsForRisk } from '@/lib/engines';
+import { buildPendingTrade, GRADE_LABEL, maxContractsForRisk, samePendingPlan } from '@/lib/engines';
 import type { DisciplineCategory, DisciplineEventType, SetupGrade, Trade } from '@/types/domain';
 import { uuid } from '@/utils/id';
 import { money, price, rr } from '@/utils/format';
@@ -112,6 +112,45 @@ export default function SetupCheckScreen() {
     return out;
   }, [evaluation, guard, rules.cooldownMinutes]);
 
+  // Automatic journaling: every checked trade is saved as a pending journal entry.
+  // Re-checking the same draft updates that entry instead of creating another.
+  useEffect(() => {
+    if (!draft || !account || !risk?.valid || !evaluation || !strategy) return;
+    const st = useAppStore.getState();
+    const existing = draft.pendingId ? st.pendingTrades.find((p) => p.id === draft.pendingId) : undefined;
+    const reuse = existing?.status === 'pending' ? existing : undefined;
+    const n = draftNumbers(draft);
+    const snap = buildPendingTrade({
+      id: reuse?.id ?? uuid(),
+      accountId: account.id,
+      strategyId: strategy.id,
+      instrument: draft.instrument,
+      direction: draft.direction,
+      entry: n.entry,
+      stop: n.stop,
+      target: n.target,
+      contracts: n.contracts,
+      accountBalance: account.balance,
+      origin: 'analyze',
+      bias: draft.bias,
+      checklist: strategy.checklist
+        .filter((c) => c.kind === 'yesno')
+        .map((c) => ({ itemId: c.id, label: c.label, value: draft.answers[c.id] === true })),
+      rulesFollowed: evaluation.rulesFollowed,
+      rulesViolated: evaluation.rulesViolated.filter((r) => r !== 'entry_window'),
+      setupScore: evaluation.matchPct,
+      setupGrade: evaluation.grade,
+      ruleEvents: violationEvents,
+      notes: draft.notes,
+      screenshotUri: draft.screenshotUri,
+      createdAt: reuse?.createdAt,
+      now: new Date(),
+    });
+    if (!snap || (reuse && samePendingPlan(reuse, snap))) return;
+    st.upsertPendingTrade(snap);
+    if (snap.id !== draft.pendingId) st.patchDraft({ pendingId: snap.id });
+  }, [draft, account, risk, evaluation, strategy, violationEvents]);
+
   if (!draft || !account) {
     return (
       <Screen header={<AppHeader title="Setup check" back />}>
@@ -183,8 +222,12 @@ export default function SetupCheckScreen() {
       journaled: false,
       mae: null,
       mfe: null,
+      accountBalance: account.balance,
+      pendingId: draft.pendingId ?? null,
     };
     store().openTrade(trade);
+    // The live monitor owns this trade now; closing it completes the journal entry.
+    if (draft.pendingId) store().setPendingStatus(draft.pendingId, 'entered', id);
     const base = { accountId: account.id, tradeId: id, sessionId: session?.id ?? null };
     if (violationEvents.length === 0) {
       store().recordEvent({ ...base, type: 'RULE_FOLLOWED', category: 'strategy', detail: `${ui.label} — all rules followed.` });
@@ -358,6 +401,14 @@ export default function SetupCheckScreen() {
       <AppText variant="caption" tone="secondary" align="center">
         {verdict.footnote}
       </AppText>
+      {draft.pendingId ? (
+        <View style={styles.saved}>
+          <Ionicons name="book-outline" size={14} color={colors.textSecondary} />
+          <AppText variant="caption" tone="secondary">
+            Saved to your Journal as pending — add the result when it&apos;s done.
+          </AppText>
+        </View>
+      ) : null}
       {cooldownBlocked ? (
         <AppText variant="caption" tone="warning" align="center">
           Cooldown overrides are disabled in your rules. New trades unlock when the cooldown ends.
@@ -449,4 +500,5 @@ const styles = StyleSheet.create({
   line: { marginTop: spacing.sm },
   flex: { flex: 1 },
   footerRow: { flexDirection: 'row', gap: spacing.sm },
+  saved: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
 });

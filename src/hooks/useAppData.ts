@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { computeDailyGuard, type DailyGuard } from '@/lib/engines/dailyGuardEngine';
 import { computeDisciplineScore } from '@/lib/engines/disciplineEngine';
 import { useAppStore } from '@/store/useAppStore';
-import type { Account, Strategy, Trade } from '@/types/domain';
+import type { Account, PendingTrade, Strategy, Trade } from '@/types/domain';
 import { dayKey } from '@/utils/dates';
 
 import { useNow } from './useNow';
@@ -40,6 +40,16 @@ export function useAccountTrades(): Trade[] {
         .filter((t) => t.accountId === account?.id && t.status !== 'cancelled')
         .sort((a, b) => Date.parse(b.openedAt) - Date.parse(a.openedAt)),
     [trades, account?.id],
+  );
+}
+
+/** Checked trades on the active account still waiting for a result, newest first. */
+export function usePendingTrades(): PendingTrade[] {
+  const pending = useAppStore((s) => s.pendingTrades);
+  const account = useActiveAccount();
+  return useMemo(
+    () => pending.filter((p) => p.accountId === account?.id && p.status === 'pending').sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+    [pending, account?.id],
   );
 }
 

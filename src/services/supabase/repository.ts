@@ -2,14 +2,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { AppData } from '@/data/demo';
 import { DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES } from '@/data/demo';
-import type { Account, DisciplineEvent, PracticeRun, Strategy, Trade, TradePlan, TradingSession, UserPreferences } from '@/types/domain';
+import type { Account, DisciplineEvent, PendingTrade, PracticeRun, Strategy, Trade, TradePlan, TradingSession, UserPreferences } from '@/types/domain';
 
 import {
   accountToRows,
   eventToRow,
+  pendingToRow,
   planToRow,
   practiceToRow,
   preferencesToRow,
+  rowToPending,
   rowToPlan,
   rowToPractice,
   rowsToAccount,
@@ -40,9 +42,10 @@ export class SupabaseRepository {
 
   async loadAll(): Promise<Partial<AppData>> {
     const db = this.db;
-    const [plans, practice] = await Promise.all([
+    const [plans, practice, pending] = await Promise.all([
       db.from('trade_plans').select('*').order('created_at', { ascending: false }).limit(200),
       db.from('practice_runs').select('*').order('created_at', { ascending: false }).limit(100),
+      db.from('pending_trades').select('*').order('created_at', { ascending: false }).limit(200),
     ]);
     const [accounts, rules, strategies, items, sessions, trades, events, prefs, profile] = await Promise.all([
       db.from('accounts').select('*').order('created_at'),
@@ -100,6 +103,7 @@ export class SupabaseRepository {
       // Older projects may not have these tables yet; treat errors as empty.
       plans: plans.error ? [] : ((plans.data ?? []) as Row[]).map(rowToPlan),
       practiceRuns: practice.error ? [] : ((practice.data ?? []) as Row[]).map(rowToPractice),
+      pendingTrades: pending.error ? [] : ((pending.data ?? []) as Row[]).map(rowToPending),
     };
   }
 
@@ -141,6 +145,10 @@ export class SupabaseRepository {
 
   async upsertPlan(p: TradePlan) {
     check(await this.db.from('trade_plans').upsert(planToRow(p, this.userId)));
+  }
+
+  async upsertPendingTrade(p: PendingTrade) {
+    check(await this.db.from('pending_trades').upsert(pendingToRow(p, this.userId)));
   }
 
   async insertPracticeRun(p: PracticeRun) {
