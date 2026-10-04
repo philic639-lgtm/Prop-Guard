@@ -4,16 +4,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, EmptyState, RuleChecklist, Screen, StatusBadge, VerdictBanner } from '@/components/ui';
-import { PRACTICE_DISCLAIMER, SAMPLE_DATA_NOTE } from '@/constants/legal';
+import { PRACTICE_DISCLAIMER, SAMPLE_DATA_NOTE, SIMULATED_DATA_NOTE, VERIFIED_DATA_NOTE } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
+import { historicalLines, historicalStatsFor, trainerContext } from '@/features/practice/historical';
+import { HistoricalAnalysisCard, HistoricalResultCard, HistoricalSourceBadge } from '@/features/practice/components/HistoricalReveal';
 import { PracticeChart } from '@/features/practice/components/PracticeChart';
 import { PracticeDecision } from '@/features/practice/components/PracticeDecision';
 import { PracticeReplayControls, type ReplaySpeed } from '@/features/practice/components/PracticeReplayControls';
 import { PracticeReview } from '@/features/practice/components/PracticeReview';
 import { PracticeScoreCard } from '@/features/practice/components/PracticeScoreCard';
 import { pickScenario, usePracticeSetup, type PracticeMode } from '@/features/practice/selection';
-import { attemptResult, practiceTradeMetrics, scorePracticeDecision, simulatePracticeTrade } from '@/lib/engines';
+import { attemptResult, practiceTradeMetrics, scorePracticeDecision, scoreTrainerDecision, simulatePracticeTrade } from '@/lib/engines';
 import { scenarioProvider } from '@/services/marketHistory';
 import { useAppStore } from '@/store/useAppStore';
 import type { PracticeAttempt, PracticeScenario, PracticeScore, PracticeTradeInput, ReplayOutcome } from '@/types/practice';
@@ -44,6 +46,9 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
   const saveLesson = useAppStore((st) => st.savePracticeLesson);
   const lessons = useAppStore((st) => st.practiceLessons);
   const template = getTemplate(s.strategyId);
+  // Historical (generated-from-bars) scenarios: SKIP / Lock Decision, process scoring, historical analysis.
+  const hist = !!s.historical;
+  const stats = useMemo(() => historicalStatsFor(s), [s]);
 
   const [run, setRun] = useState(0);
   const [phase, setPhase] = useState<Phase>('decide');
@@ -67,7 +72,7 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
   }, [isPlaying, position, speed, afterTotal]);
 
   const submit = (i: PracticeTradeInput) => {
-    const sc = scorePracticeDecision(s, i);
+    const sc = hist ? scoreTrainerDecision(s, i, trainerContext(stats)) : scorePracticeDecision(s, i);
     const rp = simulatePracticeTrade(s.candles, s.decisionIndex, i);
     const m = i.decision !== 'wait' && i.entry != null && i.stop != null && i.target != null ? practiceTradeMetrics(s.instrument, i.entry, i.stop, i.target) : null;
     const a: PracticeAttempt = {
@@ -78,6 +83,8 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
       strategyName: s.strategyName,
       timestamp: new Date().toISOString(),
       mode,
+      scenarioSource: s.source.kind,
+      scenarioVerified: s.source.verified,
       session: s.session,
       direction: s.direction,
       decision: i.decision,
@@ -102,7 +109,12 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
     setScore(sc);
     setReplay(rp);
     setAttempt(a);
-    setPhase('scored');
+    if (hist) {
+      // Decision locked: reveal the future straight away; the score follows the replay.
+      setPhase('replay');
+      setPosition(0);
+      setPlaying(true);
+    } else setPhase('scored');
   };
 
   const startReplay = () => {
@@ -165,7 +177,14 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
         <StatusBadge label={s.strategyName} tone="accent" size="sm" />
         <StatusBadge label={s.session === 'morning' ? 'Morning' : 'Afternoon'} size="sm" />
         <StatusBadge label={s.difficulty} size="sm" />
-        <StatusBadge label="Educational sample" tone="warning" icon="information-circle-outline" size="sm" />
+        {hist ? (
+          <>
+            <StatusBadge label={s.timeframe ?? '5m'} size="sm" />
+            <HistoricalSourceBadge scenario={s} />
+          </>
+        ) : (
+          <StatusBadge label="Educational sample" tone="warning" icon="information-circle-outline" size="sm" />
+        )}
       </View>
 
       <Card>
@@ -174,15 +193,16 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
           scenario={s}
           visibleCount={visibleCount}
           user={phase === 'decide' ? null : user}
-          ideal={finished && s.idealTrade ? s.idealTrade : null}
+          ideal={finished && s.idealTrade && s.idealDecision !== 'wait' ? s.idealTrade : null}
           exitIndex={phase === 'replay' ? replay?.exitIndex : null}
         />
         <View style={styles.context}>
           <Context label="HTF bias" value={BIAS_LABEL[s.marketContext.higherTimeframeBias]} />
           <Context label="Volatility" value={s.marketContext.volatility} />
-          <Context label="Chart" value="5-minute" />
+          <Context label="Chart" value={hist ? (s.timeframe ?? '5m') : '5-minute'} />
+          {hist ? <Context label="Date" value={finished ? s.date : 'Hidden'} /> : null}
         </View>
-        {finished && s.idealTrade ? (
+        {finished && s.idealTrade && s.idealDecision !== 'wait' ? (
           <AppText variant="caption" style={{ marginTop: spacing.sm }}>
             Dotted lines show the ideal entry, stop and target.
           </AppText>
@@ -199,7 +219,14 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
               </View>
             </Card>
           ) : null}
-          <PracticeDecision key={run} instrument={s.instrument} lastClose={s.candles[s.decisionIndex].close} onSubmit={submit} />
+          <PracticeDecision
+            key={run}
+            instrument={s.instrument}
+            lastClose={s.candles[s.decisionIndex].close}
+            onSubmit={submit}
+            waitLabel={hist ? 'SKIP' : undefined}
+            submitLabel={hist ? 'LOCK DECISION' : undefined}
+          />
         </>
       ) : null}
 
@@ -238,7 +265,7 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
           </Card>
           {score && !finished ? (
             <AppText variant="caption" align="center">
-              Your score: {score.total}/100 · {score.grade}. The full review appears when the replay ends.
+              {hist ? 'Decision locked. Your score and the historical analysis appear when the replay ends.' : `Your score: ${score.total}/100 · ${score.grade}. The full review appears when the replay ends.`}
             </AppText>
           ) : null}
         </>
@@ -247,6 +274,13 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
       {finished && score && attempt && replay ? (
         <>
           {mode === 'great' && s.badges.length ? <GreatBadges badges={s.badges} /> : null}
+          {hist && input ? (
+            <>
+              <HistoricalResultCard scenario={s} input={input} score={score} replay={replay} />
+              <PracticeScoreCard score={score} />
+              <HistoricalAnalysisCard scenario={s} stats={stats} lines={historicalLines(stats, s, input)} />
+            </>
+          ) : null}
           <PracticeReview
             scenario={s}
             attempt={attempt}
@@ -274,7 +308,7 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
       ) : null}
 
       <AppText variant="caption" tone="tertiary">
-        {SAMPLE_DATA_NOTE} {PRACTICE_DISCLAIMER}
+        {hist ? (s.source.verified ? VERIFIED_DATA_NOTE : SIMULATED_DATA_NOTE) : SAMPLE_DATA_NOTE} {PRACTICE_DISCLAIMER}
       </AppText>
     </Screen>
   );

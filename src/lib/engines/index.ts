@@ -15,3 +15,8 @@ export * from './practiceAnalyticsEngine';
 export * from './adaptivePracticeEngine';
 export * from './setupSimilarityEngine';
 export * from './edgeScoreEngine';
+export * from './marketTime';
+export * from './historicalOutcomeEngine';
+export * from './historicalScenarioGenerator';
+export * from './historicalSimilarityEngine';
+export { evaluateLatest, scanForSignals, buildSessionContext, getEvaluator, hasEvaluator, STRATEGY_EVALUATORS } from './strategyEvaluators';

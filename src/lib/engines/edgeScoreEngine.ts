@@ -62,3 +62,53 @@ export function computeEdgeScore(components: Partial<Record<EdgeComponentKey, Ed
   }
   return { score: weight > 0 ? Math.round(sum / weight) : null, used, missing, coverage: Math.round(weight * 100) / 100 };
 }
+
+// ---------------------------------------------------------------------------
+// Connecting verified historical similarity to the Edge Score
+// ---------------------------------------------------------------------------
+
+/** Minimal shape of historical similarity statistics needed here. */
+export interface HistoricalEvidence {
+  sampleSize: number;
+  averageR: number | null;
+  winRate: number | null;
+  limited: boolean;
+}
+
+/**
+ * Historical evidence as ONE edge component. Null (excluded) unless the sample
+ * is verified and large enough. Maps average R and win rate onto 0–100 around
+ * a neutral 50 — it never dominates the score on its own.
+ */
+export function historicalEdgeComponent(e: HistoricalEvidence | null | undefined): EdgeComponent {
+  if (!e || e.limited || e.averageR == null) return { value: null, source: 'verified_history', sampleSize: e?.sampleSize ?? 0 };
+  const fromR = 50 + e.averageR * 25;
+  const fromWin = e.winRate != null ? e.winRate * 100 : fromR;
+  return { value: Math.round(Math.max(0, Math.min(100, fromR * 0.6 + fromWin * 0.4))), source: 'verified_history', sampleSize: e.sampleSize };
+}
+
+export interface EdgeInputs {
+  /** Strategy quality / rule match, 0–100. */
+  strategyQuality: number | null;
+  /** Share of current confirmations met, 0–100. */
+  confirmations: number | null;
+  /** Planned reward:risk (e.g. 2 = 1:2). */
+  riskReward: number | null;
+  /** Market-context alignment, 0–100. */
+  marketContext: number | null;
+  historical?: HistoricalEvidence | null;
+  personal?: { value: number; sampleSize: number } | null;
+}
+
+/** Assemble components from the factors Prop Guard can actually measure. */
+export function composeEdgeScore(i: EdgeInputs): EdgeScore {
+  const rr = i.riskReward == null ? null : Math.max(0, Math.min(100, (i.riskReward / 3) * 100));
+  return computeEdgeScore({
+    strategyMatch: { value: i.strategyQuality, source: 'rules' },
+    ruleCompliance: { value: i.confirmations, source: 'rules' },
+    riskReward: { value: rr, source: 'rules' },
+    trendAlignment: { value: i.marketContext, source: 'rules' },
+    historicalEdge: historicalEdgeComponent(i.historical),
+    personalEdge: i.personal ? { value: i.personal.value, source: 'user_history', sampleSize: i.personal.sampleSize } : { value: null, source: 'user_history' },
+  });
+}

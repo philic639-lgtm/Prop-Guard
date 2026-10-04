@@ -216,3 +216,154 @@ export function scorePracticeDecision(s: PracticeScenario, input: PracticeTradeI
   const { grade, verdict } = gradeFor(total);
   return { total, components: c, grade, verdict, correct, strengths: [...new Set(strengths)], mistakes, lesson: s.lesson };
 }
+
+// ---------------------------------------------------------------------------
+// Trainer score (historical scenarios): process, not outcome
+// ---------------------------------------------------------------------------
+
+export const TRAINER_WEIGHTS = {
+  direction: 20,
+  entryQuality: 15,
+  stopPlacement: 15,
+  targetPlacement: 10,
+  riskReward: 10,
+  ruleAdherence: 15,
+  decisionQuality: 15,
+} as const;
+
+const TRAINER_LABEL: Record<keyof typeof TRAINER_WEIGHTS, string> = {
+  direction: 'Direction',
+  entryQuality: 'Entry quality',
+  stopPlacement: 'Stop placement',
+  targetPlacement: 'Target placement',
+  riskReward: 'Risk : reward',
+  ruleAdherence: 'Rule adherence',
+  decisionQuality: 'Decision quality',
+};
+
+/** Optional verified-history context (only used when the sample is sufficient). */
+export interface TrainerHistoryContext {
+  limited: boolean;
+  sampleSize: number;
+  typicalWinnerMAE: number | null;
+  medianMFE: number | null;
+}
+
+/**
+ * Grade a decision on a historical scenario across seven process components.
+ * The OUTCOME IS NEVER AN INPUT: a well-executed trade that lost scores the
+ * same as one that won, and a lucky winner from a bad decision scores low.
+ */
+export function scoreTrainerDecision(s: PracticeScenario, input: PracticeTradeInput, history?: TrainerHistoryContext | null): PracticeScore {
+  const W = TRAINER_WEIGHTS;
+  const c = { direction: 0, entryQuality: 0, stopPlacement: 0, targetPlacement: 0, riskReward: 0, ruleAdherence: 0, decisionQuality: 0 };
+  const strengths: string[] = [];
+  const mistakes: string[] = [];
+  const ideal = s.idealDecision;
+  const d = input.decision;
+  const correct = d === ideal;
+  const failed = s.historical?.checks.filter((x) => !x.passed) ?? [];
+  const it = s.idealTrade;
+  const useHistory = history && !history.limited;
+
+  // Direction
+  if (correct) {
+    c.direction = W.direction;
+    strengths.push(ideal === 'wait' ? 'Correctly skipped — the strategy rules were not all met' : `Correct direction: ${ideal.toUpperCase()}`);
+  } else if (d === 'wait') {
+    c.direction = 6;
+    mistakes.push(`Skipped a valid ${s.strategyName} ${ideal} setup.`);
+  } else if (ideal === 'wait') {
+    c.direction = 4;
+    mistakes.push('Took a trade the strategy rules did not support.');
+  } else mistakes.push(`Traded the wrong direction — the setup was ${ideal.toUpperCase()}.`);
+
+  // Rule adherence
+  if (correct) {
+    c.ruleAdherence = W.ruleAdherence;
+    if (ideal !== 'wait') strengths.push('Every strategy rule was satisfied at the decision');
+  } else if (d === 'wait') {
+    c.ruleAdherence = 8;
+  } else if (ideal === 'wait') {
+    for (const f of failed.slice(0, 3)) mistakes.push(`Rule not met: ${f.label}${f.detail ? ` (${f.detail})` : ''}.`);
+  }
+
+  if (d === 'wait') {
+    const full = ideal === 'wait';
+    c.entryQuality = full ? W.entryQuality : 0;
+    c.stopPlacement = full ? W.stopPlacement : 0;
+    c.targetPlacement = full ? W.targetPlacement : 0;
+    c.riskReward = full ? W.riskReward : 0;
+    c.decisionQuality = full ? W.decisionQuality : 5;
+    if (full) strengths.push('Protected capital by not forcing a trade');
+  } else if (input.entry != null && input.stop != null && input.target != null && it) {
+    const idealRisk = Math.abs(it.entry - it.stop) || 1;
+    const userRisk = Math.abs(input.entry - input.stop) || Number.EPSILON;
+    const userRR = Math.abs(input.target - input.entry) / userRisk;
+    const long = d === 'long';
+
+    // Entry quality
+    const off = Math.abs(input.entry - it.entry) / idealRisk;
+    c.entryQuality = off <= 0.1 ? 15 : off <= 0.25 ? 12 : off <= 0.5 ? 7 : off <= 1 ? 3 : 0;
+    if (off <= 0.25) strengths.push('Entry at the decision price');
+    else mistakes.push(`Entry was ${(off).toFixed(1)}R away from the planned entry.`);
+
+    // Stop placement — beyond the structure (retest extreme)?
+    const beyondStructure = long ? input.stop <= it.stop + idealRisk * 0.1 : input.stop >= it.stop - idealRisk * 0.1;
+    const stopR = userRisk / idealRisk;
+    if (!beyondStructure && stopR < 0.65) {
+      c.stopPlacement = 4;
+      mistakes.push('Stop was inside the structure — normal noise could stop the trade out.');
+    } else if (useHistory && history.typicalWinnerMAE != null && stopR < history.typicalWinnerMAE) {
+      c.stopPlacement = 7;
+      mistakes.push(`Your stop was tighter than the typical pullback seen in ${history.sampleSize} similar verified setups.`);
+    } else if (stopR > 2) {
+      c.stopPlacement = 8;
+      mistakes.push('Stop was much wider than the structure required, shrinking position size and R.');
+    } else {
+      c.stopPlacement = W.stopPlacement;
+      strengths.push('Stop placed beyond the invalidation point');
+    }
+
+    // Target placement relative to the strategy's planned R:R (and history when available)
+    const planRR = it.riskReward;
+    if (Math.abs(userRR - planRR) <= 0.5) {
+      c.targetPlacement = W.targetPlacement;
+      strengths.push(`Target matches the plan (≈1:${planRR})`);
+    } else if (useHistory && history.medianMFE != null && userRR > history.medianMFE && userRR > planRR) {
+      c.targetPlacement = 5;
+      mistakes.push(`Target (${userRR.toFixed(1)}R) is beyond the median favorable move of similar verified setups.`);
+    } else if (userRR < 1) {
+      c.targetPlacement = 2;
+      mistakes.push('Target is closer than the stop.');
+    } else c.targetPlacement = 6;
+
+    // Risk : reward
+    c.riskReward = userRR >= planRR ? W.riskReward : userRR >= planRR - 0.5 ? 7 : userRR >= 1 ? 4 : 0;
+    if (userRR < planRR - 0.5) mistakes.push(`Risk/reward 1:${userRR.toFixed(1)} is below the strategy's 1:${planRR}.`);
+
+    // Decision quality — the overall process
+    const flaws = [!beyondStructure, userRR < 1, off > 0.5].filter(Boolean).length;
+    c.decisionQuality = correct ? (flaws === 0 ? W.decisionQuality : flaws === 1 ? 9 : 4) : 0;
+  }
+
+  const total = Math.round(Object.values(c).reduce((a, b) => a + b, 0));
+  const { grade, verdict } = gradeFor(total);
+  return {
+    total,
+    components: {
+      strategyMatch: Math.round(((c.direction + c.ruleAdherence) / (W.direction + W.ruleAdherence)) * SCORE_WEIGHTS.strategyMatch),
+      trendAlignment: Math.round((c.decisionQuality / W.decisionQuality) * SCORE_WEIGHTS.trendAlignment),
+      entryQuality: Math.round((c.entryQuality / W.entryQuality) * SCORE_WEIGHTS.entryQuality),
+      riskReward: Math.round(((c.riskReward + c.targetPlacement) / (W.riskReward + W.targetPlacement)) * SCORE_WEIGHTS.riskReward),
+      timing: Math.round((c.stopPlacement / W.stopPlacement) * SCORE_WEIGHTS.timing),
+    },
+    breakdown: (Object.keys(W) as (keyof typeof W)[]).map((k) => ({ key: k, label: TRAINER_LABEL[k], value: c[k], max: W[k] })),
+    grade,
+    verdict,
+    correct,
+    strengths: [...new Set(strengths)],
+    mistakes,
+    lesson: s.lesson,
+  };
+}

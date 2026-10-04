@@ -1,4 +1,6 @@
 import { SAMPLE_SCENARIOS } from '@/data/practice/scenarios';
+
+import { getVerifiedPractice, simulatedScenarios } from './historical';
 import type { PracticeDifficulty, PracticeScenario, PracticeSession } from '@/types/practice';
 
 /**
@@ -16,6 +18,11 @@ export interface ScenarioFilters {
   direction?: 'long' | 'short' | null;
   session?: PracticeSession | null;
   greatOnly?: boolean;
+  /**
+   * samples — hand-designed educational patterns (default);
+   * historical — scenarios generated from bars (verified history, or SIMULATED bars in development).
+   */
+  source?: 'samples' | 'historical';
 }
 
 export interface ScenarioProvider {
@@ -34,7 +41,8 @@ export function filterScenarios(list: readonly PracticeScenario[], f: ScenarioFi
       (!f.difficulty || s.difficulty === f.difficulty) &&
       (!f.direction || s.direction === f.direction) &&
       (!f.session || s.session === f.session) &&
-      (!f.greatOnly || s.quality === 'great'),
+      (!f.greatOnly || s.quality === 'great') &&
+      (f.source === 'historical' ? s.source.kind !== 'educational_sample' : f.source === 'samples' ? s.source.kind === 'educational_sample' : true),
   );
 }
 
@@ -43,9 +51,29 @@ const BY_ID = new Map(SAMPLE_SCENARIOS.map((s) => [s.id, s]));
 export const sampleScenarioProvider: ScenarioProvider = {
   id: 'educational-samples',
   verified: false,
-  list: (filters) => filterScenarios(SAMPLE_SCENARIOS, filters),
+  list: (filters) => filterScenarios(SAMPLE_SCENARIOS, { ...filters, source: undefined }),
   get: (id) => BY_ID.get(id),
 };
 
-/** The active provider. Swap here when verified historical data is connected. */
-export const scenarioProvider: ScenarioProvider = sampleScenarioProvider;
+/**
+ * Historical scenarios: verified ones loaded from Supabase when available,
+ * plus SIMULATED ones generated on-device from the mock provider (until a
+ * verified data source is connected, these are the only historical scenarios).
+ */
+export const historicalScenarioProvider: ScenarioProvider = {
+  id: 'historical',
+  verified: false,
+  list: (filters) => {
+    const verified = getVerifiedPractice();
+    return filterScenarios([...verified, ...simulatedScenarios().practice], { ...filters, source: undefined });
+  },
+  get: (id) => getVerifiedPractice().find((s) => s.id === id) ?? (id.startsWith('hs-mock-') ? simulatedScenarios().practice.find((s) => s.id === id) : undefined),
+};
+
+/** The catalog the trainer uses: samples by default, historical on request. */
+export const scenarioProvider: ScenarioProvider = {
+  id: 'catalog',
+  verified: false,
+  list: (filters = {}) => (filters.source === 'historical' ? historicalScenarioProvider.list(filters) : sampleScenarioProvider.list(filters)),
+  get: (id) => sampleScenarioProvider.get(id) ?? historicalScenarioProvider.get(id),
+};

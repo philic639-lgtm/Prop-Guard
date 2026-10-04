@@ -514,6 +514,8 @@ export function practiceAttemptToRow(a: PracticeAttempt, userId: string) {
     result: a.result,
     mistakes: a.mistakes,
     setup_characteristics: a.setupCharacteristics,
+    scenario_source: a.scenarioSource ?? null,
+    scenario_verified: a.scenarioVerified ?? null,
   };
 }
 
@@ -542,6 +544,8 @@ export function rowToPracticeAttempt(r: Row): PracticeAttempt {
     result: (r.result as PracticeAttempt['result']) ?? 'expired',
     mistakes: Array.isArray(r.mistakes) ? (r.mistakes as string[]) : [],
     setupCharacteristics: (r.setup_characteristics as PracticeAttempt['setupCharacteristics']) ?? {},
+    ...(r.scenario_source ? { scenarioSource: r.scenario_source as PracticeAttempt['scenarioSource'] } : {}),
+    ...(r.scenario_verified != null ? { scenarioVerified: r.scenario_verified === true } : {}),
   };
 }
 

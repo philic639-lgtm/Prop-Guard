@@ -13,10 +13,14 @@ interface PracticeDecisionProps {
   /** Close of the last visible candle (pre-fills the entry). */
   lastClose: number;
   onSubmit: (input: PracticeTradeInput) => void;
+  /** Label for standing aside (historical mode says SKIP). */
+  waitLabel?: string;
+  /** Overrides the submit label (historical mode: "Lock Decision"). */
+  submitLabel?: string;
 }
 
-/** LONG / SHORT / WAIT, then entry / stop / target with live risk, reward and R:R. */
-export function PracticeDecision({ instrument, lastClose, onSubmit }: PracticeDecisionProps) {
+/** LONG / SHORT / WAIT (or SKIP), then entry / stop / target with live risk, reward and R:R. */
+export function PracticeDecision({ instrument, lastClose, onSubmit, waitLabel = 'WAIT', submitLabel }: PracticeDecisionProps) {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [entry, setEntry] = useState(formatPrice(instrument, lastClose));
   const [stop, setStop] = useState('');
@@ -38,7 +42,7 @@ export function PracticeDecision({ instrument, lastClose, onSubmit }: PracticeDe
       <View style={styles.row}>
         <Choice label="LONG" icon="arrow-up" tone={colors.positive} selected={decision === 'long'} onPress={() => setDecision('long')} />
         <Choice label="SHORT" icon="arrow-down" tone={colors.danger} selected={decision === 'short'} onPress={() => setDecision('short')} />
-        <Choice label="WAIT" icon="pause" tone={colors.textSecondary} selected={decision === 'wait'} onPress={() => setDecision('wait')} />
+        <Choice label={waitLabel} icon="pause" tone={colors.textSecondary} selected={decision === 'wait'} onPress={() => setDecision('wait')} />
       </View>
 
       {trading ? (
@@ -56,13 +60,13 @@ export function PracticeDecision({ instrument, lastClose, onSubmit }: PracticeDe
 
       {decision === 'wait' ? (
         <AppText variant="body" tone="secondary" style={{ marginTop: spacing.md }}>
-          WAIT means the strategy rules are not met here, so you would stand aside.
+          {waitLabel} means the strategy rules are not met here, so you would stand aside.
         </AppText>
       ) : null}
 
       <Button
-        label={decision === 'wait' ? 'Submit Wait' : 'Submit Trade'}
-        icon="checkmark"
+        label={submitLabel ?? (decision === 'wait' ? 'Submit Wait' : 'Submit Trade')}
+        icon={submitLabel ? 'lock-closed' : 'checkmark'}
         style={{ marginTop: spacing.lg }}
         disabled={!decision || (trading && (!filled || !!error))}
         onPress={() => decision && onSubmit(decision === 'wait' ? { decision: 'wait' } : input)}

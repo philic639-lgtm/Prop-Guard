@@ -32,23 +32,19 @@ export function PracticeScoreCard({ score }: { score: PracticeScore }) {
       </View>
 
       <View style={styles.components}>
-        {(Object.keys(COMPONENT_LABEL) as (keyof PracticeScore['components'])[]).map((k) => {
-          const v = score.components[k];
-          const max = SCORE_WEIGHTS[k];
-          return (
-            <View key={k} style={styles.compRow}>
-              <AppText variant="caption" style={styles.compLabel}>
-                {COMPONENT_LABEL[k]}
-              </AppText>
-              <View style={styles.bar}>
-                <View style={[styles.fill, { width: `${(v / max) * 100}%`, backgroundColor: v / max >= 0.7 ? colors.positive : v / max >= 0.4 ? colors.warning : colors.danger }]} />
-              </View>
-              <AppText variant="caption" style={styles.compVal}>
-                {v}/{max}
-              </AppText>
+        {(score.breakdown ?? (Object.keys(COMPONENT_LABEL) as (keyof PracticeScore['components'])[]).map((k) => ({ key: k, label: COMPONENT_LABEL[k], value: score.components[k], max: SCORE_WEIGHTS[k] }))).map(({ key, label, value: v, max }) => (
+          <View key={key} style={styles.compRow}>
+            <AppText variant="caption" style={styles.compLabel}>
+              {label}
+            </AppText>
+            <View style={styles.bar}>
+              <View style={[styles.fill, { width: `${(v / max) * 100}%`, backgroundColor: v / max >= 0.7 ? colors.positive : v / max >= 0.4 ? colors.warning : colors.danger }]} />
             </View>
-          );
-        })}
+            <AppText variant="caption" style={styles.compVal}>
+              {v}/{max}
+            </AppText>
+          </View>
+        ))}
       </View>
 
       {score.strengths.map((s) => (

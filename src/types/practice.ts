@@ -22,7 +22,11 @@ export interface PracticeCandle {
 
 /** Where a scenario's candles came from. Sample data is never presented as real history. */
 export interface ScenarioSource {
-  kind: 'educational_sample' | 'historical';
+  /**
+   * educational_sample — hand-designed pattern; simulated — real detection run on generated bars;
+   * historical — recorded market data (see `verified`).
+   */
+  kind: 'educational_sample' | 'simulated' | 'historical';
   /** True only for candles from a verified market-data provider. */
   verified: boolean;
   provider?: string;
@@ -89,6 +93,17 @@ export interface PracticeScenario {
   lesson: string;
   commonMistake: string;
   badges: string[];
+  /** Chart timeframe (e.g. "5m"). */
+  timeframe?: string;
+  /** Present for scenarios generated from bars by the shared strategy evaluators. */
+  historical?: {
+    scenarioId: string;
+    provider: string;
+    decisionTimestamp: string;
+    checks: { label: string; passed: boolean; detail?: string }[];
+    features: import('@/lib/engines/strategyEvaluators/types').SetupFeatures;
+    outcome: import('@/lib/engines/historicalOutcomeEngine').HistoricalTradeOutcome;
+  };
 
   outcome: {
     result: 'win' | 'loss' | 'no-trade';
@@ -123,6 +138,8 @@ export interface PracticeScore {
   strengths: string[];
   mistakes: string[];
   lesson: string;
+  /** Detailed component breakdown (trainer scoring). Overrides `components` in the UI when present. */
+  breakdown?: { key: string; label: string; value: number; max: number }[];
 }
 
 export type ReplayStatus = 'target' | 'stop' | 'expired' | 'not_filled' | 'no_trade';
@@ -148,6 +165,9 @@ export interface PracticeAttempt {
   strategyName: string;
   timestamp: string;
   mode: 'standard' | 'smart' | 'great';
+  /** Data layer the scenario came from — analytics can separate samples from real history. */
+  scenarioSource?: ScenarioSource['kind'];
+  scenarioVerified?: boolean;
   session: PracticeSession;
   /** Pattern orientation of the scenario. */
   direction: 'long' | 'short';

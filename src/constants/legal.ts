@@ -14,3 +14,9 @@ export const PRACTICE_DISCLAIMER =
 
 export const SAMPLE_DATA_NOTE =
   'Practice scenarios are educational samples built from common price patterns — not recorded market data. Verified historical data can replace them later.';
+
+export const SIMULATED_DATA_NOTE =
+  'SIMULATED scenarios run the real strategy rules on generated price bars so you can practise before verified market data is connected. They are not recorded market data and never count as historical evidence.';
+
+export const VERIFIED_DATA_NOTE =
+  'REAL HISTORICAL scenarios use recorded futures bars from a licensed market-data provider. Past results describe what happened and do not guarantee future outcomes.';

@@ -44,3 +44,6 @@ example
 
 # env
 .env
+
+# server-only secrets for scripts/market-data.ts (never bundled)
+.env.server

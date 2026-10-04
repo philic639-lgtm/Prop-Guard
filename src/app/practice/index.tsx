@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { ProGate } from '@/components/domain/ProGate';
@@ -20,7 +20,7 @@ import {
   StatusBadge,
   TileGrid,
 } from '@/components/ui';
-import { PRACTICE_DISCLAIMER, SAMPLE_DATA_NOTE } from '@/constants/legal';
+import { PRACTICE_DISCLAIMER, SAMPLE_DATA_NOTE, SIMULATED_DATA_NOTE, VERIFIED_DATA_NOTE } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
 import { PRACTICE_INSTRUMENTS } from '@/data/practice/scenarioFactory';
@@ -28,6 +28,8 @@ import { GRADE_TONE } from '@/features/practice/components/PracticeScoreCard';
 import { filtersFor, pickScenario, usePracticeSetup, type PracticeMode } from '@/features/practice/selection';
 import { summarizePractice } from '@/lib/engines';
 import { scenarioProvider } from '@/services/marketHistory';
+import { getVerifiedPractice, onVerifiedScenariosChange, simulatedReady, simulatedScenarios } from '@/services/marketHistory/historical';
+import { loadVerifiedScenarios } from '@/services/marketHistory/remote';
 import { useAppStore } from '@/store/useAppStore';
 import type { PracticeAttempt } from '@/types/practice';
 import { shortDate } from '@/utils/format';
@@ -50,12 +52,46 @@ export default function PracticeHome() {
   const strategies = useAppStore((s) => s.strategies);
   const setup = usePracticeSetup((s) => s.setup);
   const setSetup = usePracticeSetup((s) => s.setSetup);
+  const historical = setup.source === 'historical';
+  // Bumped when verified scenarios load or simulated scenarios finish generating.
+  const [dataVersion, setDataVersion] = useState(0);
+  const historicalReady = !historical || simulatedReady();
+
+  // Verified historical scenarios are generated server-side; load them when Supabase is configured.
+  useEffect(() => {
+    const off = onVerifiedScenariosChange(() => setDataVersion((v) => v + 1));
+    loadVerifiedScenarios().catch(() => undefined);
+    return () => {
+      off();
+    };
+  }, []);
+
+  // Simulated scenarios run the real detection rules on generated bars — build them off the first frame.
+  useEffect(() => {
+    if (!historical || simulatedReady()) return;
+    const t = setTimeout(() => {
+      simulatedScenarios();
+      setDataVersion((v) => v + 1);
+    }, 30);
+    return () => clearTimeout(t);
+  }, [historical]);
+
+  const catalog = useMemo(
+    () => (historicalReady ? scenarioProvider.list({ source: setup.source }) : []),
+    // dataVersion invalidates the list when scenarios load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [historicalReady, setup.source, dataVersion],
+  );
+  const verifiedCount = useMemo(() => (historical ? getVerifiedPractice().length : 0), [historical, dataVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Strategies come from the Strategy Library; only those with practice scenarios are offered.
   const strategyOptions = useMemo(() => {
-    const ids = [...new Set(scenarioProvider.list().map((s) => s.strategyId))];
-    return ids.map((id) => ({ value: id, label: getTemplate(id)?.shortName ?? id, sub: getTemplate(id) ? `${scenarioProvider.list({ strategyId: id }).length} scenarios` : undefined }));
-  }, []);
+    const ids = [...new Set(catalog.map((s) => s.strategyId))];
+    return ids.map((id) => ({ value: id, label: getTemplate(id)?.shortName ?? id, sub: `${catalog.filter((s) => s.strategyId === id).length} scenarios` }));
+  }, [catalog]);
+  const instrumentOptions = useMemo(() => (historical ? [...new Set(catalog.map((s) => s.instrument))] : [...PRACTICE_INSTRUMENTS]), [historical, catalog]);
+
+  const setSource = (source: 'samples' | 'historical') => setSetup({ source, strategyId: null, instrument: null, difficulty: null });
 
   // Arriving from a saved strategy ("Practice") preselects its library template.
   useEffect(() => {
@@ -65,7 +101,7 @@ export default function PracticeHome() {
     if (strategyOptions.some((o) => o.value === templateId)) setSetup({ strategyId: templateId });
   }, [params.strategyId, strategies, strategyOptions, setSetup]);
 
-  const matching = scenarioProvider.list(filtersFor(setup)).length;
+  const matching = historicalReady ? scenarioProvider.list(filtersFor(setup)).length : 0;
   const summary = useMemo(() => summarizePractice(attempts), [attempts]);
   const recent = useMemo(() => [...attempts].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 5), [attempts]);
 
@@ -87,10 +123,18 @@ export default function PracticeHome() {
             </AppText>
           </View>
           <AppText variant="body" tone="secondary" style={{ marginTop: spacing.xs }}>
-            Each scenario stops at a decision point. Choose LONG, SHORT or WAIT using your strategy rules, get a Prop Guard score, then replay the rest of the session.
+            {historical
+              ? 'The chart freezes at the decision candle. Choose LONG, SHORT or SKIP, set entry, stop and target, lock your decision — then the future is revealed and scored.'
+              : 'Each scenario stops at a decision point. Choose LONG, SHORT or WAIT using your strategy rules, get a Prop Guard score, then replay the rest of the session.'}
           </AppText>
           <View style={[styles.row, { marginTop: spacing.md }]}>
-            <StatusBadge label="Educational sample data" tone="warning" icon="information-circle-outline" size="sm" />
+            {!historical ? (
+              <StatusBadge label="Educational sample data" tone="warning" icon="information-circle-outline" size="sm" />
+            ) : verifiedCount > 0 ? (
+              <StatusBadge label={`${verifiedCount} verified historical`} tone="positive" icon="shield-checkmark" size="sm" />
+            ) : (
+              <StatusBadge label="SIMULATED data" tone="warning" icon="flask-outline" size="sm" />
+            )}
             <StatusBadge label="No capital at risk" tone="positive" size="sm" />
           </View>
         </Card>
@@ -104,10 +148,28 @@ export default function PracticeHome() {
 
         <SectionHeader title="Set up your practice" />
         <Card>
-          <AppText variant="label">Instrument</AppText>
+          <SegmentedControl
+            label="Data source"
+            options={[
+              { value: 'samples', label: 'Samples' },
+              { value: 'historical', label: 'Historical' },
+            ]}
+            value={setup.source}
+            onChange={(v) => setSource(v as 'samples' | 'historical')}
+          />
+          {historical ? (
+            <AppText variant="caption" tone={verifiedCount ? 'secondary' : 'warning'} style={{ marginTop: spacing.sm }}>
+              {verifiedCount
+                ? `${verifiedCount} verified historical scenarios are available, plus SIMULATED scenarios for practice. Each scenario is labelled.`
+                : 'No verified market data is connected yet. Historical mode runs the real strategy rules on SIMULATED bars — clearly labelled, never presented as real history.'}
+            </AppText>
+          ) : null}
+          <AppText variant="label" style={styles.field}>
+            Instrument
+          </AppText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             <Chip label="Any" selected={setup.instrument == null} onPress={() => setSetup({ instrument: null })} />
-            {PRACTICE_INSTRUMENTS.map((i) => (
+            {instrumentOptions.map((i) => (
               <Chip key={i} label={i} selected={setup.instrument === i} onPress={() => setSetup({ instrument: setup.instrument === i ? null : i })} />
             ))}
           </ScrollView>
@@ -159,7 +221,11 @@ export default function PracticeHome() {
             />
           </View>
           <AppText variant="caption" style={{ marginTop: spacing.md }} tone={matching ? 'secondary' : 'warning'}>
-            {matching ? `${matching} scenario${matching === 1 ? '' : 's'} match these filters.` : 'No scenarios match these filters yet — try fewer filters.'}
+            {!historicalReady
+              ? 'Preparing simulated historical scenarios…'
+              : matching
+                ? `${matching} scenario${matching === 1 ? '' : 's'} match these filters.`
+                : 'No scenarios match these filters yet — try fewer filters.'}
           </AppText>
         </Card>
 
@@ -170,7 +236,12 @@ export default function PracticeHome() {
           description="Prop Guard picks scenarios from your weaker areas (about 60%), mixed with average (25%) and strong areas (15%)."
           onPress={() => start('smart')}
         />
-        <OptionCard icon="ribbon-outline" title="Great Setups" description="Clean, textbook examples for learning what strong setups look like. You still decide before the reveal." onPress={() => start('great')} />
+        <OptionCard
+          icon="ribbon-outline"
+          title="Great Setups"
+          description={historical ? 'Curated educational examples of strong setups (sample data). You still decide before the reveal.' : 'Clean, textbook examples for learning what strong setups look like. You still decide before the reveal.'}
+          onPress={() => start('great')}
+        />
 
         <SectionHeader title="Recent practice" action={attempts.length ? 'Analytics' : undefined} onAction={() => router.push('/practice/analytics')} />
         {recent.length === 0 ? (
@@ -199,7 +270,7 @@ export default function PracticeHome() {
         <OptionCard icon="images-outline" title="Practice on your own chart" description="Upload a screenshot and check it against a saved strategy's conditions." onPress={() => router.push('/practice/screenshot')} />
 
         <AppText variant="caption" tone="tertiary">
-          {SAMPLE_DATA_NOTE} {PRACTICE_DISCLAIMER}
+          {historical ? (verifiedCount ? VERIFIED_DATA_NOTE : SIMULATED_DATA_NOTE) : SAMPLE_DATA_NOTE} {PRACTICE_DISCLAIMER}
         </AppText>
       </ProGate>
     </Screen>

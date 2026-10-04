@@ -5,6 +5,7 @@ import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-
 import { CHART_FONT, spreadLabels, type RightLabel } from '@/components/charts/VisualDiagram';
 import { colors } from '@/constants/theme';
 import { formatPrice } from '@/lib/engines/instrumentEngine';
+import { etParts } from '@/lib/engines/marketTime';
 import type { PracticeScenario } from '@/types/practice';
 
 export interface ChartTradeLines {
@@ -86,8 +87,17 @@ export function PracticeChart({ scenario: s, visibleCount, user, ideal, exitInde
 
   const decisionX = cx(s.decisionIndex) + slot / 2;
   const hiddenFrom = visibleCount * slot;
-  const timeLabel = (i: number) => s.candles[i]?.timestamp.slice(11, 16) ?? '';
-  const axisIdx = [0, Math.floor(total / 2), s.decisionIndex, total - 1].filter((i, k, arr) => arr.indexOf(i) === k && i < visibleCount);
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  // Historical bars are UTC; show exchange (ET) time. Sample timestamps are already local session times.
+  const timeLabel = (i: number) => {
+    const ts = s.candles[i]?.timestamp;
+    if (!ts) return '';
+    return s.historical ? hhmm(etParts(ts).minutes) : ts.slice(11, 16);
+  };
+  // Decision time first so it wins when labels would collide; drop any label within 36px of a kept one.
+  const axisIdx = [s.decisionIndex, 0, total - 1, Math.floor(total / 2)]
+    .filter((i) => i < visibleCount)
+    .reduce<number[]>((kept, i) => (kept.every((k) => Math.abs(cx(k) - cx(i)) >= 36) ? [...kept, i] : kept), []);
   const or = s.openingRange;
 
   return (
@@ -96,7 +106,7 @@ export function PracticeChart({ scenario: s, visibleCount, user, ideal, exitInde
       style={{ height }}
       accessible
       accessibilityRole="image"
-      accessibilityLabel={`${s.instrument} 5-minute chart, ${visibleCount} of ${total} candles shown`}>
+      accessibilityLabel={`${s.instrument} ${s.timeframe ?? '5m'} chart, ${visibleCount} of ${total} candles shown`}>
       {width > 0 ? (
         <Svg width={width} height={height}>
           {/* Opening range box */}

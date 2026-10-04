@@ -12,6 +12,8 @@ export interface PracticeSetup {
   difficulty: PracticeDifficulty | null;
   direction: 'long' | 'short' | null;
   session: PracticeSession | null;
+  /** samples — educational patterns; historical — scenarios generated from bars (verified, or SIMULATED in development). */
+  source: 'samples' | 'historical';
 }
 
 interface PracticeSetupState {
@@ -23,7 +25,7 @@ interface PracticeSetupState {
 
 /** Current trainer selections (kept in memory so "Next scenario" reuses them). */
 export const usePracticeSetup = create<PracticeSetupState>((set) => ({
-  setup: { instrument: null, strategyId: null, difficulty: null, direction: null, session: null },
+  setup: { instrument: null, strategyId: null, difficulty: null, direction: null, session: null, source: 'samples' },
   mode: 'standard',
   setSetup: (patch) => set((s) => ({ setup: { ...s.setup, ...patch } })),
   setMode: (mode) => set({ mode }),
@@ -35,6 +37,7 @@ export const filtersFor = (s: PracticeSetup): ScenarioFilters => ({
   difficulty: s.difficulty,
   direction: s.direction,
   session: s.session,
+  source: s.source,
 });
 
 export interface ScenarioPick {
@@ -55,13 +58,14 @@ function leastPracticed(list: PracticeScenario[], attempts: readonly PracticeAtt
 /** Choose the next scenario for a mode. Call from event handlers (uses randomness). */
 export function pickScenario(mode: PracticeMode, setup: PracticeSetup, attempts: readonly PracticeAttempt[], excludeId?: string): ScenarioPick | null {
   if (mode === 'great') {
+    // Great setups are curated educational examples (historical scenarios are never hand-labelled "great").
     const narrowed = scenarioProvider.list({ greatOnly: true, instrument: setup.instrument, strategyId: setup.strategyId });
     const s = leastPracticed(narrowed.length ? narrowed : scenarioProvider.list({ greatOnly: true }), attempts, excludeId);
     return s ? { scenario: s, reason: 'A clean, textbook example chosen to show what a strong setup looks like.' } : null;
   }
   if (mode === 'smart') {
-    const scoped = scenarioProvider.list({ instrument: setup.instrument });
-    const pool = (scoped.length ? scoped : scenarioProvider.list()).filter((s) => s.id !== excludeId);
+    const scoped = scenarioProvider.list({ instrument: setup.instrument, source: setup.source });
+    const pool = (scoped.length ? scoped : scenarioProvider.list({ source: setup.source })).filter((s) => s.id !== excludeId);
     const pick = chooseSmartScenario(pool, attempts, Math.random(), Math.random());
     return pick ? { scenario: pick.scenario, reason: pick.reason } : null;
   }

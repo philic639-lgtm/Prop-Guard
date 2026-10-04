@@ -8,7 +8,8 @@ import { getTemplate } from '@/data/strategyLibrary';
 import { formatPrice } from '@/lib/engines';
 import type { PracticeAttempt, PracticeScenario, PracticeScore, ReplayOutcome } from '@/types/practice';
 
-const DECISION = { long: 'LONG', short: 'SHORT', wait: 'WAIT' } as const;
+const SAMPLE_DECISION = { long: 'LONG', short: 'SHORT', wait: 'WAIT' } as const;
+const HISTORICAL_DECISION = { long: 'LONG', short: 'SHORT', wait: 'SKIP' } as const;
 const RESULT_LABEL: Record<PracticeAttempt['result'], string> = {
   win: 'WIN',
   loss: 'LOSS',
@@ -32,6 +33,9 @@ interface PracticeReviewProps {
 /** After-action review: decision vs ideal, what went well, what was missed, and the strategy rules. */
 export function PracticeReview({ scenario: s, attempt: a, score, replay, lessonSaved, onSaveLesson, onPracticeAgain, onNext }: PracticeReviewProps) {
   const t = getTemplate(s.strategyId);
+  const DECISION = s.historical ? HISTORICAL_DECISION : SAMPLE_DECISION;
+  // Historical scenarios carry the evaluator's actual rule results at the decision candle.
+  const checks = s.historical?.checks;
   const p = (v: number | undefined) => (v == null ? '—' : formatPrice(s.instrument, v));
   const resultTone = a.result === 'win' || a.result === 'correct-wait' ? 'positive' : a.result === 'loss' || a.result === 'incorrect-wait' ? 'danger' : 'warning';
 
@@ -48,9 +52,9 @@ export function PracticeReview({ scenario: s, attempt: a, score, replay, lessonS
             { label: 'Your decision', value: DECISION[a.decision], tone: a.decision === 'long' ? 'positive' : a.decision === 'short' ? 'danger' : 'primary' },
             { label: 'Ideal decision', value: DECISION[s.idealDecision], bold: true },
             { label: 'Your entry', value: p(a.entry) },
-            { label: 'Ideal entry', value: p(s.idealTrade?.entry) },
+            { label: 'Ideal entry', value: s.idealDecision === 'wait' ? '—' : p(s.idealTrade?.entry) },
             { label: 'Your stop / target', value: a.decision === 'wait' ? '—' : `${p(a.stop)} / ${p(a.target)}` },
-            { label: 'Ideal stop / target', value: s.idealTrade ? `${p(s.idealTrade.stop)} / ${p(s.idealTrade.target)}` : '—' },
+            { label: 'Ideal stop / target', value: s.idealTrade && s.idealDecision !== 'wait' ? `${p(s.idealTrade.stop)} / ${p(s.idealTrade.target)}` : '—' },
             { label: 'Your R:R', value: a.riskReward != null ? `1:${a.riskReward}` : '—' },
             { label: 'Result', value: RESULT_LABEL[a.result], tone: resultTone === 'warning' ? 'warning' : resultTone, bold: true },
             { label: 'Prop Guard score', value: `${a.score} / 100 · ${a.grade}` },
@@ -91,7 +95,7 @@ export function PracticeReview({ scenario: s, attempt: a, score, replay, lessonS
           {s.lesson}
         </AppText>
         <AppText variant="label" style={{ marginTop: spacing.lg }}>
-          Why this was {s.idealDecision === 'wait' ? 'a WAIT' : `a ${DECISION[s.idealDecision]}`}
+          Why this was {s.idealDecision === 'wait' ? `a ${DECISION.wait}` : `a ${DECISION[s.idealDecision]}`}
         </AppText>
         {s.explanation.map((x) => (
           <Line key={x} icon="ellipse" color={colors.accentBright} text={x} small />
@@ -102,9 +106,19 @@ export function PracticeReview({ scenario: s, attempt: a, score, replay, lessonS
         <>
           <SectionHeader title={`Strategy rules used · ${t.shortName}`} />
           <Card>
-            <RuleChecklist rows={t.checklist.map((c) => ({ id: c, label: c, state: s.idealDecision === 'wait' ? ('pending' as const) : ('pass' as const) }))} />
+            <RuleChecklist
+              rows={
+                checks
+                  ? checks.map((c) => ({ id: c.label, label: c.label, state: c.passed ? ('pass' as const) : ('fail' as const) }))
+                  : t.checklist.map((c) => ({ id: c, label: c, state: s.idealDecision === 'wait' ? ('pending' as const) : ('pass' as const) }))
+              }
+            />
             <AppText variant="caption" style={{ marginTop: spacing.sm }}>
-              {s.idealDecision === 'wait' ? 'At the decision point these rules were not all satisfied.' : 'All of these rules were satisfied at the decision point.'}
+              {checks
+                ? 'Rule results at the decision candle, evaluated by the same rules the live checker uses.'
+                : s.idealDecision === 'wait'
+                  ? 'At the decision point these rules were not all satisfied.'
+                  : 'All of these rules were satisfied at the decision point.'}
             </AppText>
           </Card>
         </>
