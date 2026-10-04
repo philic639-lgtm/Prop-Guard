@@ -5,6 +5,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { createDemoData, DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES, EMPTY_DATA, type AppData } from '@/data/demo';
 import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
 import type { BrokerImportAction } from '@/lib/engines/journalEngine';
+import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 import { realizedPnl, realizedR } from '@/lib/engines/riskEngine';
 import { syncService } from '@/services/syncService';
 import type {
@@ -84,6 +85,9 @@ export interface AppState extends AppData {
   savePlan: (plan: TradePlan) => void;
   setPlanStatus: (id: string, status: TradePlan['status']) => void;
   addPracticeRun: (run: PracticeRun) => void;
+  addPracticeAttempt: (attempt: PracticeAttempt) => void;
+  savePracticeLesson: (lesson: PracticeLesson) => void;
+  deletePracticeLesson: (id: string) => void;
   pushAlert: (alert: Omit<AppAlert, 'id' | 'at' | 'read'> & { at?: string }) => void;
   markAlertsRead: () => void;
   /** Record an already-closed trade (manual or screenshot journaling). Updates balance. */
@@ -359,6 +363,21 @@ export const useAppStore = create<AppState>()(
         if (updated) syncService.upsertPlan(updated);
       },
 
+      addPracticeAttempt: (attempt) => {
+        set((s) => ({ practiceAttempts: [attempt, ...s.practiceAttempts.filter((a) => a.id !== attempt.id)].slice(0, 1000) }));
+        syncService.upsertPracticeAttempt(attempt);
+      },
+
+      savePracticeLesson: (lesson) => {
+        set((s) => ({ practiceLessons: [lesson, ...s.practiceLessons.filter((l) => l.attemptId !== lesson.attemptId)].slice(0, 300) }));
+        syncService.upsertPracticeLesson(lesson);
+      },
+
+      deletePracticeLesson: (id) => {
+        set((s) => ({ practiceLessons: s.practiceLessons.filter((l) => l.id !== id) }));
+        syncService.remove('practice_lessons', id);
+      },
+
       addPracticeRun: (run) => {
         set((s) => ({ practiceRuns: [run, ...s.practiceRuns].slice(0, 100) }));
         syncService.insertPracticeRun(run);
@@ -451,6 +470,8 @@ export const useAppStore = create<AppState>()(
             plans: st.plans ?? [],
             pendingTrades: st.pendingTrades ?? [],
             practiceRuns: st.practiceRuns ?? [],
+            practiceAttempts: st.practiceAttempts ?? [],
+            practiceLessons: st.practiceLessons ?? [],
             alerts: st.alerts ?? [],
             preferences: {
               ...DEFAULT_PREFERENCES,
@@ -478,6 +499,8 @@ export const useAppStore = create<AppState>()(
         plans: s.plans,
         pendingTrades: s.pendingTrades,
         practiceRuns: s.practiceRuns,
+        practiceAttempts: s.practiceAttempts,
+        practiceLessons: s.practiceLessons,
         alerts: s.alerts,
         recentTemplateIds: s.recentTemplateIds,
         mode: s.mode,

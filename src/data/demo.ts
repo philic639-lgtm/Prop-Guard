@@ -17,6 +17,8 @@ import type {
 } from '@/types/domain';
 import { addDays, addMinutes, dayKey, startOfDay } from '@/utils/dates';
 
+import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
+
 import { STRATEGY_LIBRARY, checklistFromLabels } from './strategyLibrary';
 
 /**
@@ -38,6 +40,10 @@ export interface AppData {
   /** Checked trades waiting for a result (automatic journaling). */
   pendingTrades: PendingTrade[];
   practiceRuns: PracticeRun[];
+  /** Historical-trainer attempts (user-performance layer; never mixed with journal trades). */
+  practiceAttempts: PracticeAttempt[];
+  /** Lessons the trader saved from practice — shown in Journal → Practice lessons. */
+  practiceLessons: PracticeLesson[];
   alerts: AppAlert[];
 }
 
@@ -89,6 +95,8 @@ export const EMPTY_DATA: AppData = {
   plans: [],
   pendingTrades: [],
   practiceRuns: [],
+  practiceAttempts: [],
+  practiceLessons: [],
   alerts: [],
 };
 
@@ -512,6 +520,9 @@ export function createDemoData(now = new Date()): AppData {
     plans,
     pendingTrades,
     practiceRuns,
+    // Practice analytics are only ever computed from the trader's own attempts.
+    practiceAttempts: [],
+    practiceLessons: [],
     alerts,
     accounts: [account25k, account50k],
     strategies: [orb, vwap],

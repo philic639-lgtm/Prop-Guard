@@ -2,12 +2,17 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { AppData } from '@/data/demo';
 import { DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES } from '@/data/demo';
+import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 import type { Account, DisciplineEvent, PendingTrade, PracticeRun, Strategy, Trade, TradePlan, TradingSession, UserPreferences } from '@/types/domain';
 
 import {
   accountToRows,
   eventToRow,
   pendingToRow,
+  practiceAttemptToRow,
+  practiceLessonToRow,
+  rowToPracticeAttempt,
+  rowToPracticeLesson,
   planToRow,
   practiceToRow,
   preferencesToRow,
@@ -42,10 +47,12 @@ export class SupabaseRepository {
 
   async loadAll(): Promise<Partial<AppData>> {
     const db = this.db;
-    const [plans, practice, pending] = await Promise.all([
+    const [plans, practice, pending, attempts, lessons] = await Promise.all([
       db.from('trade_plans').select('*').order('created_at', { ascending: false }).limit(200),
       db.from('practice_runs').select('*').order('created_at', { ascending: false }).limit(100),
       db.from('pending_trades').select('*').order('created_at', { ascending: false }).limit(200),
+      db.from('practice_attempts').select('*').order('attempted_at', { ascending: false }).limit(1000),
+      db.from('practice_lessons').select('*').order('created_at', { ascending: false }).limit(300),
     ]);
     const [accounts, rules, strategies, items, sessions, trades, events, prefs, profile] = await Promise.all([
       db.from('accounts').select('*').order('created_at'),
@@ -104,6 +111,8 @@ export class SupabaseRepository {
       plans: plans.error ? [] : ((plans.data ?? []) as Row[]).map(rowToPlan),
       practiceRuns: practice.error ? [] : ((practice.data ?? []) as Row[]).map(rowToPractice),
       pendingTrades: pending.error ? [] : ((pending.data ?? []) as Row[]).map(rowToPending),
+      practiceAttempts: attempts.error ? [] : ((attempts.data ?? []) as Row[]).map(rowToPracticeAttempt),
+      practiceLessons: lessons.error ? [] : ((lessons.data ?? []) as Row[]).map(rowToPracticeLesson),
     };
   }
 
@@ -151,6 +160,14 @@ export class SupabaseRepository {
     check(await this.db.from('pending_trades').upsert(pendingToRow(p, this.userId)));
   }
 
+  async upsertPracticeAttempt(a: PracticeAttempt) {
+    check(await this.db.from('practice_attempts').upsert(practiceAttemptToRow(a, this.userId)));
+  }
+
+  async upsertPracticeLesson(l: PracticeLesson) {
+    check(await this.db.from('practice_lessons').upsert(practiceLessonToRow(l, this.userId)));
+  }
+
   async insertPracticeRun(p: PracticeRun) {
     check(await this.db.from('practice_runs').upsert(practiceToRow(p, this.userId)));
   }
@@ -164,7 +181,7 @@ export class SupabaseRepository {
     check(await this.db.from('profiles').update({ display_name: state.preferences.displayName }).eq('id', this.userId));
   }
 
-  async remove(table: 'accounts' | 'strategies' | 'trades', id: string) {
+  async remove(table: 'accounts' | 'strategies' | 'trades' | 'practice_lessons', id: string) {
     check(await this.db.from(table).delete().eq('id', id));
   }
 }

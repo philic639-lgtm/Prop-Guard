@@ -1,5 +1,6 @@
 import { createDemoData } from '@/data/demo';
 
+import { practiceAttemptToRow, practiceLessonToRow, rowToPracticeAttempt, rowToPracticeLesson } from '../supabase/mappers';
 import { accountToRows, pendingToRow, rowToPending, rowsToAccount, rowsToStrategy, rowsToTrade, strategyToRows, tradeToRows } from '../supabase/mappers';
 
 const data = createDemoData(new Date('2026-10-02T15:30:00Z'));
@@ -40,5 +41,17 @@ describe('supabase mappers', () => {
     const t = { ...data.trades[0], source: 'auto' as const, accountBalance: 25_000, pendingId: p.id, externalId: 'B-1' };
     const { trade, checklist, journal } = tradeToRows(t, 'user');
     expect(rowsToTrade(trade, checklist, journal)).toMatchObject({ source: 'auto', accountBalance: 25_000, pendingId: p.id, externalId: 'B-1' });
+  });
+
+  it('round-trips practice attempts and lessons (user-performance layer)', () => {
+    const a = {
+      id: 'a1', userId: 'user', scenarioId: 'sample-x', instrument: 'ES', strategyId: 'orb-15', strategyName: '15M ORB Retest',
+      timestamp: '2026-10-01T14:00:00.000Z', mode: 'smart' as const, session: 'morning' as const, direction: 'long' as const,
+      decision: 'long' as const, idealDecision: 'long' as const, correct: true, entry: 6029.25, stop: 6025.75, target: 6036.25,
+      riskReward: 2, score: 92, grade: 'A+' as const, result: 'win' as const, mistakes: [], setupCharacteristics: { retestNumber: 1, trendAligned: true },
+    };
+    expect(rowToPracticeAttempt(practiceAttemptToRow(a, 'user'))).toEqual(a);
+    const l = { id: 'l1', attemptId: 'a1', scenarioId: 'sample-x', strategyId: 'orb-15', strategyName: '15M ORB Retest', instrument: 'ES', score: 92, grade: 'A+' as const, lesson: 'Wait for the first retest.', createdAt: '2026-10-01T14:05:00.000Z' };
+    expect(rowToPracticeLesson(practiceLessonToRow(l, 'user'))).toEqual(l);
   });
 });

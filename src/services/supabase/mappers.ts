@@ -11,6 +11,7 @@ import type {
   TradingSession,
   UserPreferences,
 } from '@/types/domain';
+import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 
 /**
  * Pure row <-> domain mappers. Postgres numerics arrive as strings or
@@ -485,6 +486,92 @@ export function rowToPractice(r: Row): PracticeRun {
     conditionsTotal: num(r.conditions_total),
     verdict: (r.verdict as PracticeRun['verdict']) ?? 'wait',
     feedback: str(r.feedback),
+    createdAt: str(r.created_at),
+  };
+}
+
+export function practiceAttemptToRow(a: PracticeAttempt, userId: string) {
+  return {
+    id: a.id,
+    user_id: userId,
+    scenario_id: a.scenarioId,
+    instrument: a.instrument,
+    strategy_id: a.strategyId,
+    strategy_name: a.strategyName,
+    attempted_at: a.timestamp,
+    mode: a.mode,
+    session: a.session,
+    direction: a.direction,
+    decision: a.decision,
+    ideal_decision: a.idealDecision,
+    correct: a.correct,
+    entry: a.entry ?? null,
+    stop: a.stop ?? null,
+    target: a.target ?? null,
+    risk_reward: a.riskReward ?? null,
+    score: a.score,
+    grade: a.grade,
+    result: a.result,
+    mistakes: a.mistakes,
+    setup_characteristics: a.setupCharacteristics,
+  };
+}
+
+export function rowToPracticeAttempt(r: Row): PracticeAttempt {
+  const opt = (v: unknown) => (v == null ? undefined : Number(v));
+  return {
+    id: str(r.id),
+    userId: (r.user_id as string | null) ?? undefined,
+    scenarioId: str(r.scenario_id),
+    instrument: str(r.instrument),
+    strategyId: str(r.strategy_id),
+    strategyName: str(r.strategy_name),
+    timestamp: str(r.attempted_at),
+    mode: (r.mode as PracticeAttempt['mode']) ?? 'standard',
+    session: r.session === 'afternoon' ? 'afternoon' : 'morning',
+    direction: r.direction === 'short' ? 'short' : 'long',
+    decision: (r.decision as PracticeAttempt['decision']) ?? 'wait',
+    idealDecision: (r.ideal_decision as PracticeAttempt['idealDecision']) ?? 'wait',
+    correct: r.correct === true,
+    entry: opt(r.entry),
+    stop: opt(r.stop),
+    target: opt(r.target),
+    riskReward: opt(r.risk_reward),
+    score: num(r.score),
+    grade: (r.grade as PracticeAttempt['grade']) ?? 'D',
+    result: (r.result as PracticeAttempt['result']) ?? 'expired',
+    mistakes: Array.isArray(r.mistakes) ? (r.mistakes as string[]) : [],
+    setupCharacteristics: (r.setup_characteristics as PracticeAttempt['setupCharacteristics']) ?? {},
+  };
+}
+
+export function practiceLessonToRow(l: PracticeLesson, userId: string) {
+  return {
+    id: l.id,
+    user_id: userId,
+    attempt_id: l.attemptId,
+    scenario_id: l.scenarioId,
+    strategy_id: l.strategyId,
+    strategy_name: l.strategyName,
+    instrument: l.instrument,
+    score: l.score,
+    grade: l.grade,
+    lesson: l.lesson,
+    created_at: l.createdAt,
+  };
+}
+
+export function rowToPracticeLesson(r: Row): PracticeLesson {
+  return {
+    id: str(r.id),
+    attemptId: str(r.attempt_id),
+    scenarioId: str(r.scenario_id),
+    strategyId: str(r.strategy_id),
+    strategyName: str(r.strategy_name),
+    instrument: str(r.instrument),
+    score: num(r.score),
+    grade: (r.grade as PracticeLesson['grade']) ?? 'D',
+    lesson: str(r.lesson),
     createdAt: str(r.created_at),
   };
 }

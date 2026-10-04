@@ -14,17 +14,17 @@ interface VisualDiagramProps {
 }
 
 // SVG text defaults to a serif face on web; match the app's sans-serif UI font.
-const FONT = Platform.OS === 'web' ? 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif' : undefined;
+export const CHART_FONT = Platform.OS === 'web' ? 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif' : undefined;
 const LABEL_W = 92;
 const MAX_LABEL = 15;
 const short = (s: string) => (s.length > MAX_LABEL ? `${s.slice(0, MAX_LABEL - 1)}…` : s);
 const PAD_Y = 16;
 const LABEL_GAP = 13;
 
-type RightLabel = { y: number; text: string; color: string };
+export type RightLabel = { y: number; text: string; color: string };
 
 /** Spread right-gutter labels so close levels (e.g. stop just under the level) never overlap. */
-function spreadLabels(labels: RightLabel[], height: number): RightLabel[] {
+export function spreadLabels(labels: RightLabel[], height: number): RightLabel[] {
   const sorted = [...labels].sort((a, b) => a.y - b.y);
   for (let i = 1; i < sorted.length; i++) {
     if (sorted[i].y - sorted[i - 1].y < LABEL_GAP) sorted[i] = { ...sorted[i], y: sorted[i - 1].y + LABEL_GAP };
@@ -93,7 +93,7 @@ export function VisualDiagram({ chart, height = 240, rr, accessibilityLabel }: V
                 strokeOpacity={0.35}
                 strokeDasharray="3 3"
               />
-              <SvgText fontFamily={FONT} x={z.from * slot + 4} y={y(z.bottom) - 4} fill={colors.accentBright} fontSize={9} fontWeight="600">
+              <SvgText fontFamily={CHART_FONT} x={z.from * slot + 4} y={y(z.bottom) - 4} fill={colors.accentBright} fontSize={9} fontWeight="600">
                 {z.label}
               </SvgText>
             </G>
@@ -158,7 +158,7 @@ export function VisualDiagram({ chart, height = 240, rr, accessibilityLabel }: V
             return (
               <G key={s.step}>
                 <Circle cx={cx(s.candle)} cy={sy} r={9} fill={colors.accent} stroke={colors.bg} strokeWidth={1.5} />
-                <SvgText fontFamily={FONT} x={cx(s.candle)} y={sy + 3.5} fill={colors.accentOn} fontSize={10.5} fontWeight="700" textAnchor="middle">
+                <SvgText fontFamily={CHART_FONT} x={cx(s.candle)} y={sy + 3.5} fill={colors.accentOn} fontSize={10.5} fontWeight="700" textAnchor="middle">
                   {String(s.step)}
                 </SvgText>
               </G>
@@ -177,7 +177,7 @@ export function VisualDiagram({ chart, height = 240, rr, accessibilityLabel }: V
                   <G>
                     <Circle cx={mx} cy={my} r={9} fill={colors.danger} />
                     <Path d={`M${mx - 4},${my - 4} L${mx + 4},${my + 4} M${mx + 4},${my - 4} L${mx - 4},${my + 4}`} stroke={colors.accentOn} strokeWidth={2} />
-                    <SvgText fontFamily={FONT} x={lx} y={Math.max(10, my - 14)} fill={colors.danger} fontSize={10} fontWeight="700" textAnchor="middle">
+                    <SvgText fontFamily={CHART_FONT} x={lx} y={Math.max(10, my - 14)} fill={colors.danger} fontSize={10} fontWeight="700" textAnchor="middle">
                       {m.label}
                     </SvgText>
                   </G>
@@ -187,7 +187,7 @@ export function VisualDiagram({ chart, height = 240, rr, accessibilityLabel }: V
 
           {/* Right-gutter labels */}
           {labels.map((l) => (
-            <SvgText fontFamily={FONT} key={l.text} x={plotW + 6} y={l.y + 3.5} fill={l.color} fontSize={10} fontWeight="600">
+            <SvgText fontFamily={CHART_FONT} key={l.text} x={plotW + 6} y={l.y + 3.5} fill={l.color} fontSize={10} fontWeight="600">
               {short(l.text)}
             </SvgText>
           ))}

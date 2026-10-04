@@ -24,6 +24,7 @@ export default function JournalScreen() {
   const insets = useSafeAreaInsets();
   const trades = useAccountTrades();
   const pending = usePendingTrades();
+  const lessons = useAppStore((s) => s.practiceLessons);
   const [showAllPending, setShowAllPending] = useState(false);
   const strategies = useAppStore((s) => s.strategies);
   const plan = useSubscriptionStore((s) => s.plan);
@@ -89,6 +90,22 @@ export default function JournalScreen() {
             />
           ))}
         </View>
+      ) : null}
+      {lessons.length > 0 ? (
+        <Card onPress={() => router.push('/journal/lessons')} accessibilityLabel={`Practice lessons, ${lessons.length} saved`}>
+          <View style={styles.lessonHead}>
+            <AppText variant="label" tone="accent" style={{ flex: 1 }}>
+              Practice lessons · {lessons.length}
+            </AppText>
+            <AppText variant="caption">Not real trades</AppText>
+          </View>
+          <AppText variant="bodyStrong" style={{ marginTop: spacing.xs }}>
+            {lessons[0].strategyName} · score {lessons[0].score}
+          </AppText>
+          <AppText variant="caption" numberOfLines={2}>
+            {lessons[0].lesson}
+          </AppText>
+        </Card>
       ) : null}
       <MonthCalendar
         month={month}
@@ -184,6 +201,7 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: GUTTER },
   headerContent: { gap: spacing.md, marginBottom: spacing.md },
   pending: { gap: spacing.sm, marginBottom: spacing.sm },
+  lessonHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   monthNet: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.xs },
   filters: { gap: spacing.sm },
 });

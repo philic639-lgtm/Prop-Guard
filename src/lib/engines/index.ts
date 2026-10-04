@@ -10,3 +10,8 @@ export * from './liveTradeEngine';
 export * from './strategyParser';
 export * from './journalEngine';
 export * from './strategyLibraryEngine';
+export * from './practiceScoringEngine';
+export * from './practiceAnalyticsEngine';
+export * from './adaptivePracticeEngine';
+export * from './setupSimilarityEngine';
+export * from './edgeScoreEngine';

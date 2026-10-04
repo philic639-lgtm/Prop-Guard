@@ -1,241 +1,216 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useMemo } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { LiveTradeChart } from '@/components/charts/LiveTradeChart';
 import { ProGate } from '@/components/domain/ProGate';
 import {
   AppHeader,
   AppText,
   Button,
   Card,
-  CircularScore,
-  EmptyState,
-  FieldRow,
+  Chip,
+  HeaderIconButton,
+  MetricTile,
+  OptionCard,
   Screen,
   SectionHeader,
+  SegmentedControl,
   SelectField,
   StatusBadge,
-  VerdictBanner,
-  YesNo,
+  TileGrid,
 } from '@/components/ui';
-import { colors, radius, spacing } from '@/constants/theme';
-import { useActiveStrategy } from '@/hooks/useAppData';
-import { aiService } from '@/services/ai';
-import { pickScreenshot } from '@/services/screenshotService';
+import { PRACTICE_DISCLAIMER, SAMPLE_DATA_NOTE } from '@/constants/legal';
+import { colors, spacing } from '@/constants/theme';
+import { getTemplate } from '@/data/strategyLibrary';
+import { PRACTICE_INSTRUMENTS } from '@/data/practice/scenarioFactory';
+import { GRADE_TONE } from '@/features/practice/components/PracticeScoreCard';
+import { filtersFor, pickScenario, usePracticeSetup, type PracticeMode } from '@/features/practice/selection';
+import { summarizePractice } from '@/lib/engines';
+import { scenarioProvider } from '@/services/marketHistory';
 import { useAppStore } from '@/store/useAppStore';
-import type { PracticeRun } from '@/types/domain';
-import { shortDate, time } from '@/utils/format';
-import { uuid } from '@/utils/id';
+import type { PracticeAttempt } from '@/types/practice';
+import { shortDate } from '@/utils/format';
 
-const SAMPLE = [6731.25, 6733, 6736.5, 6735.25, 6738, 6741.75, 6744, 6742.5, 6741.75, 6742.25, 6743.5, 6746, 6748.25, 6747.5, 6750];
-
-const VERDICT_UI = {
-  match: { tone: 'positive' as const, title: 'Strategy match', subtitle: 'In live trading you would be cleared to enter' },
-  wait: { tone: 'warning' as const, title: 'Wait', subtitle: 'One condition is not confirmed' },
-  no_trade: { tone: 'danger' as const, title: 'No trade', subtitle: 'This is not your setup' },
+const ANY = '__any__';
+const pct = (v: number | null) => (v == null ? '—' : `${Math.round(v * 100)}%`);
+const RESULT: Record<PracticeAttempt['result'], string> = {
+  win: 'Win',
+  loss: 'Loss',
+  expired: 'Expired',
+  'not-filled': 'Not filled',
+  'correct-wait': 'Correct wait',
+  'incorrect-wait': 'Missed setup',
 };
 
-/** Practice a saved strategy on screenshots before risking capital. */
-export default function PracticeScreen() {
+/** Historical Trading Trainer home: pick instrument / strategy / difficulty and practice. */
+export default function PracticeHome() {
   const params = useLocalSearchParams<{ strategyId?: string }>();
+  const attempts = useAppStore((s) => s.practiceAttempts);
   const strategies = useAppStore((s) => s.strategies);
-  const runs = useAppStore((s) => s.practiceRuns);
-  const addRun = useAppStore((s) => s.addPracticeRun);
-  const demo = useAppStore((s) => s.mode === 'demo');
-  const active = useActiveStrategy();
-  const [strategyId, setStrategyId] = useState<string | null>(params.strategyId ?? active?.id ?? null);
-  const [image, setImage] = useState<string | null | 'sample'>(null);
-  const [answers, setAnswers] = useState<Record<string, boolean>>({});
-  const [result, setResult] = useState<PracticeRun | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const setup = usePracticeSetup((s) => s.setup);
+  const setSetup = usePracticeSetup((s) => s.setSetup);
 
-  const strategy = strategies.find((s) => s.id === strategyId) ?? null;
-  const items = useMemo(() => strategy?.checklist.filter((c) => c.kind === 'yesno') ?? [], [strategy]);
-  const history = runs.filter((r) => !strategyId || r.strategyId === strategyId).slice(0, 8);
-  const answered = items.every((i) => answers[i.id] != null);
+  // Strategies come from the Strategy Library; only those with practice scenarios are offered.
+  const strategyOptions = useMemo(() => {
+    const ids = [...new Set(scenarioProvider.list().map((s) => s.strategyId))];
+    return ids.map((id) => ({ value: id, label: getTemplate(id)?.shortName ?? id, sub: getTemplate(id) ? `${scenarioProvider.list({ strategyId: id }).length} scenarios` : undefined }));
+  }, []);
 
-  const pick = async () => {
-    setError(null);
-    const r = await pickScreenshot('library');
-    if (r.status === 'ok') {
-      setImage(r.image.uri);
-      setResult(null);
-      setAnswers({});
-    } else if (r.status === 'denied') setError('Photo access is required. Enable it in Settings.');
-    else if (r.status === 'error') setError(r.message);
-  };
+  // Arriving from a saved strategy ("Practice") preselects its library template.
+  useEffect(() => {
+    if (!params.strategyId) return;
+    const saved = strategies.find((s) => s.id === params.strategyId);
+    const templateId = saved?.libraryId ?? params.strategyId;
+    if (strategyOptions.some((o) => o.value === templateId)) setSetup({ strategyId: templateId });
+  }, [params.strategyId, strategies, strategyOptions, setSetup]);
 
-  const analyze = async () => {
-    if (!strategy) return;
-    setLoading(true);
-    try {
-      const conditions = items.map((i) => ({ label: i.label, met: answers[i.id] === true }));
-      const met = conditions.filter((c) => c.met).length;
-      const total = conditions.length;
-      const missing = total - met;
-      const { feedback } = await aiService.practiceFeedback({ strategyName: strategy.name, conditions });
-      const run: PracticeRun = {
-        id: uuid(),
-        strategyId: strategy.id,
-        screenshotUri: image === 'sample' ? null : image,
-        answers,
-        matchPct: total ? Math.round((met / total) * 100) : 0,
-        conditionsMet: met,
-        conditionsTotal: total,
-        verdict: missing === 0 ? 'match' : missing === 1 ? 'wait' : 'no_trade',
-        feedback,
-        createdAt: new Date().toISOString(),
-      };
-      addRun(run);
-      setResult(run);
-    } finally {
-      setLoading(false);
-    }
+  const matching = scenarioProvider.list(filtersFor(setup)).length;
+  const summary = useMemo(() => summarizePractice(attempts), [attempts]);
+  const recent = useMemo(() => [...attempts].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 5), [attempts]);
+
+  const start = (mode: PracticeMode) => {
+    usePracticeSetup.getState().setMode(mode);
+    const pick = pickScenario(mode, setup, useAppStore.getState().practiceAttempts);
+    if (!pick) return;
+    router.push({ pathname: '/practice/session', params: { id: pick.scenario.id, mode, reason: pick.reason ?? '' } });
   };
 
   return (
-    <Screen header={<AppHeader title="Practice mode" back />}>
-      <ProGate feature="practiceMode" title="Practice mode" description="Test a saved strategy on screenshots before using it live — no capital at risk.">
-        {strategies.length === 0 ? (
-          <EmptyState icon="git-branch-outline" title="No strategy to practice" message="Save a strategy first, then practice spotting it on charts." actionLabel="Build a strategy" onAction={() => router.replace('/strategy')} />
+    <Screen header={<AppHeader title="Practice" subtitle="Historical trading trainer" back right={<HeaderIconButton icon="stats-chart-outline" label="Practice analytics" onPress={() => router.push('/practice/analytics')} />} />}>
+      <ProGate feature="practiceMode" title="Practice mode" description="Practise reading setups on historical-style scenarios before risking capital.">
+        <Card>
+          <View style={styles.row}>
+            <Ionicons name="school" size={18} color={colors.accentBright} />
+            <AppText variant="heading" style={styles.flex}>
+              Decide first. Then see what happened.
+            </AppText>
+          </View>
+          <AppText variant="body" tone="secondary" style={{ marginTop: spacing.xs }}>
+            Each scenario stops at a decision point. Choose LONG, SHORT or WAIT using your strategy rules, get a Prop Guard score, then replay the rest of the session.
+          </AppText>
+          <View style={[styles.row, { marginTop: spacing.md }]}>
+            <StatusBadge label="Educational sample data" tone="warning" icon="information-circle-outline" size="sm" />
+            <StatusBadge label="No capital at risk" tone="positive" size="sm" />
+          </View>
+        </Card>
+
+        <TileGrid>
+          <MetricTile label="Practice accuracy" value={pct(summary.accuracy)} sub={`${summary.attempts} scenario${summary.attempts === 1 ? '' : 's'}`} tone={summary.accuracy == null ? 'primary' : summary.accuracy >= 0.6 ? 'positive' : 'warning'} />
+          <MetricTile label="Current streak" value={String(summary.streak)} sub="correct in a row" icon="flame-outline" />
+          <MetricTile label="Best strategy" value={summary.bestStrategy?.label ?? '—'} sub={summary.bestStrategy ? pct(summary.bestStrategy.accuracy) : 'Need 3+ attempts'} tone={summary.bestStrategy ? 'positive' : 'primary'} />
+          <MetricTile label="Weakest strategy" value={summary.weakestStrategy?.label ?? '—'} sub={summary.weakestStrategy ? pct(summary.weakestStrategy.accuracy) : 'Need 2 strategies'} tone={summary.weakestStrategy ? 'warning' : 'primary'} />
+        </TileGrid>
+
+        <SectionHeader title="Set up your practice" />
+        <Card>
+          <AppText variant="label">Instrument</AppText>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+            <Chip label="Any" selected={setup.instrument == null} onPress={() => setSetup({ instrument: null })} />
+            {PRACTICE_INSTRUMENTS.map((i) => (
+              <Chip key={i} label={i} selected={setup.instrument === i} onPress={() => setSetup({ instrument: setup.instrument === i ? null : i })} />
+            ))}
+          </ScrollView>
+
+          <View style={styles.field}>
+            <SelectField
+              label="Strategy"
+              value={setup.strategyId ?? ANY}
+              options={[{ value: ANY, label: 'All strategies', sub: 'From your Strategy Library' }, ...strategyOptions]}
+              onChange={(v) => setSetup({ strategyId: v === ANY ? null : v })}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <SegmentedControl
+              label="Difficulty"
+              options={[
+                { value: ANY, label: 'Any' },
+                { value: 'Beginner', label: 'Beginner' },
+                { value: 'Intermediate', label: 'Intermediate' },
+                { value: 'Advanced', label: 'Advanced' },
+              ]}
+              value={setup.difficulty ?? ANY}
+              onChange={(v) => setSetup({ difficulty: v === ANY ? null : (v as typeof setup.difficulty) })}
+            />
+          </View>
+          <View style={styles.field}>
+            <SegmentedControl
+              label="Setups"
+              options={[
+                { value: ANY, label: 'Both' },
+                { value: 'long', label: 'Long', tone: 'positive' },
+                { value: 'short', label: 'Short', tone: 'danger' },
+              ]}
+              value={setup.direction ?? ANY}
+              onChange={(v) => setSetup({ direction: v === ANY ? null : (v as 'long' | 'short') })}
+            />
+          </View>
+          <View style={styles.field}>
+            <SegmentedControl
+              label="Session"
+              options={[
+                { value: ANY, label: 'Any' },
+                { value: 'morning', label: 'Morning' },
+                { value: 'afternoon', label: 'Afternoon' },
+              ]}
+              value={setup.session ?? ANY}
+              onChange={(v) => setSetup({ session: v === ANY ? null : (v as 'morning' | 'afternoon') })}
+            />
+          </View>
+          <AppText variant="caption" style={{ marginTop: spacing.md }} tone={matching ? 'secondary' : 'warning'}>
+            {matching ? `${matching} scenario${matching === 1 ? '' : 's'} match these filters.` : 'No scenarios match these filters yet — try fewer filters.'}
+          </AppText>
+        </Card>
+
+        <Button label="Start Practice" icon="play" disabled={matching === 0} onPress={() => start('standard')} />
+        <OptionCard
+          icon="sparkles"
+          title="Smart Practice"
+          description="Prop Guard picks scenarios from your weaker areas (about 60%), mixed with average (25%) and strong areas (15%)."
+          onPress={() => start('smart')}
+        />
+        <OptionCard icon="ribbon-outline" title="Great Setups" description="Clean, textbook examples for learning what strong setups look like. You still decide before the reveal." onPress={() => start('great')} />
+
+        <SectionHeader title="Recent practice" action={attempts.length ? 'Analytics' : undefined} onAction={() => router.push('/practice/analytics')} />
+        {recent.length === 0 ? (
+          <AppText variant="caption">Your practice attempts will appear here. Every result is saved to build your personal practice statistics.</AppText>
         ) : (
-          <>
-            <Card>
-              <View style={styles.row}>
-                <Ionicons name="school" size={18} color={colors.accentBright} />
-                <AppText variant="body" style={styles.flex}>
-                  Practice spotting your setup. Nothing here is a real trade and nothing affects your account.
+          <Card>
+            {recent.map((a, i) => (
+              <View key={a.id} style={[styles.hist, i > 0 && styles.border]}>
+                <StatusBadge label={a.grade} tone={GRADE_TONE[a.grade]} size="sm" />
+                <View style={styles.flex}>
+                  <AppText variant="bodyStrong">
+                    {a.strategyName} · {a.instrument}
+                  </AppText>
+                  <AppText variant="caption">
+                    {a.decision.toUpperCase()} (ideal {a.idealDecision.toUpperCase()}) · {RESULT[a.result]} · {a.score}/100
+                  </AppText>
+                </View>
+                <AppText variant="caption" tone="tertiary">
+                  {shortDate(a.timestamp)}
                 </AppText>
               </View>
-              <View style={{ marginTop: spacing.md }}>
-                <FieldRow
-                  label="Strategy"
-                  control={
-                    <SelectField
-                      label="Strategy"
-                      value={strategyId}
-                      options={strategies.map((s) => ({ value: s.id, label: s.name }))}
-                      onChange={(v) => {
-                        setStrategyId(v);
-                        setAnswers({});
-                        setResult(null);
-                      }}
-                    />
-                  }
-                />
-              </View>
-            </Card>
-
-            {image ? (
-              <Card>
-                <View style={styles.row}>
-                  <AppText variant="label" style={styles.flex}>
-                    {image === 'sample' ? 'Sample chart · ES 5m' : 'Your screenshot'}
-                  </AppText>
-                  <Button label="Change" variant="ghost" size="md" onPress={() => { setImage(null); setResult(null); }} />
-                </View>
-                {image === 'sample' ? (
-                  <LiveTradeChart prices={SAMPLE} entry={6742.25} stop={6737.25} target={6752.25} height={180} />
-                ) : (
-                  <Image source={{ uri: image }} style={styles.preview} contentFit="contain" accessibilityLabel="Practice screenshot" />
-                )}
-              </Card>
-            ) : (
-              <Card>
-                <View style={styles.drop}>
-                  <Ionicons name="cloud-upload-outline" size={32} color={colors.accentBright} />
-                  <AppText variant="heading">Upload a chart</AppText>
-                  <AppText variant="caption" align="center">
-                    Use a past chart from TradingView, Tradovate or NinjaTrader.
-                  </AppText>
-                </View>
-                <Button label="Upload screenshot" icon="images-outline" onPress={() => void pick()} />
-                {demo ? <Button label="Use a sample chart" variant="ghost" size="md" onPress={() => setImage('sample')} /> : null}
-                {error ? (
-                  <AppText variant="caption" tone="danger">
-                    {error}
-                  </AppText>
-                ) : null}
-              </Card>
-            )}
-
-            {image && strategy ? (
-              <>
-                <SectionHeader title={`${strategy.name} conditions`} />
-                <Card>
-                  <View style={{ gap: spacing.lg }}>
-                    {items.map((i) => (
-                      <YesNo key={i.id} label={i.label} value={answers[i.id] ?? null} onChange={(v) => { setAnswers((a) => ({ ...a, [i.id]: v })); setResult(null); }} />
-                    ))}
-                  </View>
-                </Card>
-                <Button label="Analyze practice setup" icon="sparkles" loading={loading} disabled={!answered || items.length === 0} onPress={() => void analyze()} />
-              </>
-            ) : null}
-
-            {result ? (
-              <>
-                <View style={styles.score}>
-                  <CircularScore value={result.matchPct} suffix="%" tone={VERDICT_UI[result.verdict].tone} size={130} label="Match" />
-                </View>
-                <VerdictBanner tone={VERDICT_UI[result.verdict].tone} title={VERDICT_UI[result.verdict].title} subtitle={VERDICT_UI[result.verdict].subtitle} badge={`${result.conditionsMet}/${result.conditionsTotal}`} />
-                <Card>
-                  <View style={styles.row}>
-                    <Ionicons name="sparkles" size={16} color={colors.accentBright} />
-                    <AppText variant="label" tone="accent">
-                      AI feedback
-                    </AppText>
-                  </View>
-                  <AppText variant="body" style={{ marginTop: spacing.sm }}>
-                    {result.feedback}
-                  </AppText>
-                </Card>
-              </>
-            ) : null}
-
-            <SectionHeader title="Practice history" />
-            {history.length === 0 ? (
-              <AppText variant="caption">Your practice attempts will appear here.</AppText>
-            ) : (
-              <Card>
-                {history.map((r, i) => {
-                  const ui = VERDICT_UI[r.verdict];
-                  return (
-                    <View key={r.id} style={[styles.hist, i > 0 && styles.border]}>
-                      <StatusBadge label={`${r.conditionsMet}/${r.conditionsTotal}`} tone={ui.tone} size="sm" />
-                      <View style={styles.flex}>
-                        <AppText variant="bodyStrong">{ui.title}</AppText>
-                        <AppText variant="caption" numberOfLines={2}>
-                          {r.feedback}
-                        </AppText>
-                      </View>
-                      <AppText variant="caption" tone="tertiary">
-                        {shortDate(r.createdAt)}
-                        {'\n'}
-                        {time(r.createdAt)}
-                      </AppText>
-                    </View>
-                  );
-                })}
-              </Card>
-            )}
-          </>
+            ))}
+          </Card>
         )}
+
+        <OptionCard icon="images-outline" title="Practice on your own chart" description="Upload a screenshot and check it against a saved strategy's conditions." onPress={() => router.push('/practice/screenshot')} />
+
+        <AppText variant="caption" tone="tertiary">
+          {SAMPLE_DATA_NOTE} {PRACTICE_DISCLAIMER}
+        </AppText>
       </ProGate>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
   flex: { flex: 1 },
-  drop: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xl, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.accent + '88', borderRadius: radius.md, marginBottom: spacing.lg, backgroundColor: '#0B1730' },
-  preview: { width: '100%', height: 200, borderRadius: radius.md, backgroundColor: colors.surface },
-  score: { alignItems: 'center' },
+  chips: { gap: spacing.sm, marginTop: spacing.sm },
+  field: { marginTop: spacing.lg },
   hist: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
   border: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
 });
