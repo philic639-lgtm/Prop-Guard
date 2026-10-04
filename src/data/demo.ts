@@ -114,7 +114,7 @@ function strategyFromTemplate(templateId: string, id: string, nowIso: string): S
   const t = STRATEGY_LIBRARY.find((x) => x.id === templateId)!;
   return {
     id,
-    name: t.name,
+    name: t.shortName,
     markets: ['ES', 'MES'],
     session: t.session,
     ...t.defaults,
@@ -125,6 +125,7 @@ function strategyFromTemplate(templateId: string, id: string, nowIso: string): S
     checklist: checklistFromLabels(t.checklist, templateId),
     source: 'library',
     libraryId: t.id,
+    sourceType: 'BUILT_IN',
     createdAt: nowIso,
     updatedAt: nowIso,
   };

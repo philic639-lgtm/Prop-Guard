@@ -52,7 +52,7 @@ function TradeCardBase({ trade, strategyName, onPress }: TradeCardProps) {
       </View>
       <View style={styles.footer}>
         <AppText variant="caption" numberOfLines={1} style={styles.flex}>
-          {strategyName ?? 'No strategy'}
+          {strategyName ?? trade.strategyName ?? 'Strategy not assigned'}
         </AppText>
         <View style={styles.meta}>
           {trade.screenshotUri ? <Image source={{ uri: trade.screenshotUri }} style={styles.thumb} contentFit="cover" accessibilityLabel="Screenshot" /> : null}

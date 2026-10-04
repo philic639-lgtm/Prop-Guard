@@ -1,4 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Disclaimer } from '@/components/domain/Disclaimer';
@@ -7,9 +9,9 @@ import { PLANS } from '@/config/plans';
 import { LIBRARY_DISCLAIMER } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { STRATEGY_LIBRARY } from '@/data/strategyLibrary';
-import { LibraryCard } from '@/features/strategy/LibraryCard';
-import { useActiveStrategy } from '@/hooks/useAppData';
-import { strategyRules } from '@/lib/engines';
+import { StrategyPerformanceCard } from '@/features/strategy/StrategyPerformanceCard';
+import { useAccountTrades, useActiveStrategy } from '@/hooks/useAppData';
+import { performanceInsight, strategyPerformance, strategyRules, strategySourceLabel } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import { useEntitlement, useSubscriptionStore } from '@/store/useSubscriptionStore';
 
@@ -19,10 +21,11 @@ export default function StrategyTab() {
   const active = useActiveStrategy();
   const plan = useSubscriptionStore((s) => s.plan);
   const unlimitedCustom = useEntitlement('customStrategies');
-  const libraryLimit = PLANS[plan].limits.libraryTemplates;
   const canAdd = unlimitedCustom || strategies.length < PLANS[plan].limits.customStrategies;
   const preview = active ? strategyRules(active) : [];
   const others = strategies.filter((s) => s.id !== active?.id);
+  const trades = useAccountTrades();
+  const performance = useMemo(() => strategyPerformance(trades, strategies), [trades, strategies]);
 
   const gate = (path: Parameters<typeof router.push>[0]) => router.push(canAdd ? path : '/paywall');
 
@@ -40,6 +43,9 @@ export default function StrategyTab() {
             </View>
             <AppText variant="label" style={{ marginTop: spacing.xs }}>
               {active.markets.join(' · ')} • {active.session || 'Any session'}
+            </AppText>
+            <AppText variant="caption" tone="accent" style={{ marginTop: 2 }}>
+              {strategySourceLabel(active)}
             </AppText>
             <View style={styles.rules}>
               {preview.slice(0, 5).map((r, i) => (
@@ -84,6 +90,9 @@ export default function StrategyTab() {
                   <AppText variant="caption">
                     {s.markets.join(' · ')} · {s.checklist.length} conditions · min 1:{s.minRR}
                   </AppText>
+                  <AppText variant="label" style={{ fontSize: 10, marginTop: 2 }}>
+                    {strategySourceLabel(s)}
+                  </AppText>
                 </View>
                 <Button label="Use" size="md" variant="ghost" onPress={() => setActive(s.id)} />
               </View>
@@ -92,10 +101,27 @@ export default function StrategyTab() {
         </>
       ) : null}
 
-      <SectionHeader title="Strategy library" action="View all" onAction={() => router.push('/strategy/library')} />
-      {STRATEGY_LIBRARY.slice(0, 4).map((t, i) => (
-        <LibraryCard key={t.id} template={t} locked={i >= libraryLimit} />
-      ))}
+      <SectionHeader title="Explore strategies" />
+      <Card onPress={() => router.push('/strategy/library')} accessibilityLabel="Strategy Library — browse rule-based frameworks">
+        <View style={styles.head}>
+          <View style={styles.exploreIcon}>
+            <Ionicons name="library-outline" size={20} color={colors.accentBright} />
+          </View>
+          <View style={styles.flex}>
+            <AppText variant="heading">Strategy Library</AppText>
+            <AppText variant="caption">Browse {STRATEGY_LIBRARY.length}+ rule-based trading frameworks.</AppText>
+          </View>
+        </View>
+        <Button label="Open Strategy Library" icon="arrow-forward" variant="secondary" size="md" style={{ marginTop: spacing.md }} onPress={() => router.push('/strategy/library')} />
+      </Card>
+
+      {performance.length > 0 ? (
+        <>
+          <SectionHeader title="Your strategy performance" action="Details" onAction={() => router.push('/performance')} />
+          <StrategyPerformanceCard rows={performance} insight={performanceInsight(performance)} limit={4} />
+        </>
+      ) : null}
+
       <Disclaimer text={LIBRARY_DISCLAIMER} />
     </Screen>
   );
@@ -108,4 +134,5 @@ const styles = StyleSheet.create({
   ruleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   num: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   btnRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
+  exploreIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.accentMuted, alignItems: 'center', justifyContent: 'center' },
 });

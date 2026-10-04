@@ -111,6 +111,7 @@ export function strategyToRows(s: Strategy, userId: string) {
       notes: s.notes,
       source: s.source,
       library_id: s.libraryId ?? null,
+      source_type: s.sourceType ?? null,
       created_at: s.createdAt,
     },
     checklist: s.checklist.map((c, i) => ({
@@ -153,6 +154,7 @@ export function rowsToStrategy(r: Row, items: Row[]): Strategy {
     checklist,
     source: r.source === 'library' ? 'library' : 'custom',
     libraryId: (r.library_id as string | null) ?? undefined,
+    ...(r.source_type === 'BUILT_IN' || r.source_type === 'CUSTOM' || r.source_type === 'AI_ADAPTED' ? { sourceType: r.source_type } : {}),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
   };
@@ -198,6 +200,7 @@ export function tradeToRows(t: Trade, userId: string) {
       account_balance: t.accountBalance ?? null,
       pending_id: t.pendingId ?? null,
       external_id: t.externalId ?? null,
+      strategy_name: t.strategyName ?? null,
     },
     checklist: t.checklist.map((c) => ({ trade_id: t.id, item_key: c.itemId, user_id: userId, label: c.label, value: c.value })),
     journal: {
@@ -255,6 +258,7 @@ export function rowsToTrade(r: Row, checklist: Row[], journal: Row | undefined):
     ...(r.account_balance != null ? { accountBalance: num(r.account_balance) } : {}),
     ...(r.pending_id != null ? { pendingId: str(r.pending_id) } : {}),
     ...(r.external_id != null ? { externalId: str(r.external_id) } : {}),
+    ...(r.strategy_name != null ? { strategyName: str(r.strategy_name) } : {}),
   };
 }
 

@@ -63,7 +63,7 @@ export default function JournalScreen() {
     ({ item }: { item: Trade }) => (
       <TradeCard
         trade={item}
-        strategyName={item.strategyId ? names.get(item.strategyId) : null}
+        strategyName={item.strategyId ? (names.get(item.strategyId) ?? item.strategyName) : null}
         onPress={() => router.push(item.status === 'open' ? { pathname: '/session/live', params: { id: item.id } } : { pathname: '/journal/[id]', params: { id: item.id } })}
       />
     ),

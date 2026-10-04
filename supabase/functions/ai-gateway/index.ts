@@ -27,9 +27,10 @@ Return JSON: {"instrument": "ES"|"MES"|"NQ"|"MNQ"|null, "direction": "long"|"sho
 "confidence": "low"|"medium"|"high", "notes": string}`,
   session_review: `Review this trading session for PROCESS quality (rule adherence), not profit.
 Return JSON: {"summary": string, "strengths": string[], "improvements": string[], "focusTomorrow": string}`,
-  strategy_finder: `Pick up to 3 templates from the provided library whose STRUCTURE fits the trader's preferences.
-Explain fit only — never claim profitability. Use only ids from the library.
-Return JSON: {"recommendations": [{"templateId": string, "fitScore": number (0-100), "reasons": string[]}]}`,
+  strategy_finder: `The candidates were already ranked deterministically from Prop Guard's curated library. For each candidate id, rewrite
+up to 5 short reasons explaining why its STRUCTURE fits the trader's answers. Do not add, remove or reorder strategies.
+Never mention profitability, win rates, returns, backtests or guarantees.
+Return JSON: {"explanations": [{"templateId": string, "reasons": string[]}]}`,
   daily_coach: `Write a short coaching note that prioritizes discipline over generating trades.
 Return JSON: {"message": string (<=400 chars), "bestAction": string (<=160 chars)}`,
   strategy_parse: `Convert the trader's plain-English strategy into MEASURABLE rules. Do not add rules they did not state.

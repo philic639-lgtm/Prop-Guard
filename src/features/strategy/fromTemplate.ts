@@ -12,7 +12,7 @@ export function strategyFromTemplate(t: LibraryTemplate, preferredMarkets?: Inst
   const indexOnly = markets.every((m) => t.markets.includes(m));
   return {
     id: uuid(),
-    name: t.name,
+    name: t.shortName,
     markets,
     session: t.session,
     ...t.defaults,
@@ -23,6 +23,7 @@ export function strategyFromTemplate(t: LibraryTemplate, preferredMarkets?: Inst
     checklist: checklistFromLabels(t.checklist, t.id),
     source: 'library',
     libraryId: t.id,
+    sourceType: 'BUILT_IN',
     createdAt: now,
     updatedAt: now,
   };
@@ -53,6 +54,7 @@ export function blankStrategy(): Strategy {
     notes: '',
     checklist: [],
     source: 'custom',
+    sourceType: 'CUSTOM',
     createdAt: now,
     updatedAt: now,
   };

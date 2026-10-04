@@ -28,9 +28,10 @@ import {
 import { colors, spacing } from '@/constants/theme';
 import { ChartImport } from '@/features/analyze/ChartImport';
 import { newDraft } from '@/features/session/draft';
+import { StrategyMatchCard } from '@/features/strategy/StrategyMatchCard';
 import { useSetupEvaluation } from '@/features/session/useSetupEvaluation';
 import { useActiveAccount, useActiveStrategy, useDailyGuard, useOpenTrade } from '@/hooks/useAppData';
-import { instrumentOptions, maxContractsForRisk, specSummary } from '@/lib/engines';
+import { instrumentOptions, maxContractsForRisk, specSummary, strategySourceLabel } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import { formatDuration } from '@/utils/dates';
 import { money, parseNum, points, rr } from '@/utils/format';
@@ -152,8 +153,16 @@ export default function AnalyzeScreen() {
 
       {mode === 'chart' ? (
         <ProGate feature="screenshotAnalysis" title="Screenshot analysis" description="Upload a TradingView, Tradovate or NinjaTrader screenshot and extract the trade plan.">
+          {strategies.length > 0 ? (
+            <SelectField
+              label="Check against strategy"
+              value={draft.strategyId}
+              options={strategies.map((s) => ({ value: s.id, label: s.name, sub: strategySourceLabel(s) }))}
+              onChange={(v) => patchDraft({ strategyId: v, answers: {} })}
+            />
+          ) : null}
           <ChartImport
-            cta="Use values for trade check"
+            cta="Check against strategy"
             onUse={(v) => {
               patchDraft({ instrument: v.instrument, direction: v.direction, entry: v.entry, stop: v.stop, target: v.target, source: 'screenshot', screenshotUri: v.imageUri });
               setMode('manual');
@@ -256,6 +265,7 @@ export default function AnalyzeScreen() {
                   ))}
                 </View>
               </Card>
+              <StrategyMatchCard strategy={strategy} answers={draft.answers} compact />
             </>
           ) : null}
 

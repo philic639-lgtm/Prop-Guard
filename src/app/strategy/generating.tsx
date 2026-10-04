@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/ui';
 import { colors, GUTTER, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
+import { finderAnswersFromProfile } from '@/features/strategy/finderProfile';
 import { strategyFromTemplate } from '@/features/strategy/fromTemplate';
 import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
 import { aiService, type StrategyFinderAnswers } from '@/services/ai';
@@ -34,19 +35,8 @@ export default function GeneratingPlan() {
     const timers = STEPS.map((_, i) => setTimeout(() => setDone(i + 1), 450 * (i + 1)));
 
     const st = useAppStore.getState();
-    const p = st.preferences.tradingProfile;
     const instrument = st.preferences.markets[0] ?? st.preferences.defaultInstrument;
-    const answers: StrategyFinderAnswers = {
-      market: instrument,
-      tradesPerDay: st.tradingRules.maxTradesPerDay <= 1 ? '1' : st.tradingRules.maxTradesPerDay <= 3 ? '2-3' : '4+',
-      session: p.session === 'ny_open' ? 'open' : p.session === 'morning' ? 'morning' : 'any',
-      style: p.style === 'scalp' ? 'scalp' : 'intraday',
-      stopSize: p.style === 'scalp' || p.riskPreference === 'conservative' ? 'tight' : p.style === 'swing' ? 'wide' : 'medium',
-      target: '2R',
-      preference: 'unsure',
-      accountSize: st.accounts.find((a) => a.id === st.activeAccountId)?.size ?? 25000,
-      dailyRisk: st.tradingRules.dailyStop,
-    };
+    const answers: StrategyFinderAnswers = finderAnswersFromProfile(st.preferences, st.tradingRules);
     let alive = true;
     const started = Date.now();
     void aiService.recommendStrategies(answers).then((recs) => {

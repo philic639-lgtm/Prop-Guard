@@ -33,6 +33,8 @@ export interface AppState extends AppData {
   user: AuthUser | null;
   hydrated: boolean;
   draft: PreTradeDraft | null;
+  /** Library templates the trader opened recently (local only). */
+  recentTemplateIds: string[];
 
   // lifecycle
   setHydrated: () => void;
@@ -56,11 +58,14 @@ export interface AppState extends AppData {
   // strategies
   upsertStrategy: (strategy: Strategy) => void;
   deleteStrategy: (id: string) => void;
+  markTemplateUsed: (templateId: string) => void;
 
   // trading
   setDraft: (draft: PreTradeDraft | null) => void;
   patchDraft: (patch: Partial<PreTradeDraft>) => void;
   ensureSession: () => TradingSession | null;
+  /** Pre-trade session: "Strategy I'm trading today" — active strategy + today's session. */
+  setTodayStrategy: (strategyId: string) => void;
   endSession: (sessionId: string, review: SessionReview | null) => void;
   setSessionReview: (sessionId: string, review: SessionReview) => void;
   openTrade: (trade: Trade) => void;
@@ -69,6 +74,8 @@ export interface AppState extends AppData {
   cancelTrade: (id: string) => void;
   journalTrade: (id: string, entry: { notes: string; emotion: Emotion | null; setupRating: number | null }) => void;
   deleteTrade: (id: string) => void;
+  /** Assign (or clear) the strategy on a journaled trade. */
+  assignTradeStrategy: (tradeId: string, strategyId: string | null) => void;
 
   // discipline
   recordEvent: (event: Omit<DisciplineEvent, 'id' | 'at'> & { at?: string }) => void;
@@ -94,6 +101,13 @@ export interface AppState extends AppData {
 
 const nowIso = () => new Date().toISOString();
 
+/** Snapshot the strategy name on the trade so the journal keeps it if the strategy is renamed or deleted. */
+function withStrategyName(trade: Trade, strategies: Strategy[]): Trade {
+  if (!trade.strategyId || trade.strategyName) return trade;
+  const name = strategies.find((x) => x.id === trade.strategyId)?.name;
+  return name ? { ...trade, strategyName: name } : trade;
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -102,6 +116,7 @@ export const useAppStore = create<AppState>()(
       user: null,
       hydrated: false,
       draft: null,
+      recentTemplateIds: [],
 
       setHydrated: () => set({ hydrated: true }),
 
@@ -189,6 +204,9 @@ export const useAppStore = create<AppState>()(
         syncService.remove('strategies', id);
       },
 
+      markTemplateUsed: (templateId) =>
+        set((s) => ({ recentTemplateIds: [templateId, ...s.recentTemplateIds.filter((x) => x !== templateId)].slice(0, 8) })),
+
       setDraft: (draft) => set({ draft }),
       patchDraft: (patch) => set((s) => (s.draft ? { draft: { ...s.draft, ...patch } } : {})),
 
@@ -211,6 +229,16 @@ export const useAppStore = create<AppState>()(
         set({ sessions: [...sessions, session] });
         syncService.upsertSession(session);
         return session;
+      },
+
+      setTodayStrategy: (strategyId) => {
+        get().setActiveStrategy(strategyId);
+        const session = get().ensureSession();
+        if (session && session.strategyId !== strategyId) {
+          const updated = { ...session, strategyId };
+          set((s) => ({ sessions: s.sessions.map((x) => (x.id === session.id ? updated : x)) }));
+          syncService.upsertSession(updated);
+        }
       },
 
       endSession: (sessionId, review) => {
@@ -237,7 +265,8 @@ export const useAppStore = create<AppState>()(
         if (updated) syncService.upsertSession(updated);
       },
 
-      openTrade: (trade) => {
+      openTrade: (input) => {
+        const trade = withStrategyName(input, get().strategies);
         set((s) => ({ trades: [...s.trades, trade] }));
         syncService.upsertTrade(trade);
       },
@@ -303,6 +332,11 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      assignTradeStrategy: (tradeId, strategyId) => {
+        const name = strategyId ? (get().strategies.find((x) => x.id === strategyId)?.name ?? null) : null;
+        get().updateTrade(tradeId, { strategyId, strategyName: name });
+      },
+
       deleteTrade: (id) => {
         set((s) => ({ trades: s.trades.filter((t) => t.id !== id), events: s.events.filter((e) => e.tradeId !== id) }));
         syncService.remove('trades', id);
@@ -335,7 +369,8 @@ export const useAppStore = create<AppState>()(
 
       markAlertsRead: () => set((s) => ({ alerts: s.alerts.map((a) => (a.read ? a : { ...a, read: true })) })),
 
-      addJournalTrade: (trade) => {
+      addJournalTrade: (input) => {
+        const trade = withStrategyName(input, get().strategies);
         set((s) => ({
           trades: [...s.trades, trade],
           accounts: s.accounts.map((a) => {
@@ -444,6 +479,7 @@ export const useAppStore = create<AppState>()(
         pendingTrades: s.pendingTrades,
         practiceRuns: s.practiceRuns,
         alerts: s.alerts,
+        recentTemplateIds: s.recentTemplateIds,
         mode: s.mode,
         user: s.user,
         draft: s.draft,

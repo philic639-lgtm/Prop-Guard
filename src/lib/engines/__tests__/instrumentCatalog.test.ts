@@ -14,7 +14,7 @@ import {
 import { calculateTradeRisk, maxContractsForRisk } from '../riskEngine';
 import { parseStrategyText } from '../strategyParser';
 
-const REQUIRED = ['ES', 'MES', 'NQ', 'MNQ', 'YM', 'MYM', 'RTY', 'M2K', 'GC', 'MGC', 'SI', 'CL', 'MCL', 'NG', 'ZB', 'ZN', '6E', '6B', '6J', 'BTC', 'MBT', 'ETH', 'MET'];
+const REQUIRED = ['ES', 'MES', 'NQ', 'MNQ', 'YM', 'MYM', 'RTY', 'M2K', 'GC', 'MGC', 'SI', 'HG', 'CL', 'MCL', 'NG', 'ZB', 'ZN', '6E', '6B', '6J', 'BTC', 'MBT', 'ETH', 'MET'];
 
 describe('instrument catalog', () => {
   afterEach(() => {
@@ -34,7 +34,7 @@ describe('instrument catalog', () => {
   it('has correct CME point values', () => {
     const pv = (s: string) => getInstrument(s).pointValue;
     expect([pv('YM'), pv('MYM'), pv('RTY'), pv('M2K')]).toEqual([5, 0.5, 50, 5]);
-    expect([pv('GC'), pv('MGC'), pv('SI')]).toEqual([100, 10, 5000]);
+    expect([pv('GC'), pv('MGC'), pv('SI'), pv('HG')]).toEqual([100, 10, 5000, 25000]);
     expect([pv('CL'), pv('MCL'), pv('NG')]).toEqual([1000, 100, 10000]);
     expect([pv('ZB'), pv('ZN')]).toEqual([1000, 1000]);
     expect([pv('6E'), pv('6B'), pv('6J')]).toEqual([125000, 62500, 12500000]);
@@ -86,20 +86,20 @@ describe('instrument catalog', () => {
   });
 
   it('registers custom instruments for all engines', () => {
-    const custom = makeCustomInstrument({ symbol: 'hg', name: 'Copper', tickSize: 0.0005, tickValue: 12.5, isMicro: false });
-    expect(custom.symbol).toBe('HG');
+    const custom = makeCustomInstrument({ symbol: 'ali', name: 'Aluminum', tickSize: 0.0005, tickValue: 12.5, isMicro: false });
+    expect(custom.symbol).toBe('ALI');
     expect(custom.pointValue).toBe(25000);
     setCustomInstruments([custom]);
-    expect(getInstrument('HG').category).toBe('custom');
-    expect(calculateTradeRisk({ instrument: 'HG', direction: 'long', entry: 4.5, stop: 4.49, target: 4.52, contracts: 1 }).riskDollars).toBe(250);
-    expect(instrumentOptions(['HG'])[0].value).toBe('HG');
-    expect(parseStrategyText('I trade HG breakouts').instrument).toBe('HG');
+    expect(getInstrument('ALI').category).toBe('custom');
+    expect(calculateTradeRisk({ instrument: 'ALI', direction: 'long', entry: 4.5, stop: 4.49, target: 4.52, contracts: 1 }).riskDollars).toBe(250);
+    expect(instrumentOptions(['ALI'])[0].value).toBe('ALI');
+    expect(parseStrategyText('I trade ALI breakouts').instrument).toBe('ALI');
   });
 
   it('merges custom instruments from separate sources', () => {
-    setCustomInstruments([makeCustomInstrument({ symbol: 'HG', name: 'Copper', tickSize: 0.0005, tickValue: 12.5, isMicro: false })]);
+    setCustomInstruments([makeCustomInstrument({ symbol: 'ALI', name: 'Aluminum', tickSize: 0.0005, tickValue: 12.5, isMicro: false })]);
     setCustomInstruments([makeCustomInstrument({ symbol: 'ZC', name: 'Corn', tickSize: 0.25, tickValue: 12.5, isMicro: false })], 'draft');
-    expect(findInstrument('HG')).toBeDefined();
+    expect(findInstrument('ALI')).toBeDefined();
     expect(findInstrument('ZC')?.pointValue).toBe(50);
   });
 

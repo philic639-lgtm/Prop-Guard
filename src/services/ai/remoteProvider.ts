@@ -1,9 +1,10 @@
 import type { z } from 'zod';
 
-import { STRATEGY_LIBRARY } from '@/data/strategyLibrary';
+import { getTemplate } from '@/data/strategyLibrary';
 import { supabase } from '@/services/supabase/client';
 
 import { MockAIProvider } from './mockProvider';
+import { matchStrategies } from './strategyMatcher';
 import type { AIProvider } from './provider';
 import {
   AccountExtractionSchema,
@@ -13,7 +14,7 @@ import {
   ScreenshotExtractionSchema,
   SessionReviewSchema,
   SetupAnalysisSchema,
-  StrategyRecommendationSchema,
+  StrategyReasonsSchema,
   type DailyCoachInput,
   type PracticeInput,
   type ScreenshotInput,
@@ -67,19 +68,21 @@ export class RemoteAIProvider implements AIProvider {
   }
 
   async recommendStrategies(answers: StrategyFinderAnswers) {
-    const library = STRATEGY_LIBRARY.map((t) => ({
-      id: t.id,
-      name: t.name,
-      style: t.style,
-      timing: t.timing,
-      tradesPerDay: t.tradesPerDay,
-      stopRange: t.stopRange,
-      minRR: t.defaults.minRR,
-      complexity: t.complexity,
-    }));
-    const r = await this.call('strategy_finder', { answers, library }, StrategyRecommendationSchema);
-    const valid = r?.recommendations.filter((rec) => STRATEGY_LIBRARY.some((t) => t.id === rec.templateId));
-    return valid && valid.length > 0 ? valid : this.fallback.recommendStrategies(answers);
+    // Ranking is always deterministic over the curated library; the model may
+    // only rephrase the "why it fits" reasons for those exact templates.
+    const ranked = matchStrategies(answers);
+    const candidates = ranked.map((m) => {
+      const t = getTemplate(m.templateId)!;
+      return { id: t.id, name: t.name, category: t.category, style: t.style, sessions: t.sessions, reasons: m.reasons };
+    });
+    const r = await this.call('strategy_finder', { answers, candidates }, StrategyReasonsSchema);
+    if (!r) return ranked;
+    const banned = /(profit|guarantee|win rate|proven|returns?\b)/i;
+    return ranked.map((m) => {
+      const ai = r.explanations.find((e) => e.templateId === m.templateId);
+      const reasons = ai?.reasons.filter((x) => !banned.test(x));
+      return reasons && reasons.length ? { ...m, reasons } : m;
+    });
   }
 
   async generateDailyCoach(input: DailyCoachInput) {

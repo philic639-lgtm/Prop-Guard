@@ -19,7 +19,7 @@ import {
 } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
-import { strategyRules, validateStrategy, type ReviewRule } from '@/lib/engines';
+import { sourceTypeAfterEdit, strategyRules, strategySourceLabel, strategySourceType, validateStrategy, type ReviewRule } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { Strategy } from '@/types/domain';
 import { formatClock, parseClock } from '@/utils/dates';
@@ -42,6 +42,8 @@ export default function ReviewStrategy() {
   const activeId = useAppStore((s) => s.activeStrategyId);
 
   const [s, setS] = useState<Strategy | null>(() => saved ?? draft);
+  // What the strategy looked like before editing — a changed built-in becomes AI_ADAPTED.
+  const [baseline] = useState<Strategy | null>(() => saved ?? draft);
   const [editing, setEditing] = useState<ReviewRule | 'name' | null>(null);
   const [v1, setV1] = useState('');
   const [v2, setV2] = useState('');
@@ -103,6 +105,7 @@ export default function ReviewStrategy() {
 
   const save = (advanced = false) => {
     const next = { ...s, updatedAt: new Date().toISOString() };
+    next.sourceType = sourceTypeAfterEdit(baseline, next);
     const problems = validateStrategy(next);
     setErrors(problems);
     if (problems.length) return;
@@ -141,11 +144,14 @@ export default function ReviewStrategy() {
           </AppText>
           <Ionicons name="pencil" size={16} color={colors.textSecondary} />
         </Pressable>
-        {origin === 'build' && !isSaved ? (
-          <View style={{ marginBottom: spacing.sm }}>
-            <StatusBadge label="Starter plan" tone="positive" size="sm" />
-          </View>
-        ) : null}
+        <View style={styles.badgeRow}>
+          <StatusBadge
+            label={strategySourceLabel({ ...s, sourceType: sourceTypeAfterEdit(baseline, s) })}
+            tone={strategySourceType(s) === 'CUSTOM' ? 'warning' : 'accent'}
+            size="sm"
+          />
+          {origin === 'build' && !isSaved ? <StatusBadge label="Starter plan" tone="positive" size="sm" /> : null}
+        </View>
         <DetailTable
           rows={[
             { label: 'Instrument', value: s.markets.join(', ') },
@@ -239,6 +245,7 @@ export default function ReviewStrategy() {
 }
 
 const styles = StyleSheet.create({
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
   flex: { flex: 1 },
   footer: { flexDirection: 'row', gap: spacing.md },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },

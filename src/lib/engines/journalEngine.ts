@@ -360,6 +360,11 @@ export interface BrokerImportInput {
   trades: readonly Trade[];
   newId: () => string;
   options?: BrokerMatchOptions;
+  /**
+   * Strategy the trader selected in the pre-trade session when the trade was
+   * opened. Used for broker trades that match no pending check.
+   */
+  strategyFor?: (bt: BrokerClosedTrade) => { id: string; name: string } | null;
 }
 
 /**
@@ -409,18 +414,19 @@ export function planBrokerImport(input: BrokerImportInput): { actions: BrokerImp
       continue;
     }
 
-    actions.push({ kind: 'import-new', trade: brokerTradeToJournal(bt, input.accountId, input.newId()) });
+    actions.push({ kind: 'import-new', trade: brokerTradeToJournal(bt, input.accountId, input.newId(), input.strategyFor?.(bt) ?? null) });
   }
   return { actions, skipped };
 }
 
 /** A broker trade with no Prop Guard plan: prices and P&L are known; strategy, stop and notes are not. */
-export function brokerTradeToJournal(bt: BrokerClosedTrade, accountId: string, id: string): Trade {
+export function brokerTradeToJournal(bt: BrokerClosedTrade, accountId: string, id: string, strategy: { id: string; name: string } | null = null): Trade {
   const pnl = bt.pnl != null && Number.isFinite(bt.pnl) ? cleanNumber(bt.pnl, 2) : realizedPnl(bt.instrument, bt.direction, bt.entryPrice, bt.exitPrice, bt.contracts);
   return {
     id,
     accountId,
-    strategyId: null,
+    strategyId: strategy?.id ?? null,
+    strategyName: strategy?.name ?? null,
     sessionId: null,
     instrument: bt.instrument,
     direction: bt.direction,

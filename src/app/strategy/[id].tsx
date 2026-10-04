@@ -23,7 +23,7 @@ import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
 import { blankStrategy, strategyFromTemplate } from '@/features/strategy/fromTemplate';
 import { InstrumentBrowser } from '@/features/instruments/InstrumentBrowser';
-import { validateStrategy } from '@/lib/engines';
+import { sourceTypeAfterEdit, validateStrategy } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { ChecklistItem, InstrumentSymbol, Strategy } from '@/types/domain';
 import { numToInput, parseNum } from '@/utils/format';
@@ -133,6 +133,7 @@ export default function StrategyBuilder() {
       checklist,
       updatedAt: new Date().toISOString(),
     };
+    strategy.sourceType = sourceTypeAfterEdit(initial, strategy);
     const problems = validateStrategy(strategy);
     setErrors(problems);
     if (problems.length > 0) return;

@@ -69,6 +69,7 @@ const DEFS: Def[] = [
   { symbol: 'GC', name: 'Gold', category: 'metals', exchange: 'COMEX', tickSize: 0.1, tickValue: 10, priceDecimals: 1 },
   { symbol: 'MGC', name: 'Micro Gold', category: 'metals', exchange: 'COMEX', tickSize: 0.1, tickValue: 1, priceDecimals: 1, microOf: { symbol: 'GC', ratio: 10 } },
   { symbol: 'SI', name: 'Silver', category: 'metals', exchange: 'COMEX', tickSize: 0.005, tickValue: 25, priceDecimals: 3 },
+  { symbol: 'HG', name: 'Copper', category: 'metals', exchange: 'COMEX', tickSize: 0.0005, tickValue: 12.5, priceDecimals: 4 },
   // Energy (NYMEX)
   { symbol: 'CL', name: 'Crude Oil', category: 'energy', exchange: 'NYMEX', tickSize: 0.01, tickValue: 10, priceDecimals: 2 },
   { symbol: 'MCL', name: 'Micro Crude Oil', category: 'energy', exchange: 'NYMEX', tickSize: 0.01, tickValue: 1, priceDecimals: 2, microOf: { symbol: 'CL', ratio: 10 } },

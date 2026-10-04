@@ -33,11 +33,13 @@ import {
   performanceByConditions,
   pnlByHour,
   pnlByInstrument,
-  pnlByStrategy,
+  performanceInsight,
+  strategyPerformance,
   pnlByWeekday,
   violationCounts,
   type ConditionBucket,
 } from '@/lib/engines';
+import { StrategyPerformanceCard } from '@/features/strategy/StrategyPerformanceCard';
 import { useAppStore } from '@/store/useAppStore';
 import { money, pct, rMultiple } from '@/utils/format';
 
@@ -89,7 +91,7 @@ export default function PerformanceScreen() {
       curve: equityCurve(trades, start).map((p) => p.y),
       start,
       buckets: performanceByConditions(trades),
-      byStrategy: pnlByStrategy(trades, strategies),
+      byStrategy: strategyPerformance(trades, strategies),
       byDay: pnlByWeekday(trades),
       byHour: pnlByHour(trades),
       byInstrument: pnlByInstrument(trades),
@@ -166,22 +168,8 @@ export default function PerformanceScreen() {
             </AppText>
           </Card>
 
-          <SectionHeader title="By strategy" />
-          <Card>
-            {data.byStrategy.map((g, i) => (
-              <View key={g.key} style={[styles.bucket, i > 0 && styles.border]}>
-                <View style={styles.flex}>
-                  <AppText variant="bodyStrong">{g.label}</AppText>
-                  <AppText variant="caption">
-                    {g.count} trades · {pct(g.winRate)} win
-                  </AppText>
-                </View>
-                <AppText variant="bodyStrong" tone={g.pnl >= 0 ? 'positive' : 'danger'}>
-                  {money(g.pnl, { sign: true })}
-                </AppText>
-              </View>
-            ))}
-          </Card>
+          <SectionHeader title="Your strategy performance" />
+          <StrategyPerformanceCard rows={data.byStrategy} insight={performanceInsight(data.byStrategy)} />
 
           <Card padded={false} style={{ paddingHorizontal: spacing.lg }}>
             <ListRow icon="sparkles-outline" iconTone="accent" title="AI session summary" subtitle="What went well, what to improve" onPress={() => router.push('/session/review')} />

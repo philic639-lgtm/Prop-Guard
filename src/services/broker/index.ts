@@ -1,5 +1,6 @@
 import { planBrokerImport } from '@/lib/engines/journalEngine';
 import { useAppStore } from '@/store/useAppStore';
+import { dayKey } from '@/utils/dates';
 import { uuid } from '@/utils/id';
 
 import type { BrokerId, BrokerProvider } from './provider';
@@ -46,6 +47,12 @@ export async function syncBrokerTrades(provider: BrokerProvider, accountId: stri
     pendings: state.pendingTrades,
     trades: state.trades,
     newId: uuid,
+    // No matching check → use the strategy chosen in that day's pre-trade session.
+    strategyFor: (bt) => {
+      const session = state.sessions.find((x) => x.accountId === accountId && x.date === dayKey(bt.openedAt) && x.strategyId);
+      const strategy = session ? state.strategies.find((x) => x.id === session.strategyId) : undefined;
+      return strategy ? { id: strategy.id, name: strategy.name } : null;
+    },
   });
   state.applyBrokerImport(actions);
   return {

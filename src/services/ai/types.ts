@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { StrategyStyle } from '@/data/strategyLibrary';
+import type { FinderAnswers, TemplateMatch } from '@/lib/engines/strategyLibraryEngine';
 import { isInstrumentSymbol } from '@/lib/engines/instrumentEngine';
 import type { SetupGrade } from '@/types/domain';
 
@@ -90,31 +90,25 @@ export const SessionReviewSchema = z.object({
 });
 
 // ---------- Strategy finder ----------
-export interface StrategyFinderAnswers {
-  market: string;
-  tradesPerDay: '1' | '2-3' | '4+';
-  session: 'open' | 'morning' | 'any';
-  style: 'scalp' | 'intraday';
-  stopSize: 'tight' | 'medium' | 'wide';
-  target: '1.5R' | '2R' | '3R';
-  preference: StrategyStyle | 'unsure';
-  accountSize: number;
-  dailyRisk: number;
-}
+/**
+ * The finder ranks Prop Guard's CURATED library deterministically
+ * (strategyLibraryEngine.matchTemplates). AI may only rephrase the reasons
+ * for templates already ranked — it cannot add strategies, change scores,
+ * or make performance claims.
+ */
+export type StrategyFinderAnswers = FinderAnswers;
+export type StrategyRecommendation = TemplateMatch;
 
-export const StrategyRecommendationSchema = z.object({
-  recommendations: z
+export const StrategyReasonsSchema = z.object({
+  explanations: z
     .array(
       z.object({
         templateId: z.string(),
-        fitScore: z.number().min(0).max(100),
         reasons: z.array(z.string().max(200)).min(1).max(6),
       }),
     )
-    .min(1)
-    .max(3),
+    .max(5),
 });
-export type StrategyRecommendation = z.infer<typeof StrategyRecommendationSchema>['recommendations'][number];
 
 // ---------- Daily coach ----------
 export interface DailyCoachInput {

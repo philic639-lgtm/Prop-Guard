@@ -13,17 +13,19 @@ import {
   Chip,
   ConfirmationSheet,
   EmptyState,
+  FieldRow,
   Input,
   Metric,
   RuleChecklist,
   Screen,
   SectionHeader,
+  SelectField,
   StatusBadge,
   VerdictBanner,
 } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useStrategy, useTrade } from '@/hooks/useAppData';
-import { OUTCOME_LABEL, tradeConditions, tradeOutcome } from '@/lib/engines';
+import { OUTCOME_LABEL, strategySourceLabel, tradeConditions, tradeOutcome } from '@/lib/engines';
 import { pickScreenshot } from '@/services/screenshotService';
 import { useAppStore } from '@/store/useAppStore';
 import type { Emotion, Trade } from '@/types/domain';
@@ -59,6 +61,8 @@ export default function TradeDetail() {
   const journalTrade = useAppStore((s) => s.journalTrade);
   const updateTrade = useAppStore((s) => s.updateTrade);
   const deleteTrade = useAppStore((s) => s.deleteTrade);
+  const strategies = useAppStore((s) => s.strategies);
+  const assignTradeStrategy = useAppStore((s) => s.assignTradeStrategy);
 
   const [editing, setEditing] = useState(edit === '1');
   const [notes, setNotes] = useState(trade?.notes ?? '');
@@ -180,7 +184,7 @@ export default function TradeDetail() {
         </View>
         <View style={[styles.grid, { marginTop: spacing.lg }]}>
           <Metric label="Risk" value={money(trade.riskDollars)} compact />
-          <Metric label="Strategy" value={strategy?.name ?? '—'} compact />
+          <Metric label="Strategy" value={strategy?.name ?? trade.strategyName ?? 'Not assigned'} compact />
           <Metric label="Discipline" value={`${trade.disciplineScore ?? 100}%`} tone={(trade.disciplineScore ?? 100) >= 100 ? 'positive' : 'warning'} compact />
         </View>
         <View style={[styles.grid, { marginTop: spacing.lg }]}>
@@ -188,6 +192,29 @@ export default function TradeDetail() {
           <Metric label="Account" value={money(trade.accountBalance)} compact />
           <Metric label="Result" value={outcome ? OUTCOME_LABEL[outcome] : '—'} tone={outcome === 'win' ? 'positive' : outcome === 'loss' ? 'danger' : undefined} compact />
         </View>
+      </Card>
+
+      <Card>
+        <FieldRow
+          label="Strategy"
+          control={
+            <SelectField
+              label="Strategy"
+              value={trade.strategyId ?? NONE}
+              options={[
+                ...strategies.map((x) => ({ value: x.id, label: x.name, sub: strategySourceLabel(x) })),
+                ...(trade.strategyId && !strategies.some((x) => x.id === trade.strategyId) ? [{ value: trade.strategyId, label: trade.strategyName ?? 'Deleted strategy' }] : []),
+                { value: NONE, label: 'Strategy not assigned' },
+              ]}
+              onChange={(v) => assignTradeStrategy(trade.id, v === NONE ? null : v)}
+            />
+          }
+        />
+        {!trade.strategyId ? (
+          <AppText variant="caption" tone="warning">
+            Strategy not assigned — assign it so this trade counts toward your strategy performance.
+          </AppText>
+        ) : null}
       </Card>
 
       {grade ? (
@@ -292,6 +319,8 @@ export default function TradeDetail() {
     </Screen>
   );
 }
+
+const NONE = '__none__';
 
 const SOURCE_LABEL: Partial<Record<Trade['source'], string>> = {
   auto: 'Auto-journaled',

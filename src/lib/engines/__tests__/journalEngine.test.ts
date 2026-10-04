@@ -181,4 +181,16 @@ describe('broker import', () => {
     const { actions } = planBrokerImport({ accountId: 'acc', brokerTrades: [bt()], pendings: [p], trades: [open], newId });
     expect(actions).toEqual([{ kind: 'close-open', pendingId: 'p1', tradeId: 'open1', exitPrice: 6752.5, closedAt: bt().closedAt, externalId: 'B1', pnl: null }]);
   });
+
+  it('assigns the pre-trade session strategy to unmatched broker trades', () => {
+    const { actions } = planBrokerImport({
+      accountId: 'acc',
+      brokerTrades: [bt({ externalId: 'B9', instrument: 'NQ', entryPrice: 20000, exitPrice: 20010, contracts: 1 })],
+      pendings: [],
+      trades: [],
+      newId,
+      strategyFor: () => ({ id: 'strat', name: '15M ORB Retest' }),
+    });
+    expect(actions[0].kind === 'import-new' && actions[0].trade).toMatchObject({ strategyId: 'strat', strategyName: '15M ORB Retest' });
+  });
 });

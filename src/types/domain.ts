@@ -85,6 +85,8 @@ export interface ChecklistItem {
   required: boolean;
 }
 
+export type StrategySourceType = 'BUILT_IN' | 'CUSTOM' | 'AI_ADAPTED';
+
 export interface Strategy {
   id: string;
   name: string;
@@ -111,6 +113,13 @@ export interface Strategy {
   checklist: ChecklistItem[];
   source: 'custom' | 'library';
   libraryId?: string;
+  /**
+   * BUILT_IN — one of Prop Guard's curated frameworks, unchanged.
+   * CUSTOM — created by the trader (described or built from scratch).
+   * AI_ADAPTED — a built-in framework customized by the trader or AI.
+   * Older records derive it from `source`.
+   */
+  sourceType?: StrategySourceType;
   createdAt: string;
   updatedAt: string;
 }
@@ -180,6 +189,8 @@ export interface Trade {
   pendingId?: string | null;
   /** Broker's id for the closed trade — prevents duplicate imports. */
   externalId?: string | null;
+  /** Strategy name at the time of the trade (kept if the strategy is later renamed or deleted). */
+  strategyName?: string | null;
 }
 
 export type PendingOrigin = 'analyze' | 'calculator';
