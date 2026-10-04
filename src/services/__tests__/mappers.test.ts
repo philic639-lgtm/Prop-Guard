@@ -1,7 +1,6 @@
 import { createDemoData } from '@/data/demo';
 
-import { practiceAttemptToRow, practiceLessonToRow, rowToPracticeAttempt, rowToPracticeLesson } from '../supabase/mappers';
-import { accountToRows, pendingToRow, rowToPending, rowsToAccount, rowsToStrategy, rowsToTrade, strategyToRows, tradeToRows } from '../supabase/mappers';
+import { accountToRows, pendingToRow, practiceAttemptToRow, practiceLessonToRow, rowToPracticeAttempt, rowToPracticeLesson, rowToPending, rowsToAccount, rowsToStrategy, rowsToTrade, strategyToRows, tradeToRows } from '../supabase/mappers';
 
 const data = createDemoData(new Date('2026-10-02T15:30:00Z'));
 
