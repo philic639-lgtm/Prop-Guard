@@ -2,6 +2,7 @@ import { localSessionReview } from '@/lib/engines/sessionEngine';
 import { DEFAULT_TRADING_RULES } from '@/data/demo';
 import { GRADE_LABEL } from '@/lib/engines/strategyEngine';
 import { analyzeStrategyText } from '@/lib/engines/strategyIntelligence/analyze';
+import type { UniquenessReference } from '@/lib/engines/strategyIntelligence/uniqueness';
 import { parseStrategyText } from '@/lib/engines/strategyParser';
 
 import type { AIProvider } from './provider';
@@ -141,9 +142,9 @@ export class MockAIProvider implements AIProvider {
     return { ...parseStrategyText(text), source: 'local' as const };
   }
 
-  async analyzeStrategy(text: string) {
+  async analyzeStrategy(text: string, opts: { references?: UniquenessReference[] } = {}) {
     await delay(400);
-    return analyzeStrategyText(text);
+    return analyzeStrategyText(text, { references: opts.references });
   }
 
   async analyzeAccountScreenshot(input: ScreenshotInput): Promise<AccountExtraction> {

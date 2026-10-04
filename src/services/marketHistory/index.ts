@@ -1,6 +1,6 @@
 import { SAMPLE_SCENARIOS } from '@/data/practice/scenarios';
 
-import { getVerifiedPractice, simulatedScenarios } from './historical';
+import { getCustomPractice, getVerifiedPractice, simulatedScenarios } from './historical';
 import type { PracticeDifficulty, PracticeScenario, PracticeSession } from '@/types/practice';
 
 /**
@@ -65,9 +65,9 @@ export const historicalScenarioProvider: ScenarioProvider = {
   verified: false,
   list: (filters) => {
     const verified = getVerifiedPractice();
-    return filterScenarios([...verified, ...simulatedScenarios().practice], { ...filters, source: undefined });
+    return filterScenarios([...verified, ...getCustomPractice(), ...simulatedScenarios().practice], { ...filters, source: undefined });
   },
-  get: (id) => getVerifiedPractice().find((s) => s.id === id) ?? (id.startsWith('hs-mock-') ? simulatedScenarios().practice.find((s) => s.id === id) : undefined),
+  get: (id) => getVerifiedPractice().find((s) => s.id === id) ?? getCustomPractice().find((s) => s.id === id) ?? (id.startsWith('hs-mock-') ? simulatedScenarios().practice.find((s) => s.id === id) : undefined),
 };
 
 /** The catalog the trainer uses: samples by default, historical on request. */

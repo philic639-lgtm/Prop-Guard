@@ -52,14 +52,19 @@ Rules:
 - behavioralRisks[]: behaviours the PLAN could encourage (chasing, revenge_trading, entering_too_early, over_confirmation, fomo,
   oversized_risk, moving_stops, holding_losers, cutting_winners_early, overtrading, trading_chop, predicting_not_reacting).
   Describe the plan, never the person. Do not psychoanalyse or diagnose the trader.
+- PRESERVE THE TRADER'S IDENTITY: improvements must stay recognisably their strategy, in their vocabulary. Never introduce VWAP, moving
+  averages, ATR, an opening range, RSI or order-flow tools the trader did not mention — express thresholds in price action
+  (candle closes, candle ranges, swings, the levels they named). Do not turn different strategies into the same template.
+- Every suggestion has "confidence": "A" derived directly from their rules, "B" logical improvement, "C" common trading principle,
+  "D" hypothesis that requires testing (any invented threshold). Never use "E" — only Prop Guard's verified historical data can.
 - questions[]: only for critical variables that cannot reasonably be inferred (max 3).
 - Never call a strategy proven, profitable, safe, high win rate or guaranteed. Use "more measurable", "better defined", "more testable".
-Times are US/Eastern 24h "HH:mm". sections: bias|context|setup|entry|confirmation|stop|target|management|invalidation|noTrade|risk|maxTrades|filter.
+Times are US/Eastern 24h "HH:mm". sections: bias|context|setup|entry|confirmation|stop|target|management|invalidation|noTrade|risk|maxTrades|filter|volatility|volume.
 Return JSON: {"name": string (<=60), "classification": string, "styles": [{"id": string, "label": string, "evidence": string[]}],
 "direction": "long"|"short"|"both"|null, "instruments": string[], "session": string, "tradingWindow": {"start": string|null, "end": string|null},
 "timeframes": string[], "maxTrades": number|null, "stopPoints": number|null, "minRR": number|null,
 "rules": [{"section": string, "text": string, "provenance": "trader"|"inferred", "quote": string|null}],
-"suggestions": [{"section": string, "kind": "objectify"|"missing"|"protection", "title": string, "issue": string, "original": string|null, "suggestedRule": string, "rationale": string}],
+"suggestions": [{"section": string, "kind": "objectify"|"missing"|"protection", "title": string, "issue": string, "original": string|null, "suggestedRule": string, "rationale": string, "confidence": "A"|"B"|"C"|"D"}],
 "questions": [{"variable": "instrument"|"entryTrigger"|"openingRangeMinutes"|"timeframe"|"direction", "question": string, "why": string, "options": string[]}],
 "behavioralRisks": [{"behavior": string, "title": string, "explanation": string, "mitigation": string, "severity": "low"|"medium"|"high"}]}`,
   account_screenshot: `Read this prop-firm account dashboard screenshot. Use null for anything not clearly visible. Never guess.

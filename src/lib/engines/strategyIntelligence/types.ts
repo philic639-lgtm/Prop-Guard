@@ -21,7 +21,32 @@ export type RuleSection =
   | 'maxTrades'
   | 'window'
   | 'timeframe'
+  | 'volatility'
+  | 'volume'
   | 'filter';
+
+/**
+ * How much to trust a recommendation.
+ * A — derived directly from the trader's rules; B — logical improvement of them;
+ * C — common trading principle; D — Prop Guard hypothesis, requires testing;
+ * E — validated on historical market data (only ever set from real verified data).
+ */
+export type ConfidenceLabel = 'A' | 'B' | 'C' | 'D' | 'E';
+
+export const CONFIDENCE_LABELS: Record<ConfidenceLabel, string> = {
+  A: 'Derived directly from your rules',
+  B: 'Logical improvement',
+  C: 'Common trading principle',
+  D: 'Suggested by Prop Guard — requires testing',
+  E: 'Validated on historical data',
+};
+
+/** A reasoned statement with its confidence and (when it comes from the trader) the words it is based on. */
+export interface Insight {
+  text: string;
+  confidence: ConfidenceLabel;
+  basis?: string;
+}
 
 /** trader — stated in the description; inferred — standard interpretation of what they said; suggested — Prop Guard proposal. */
 export type RuleProvenance = 'trader' | 'inferred' | 'suggested';
@@ -77,6 +102,14 @@ export interface StrategySuggestion {
   rationale: string;
   status: SuggestionStatus;
   editedText?: string;
+  confidence: ConfidenceLabel;
+  /** Tools the suggestion brings in that the trader never mentioned (VWAP, EMA, ATR…). Empty when it stays in their vocabulary. */
+  introducesTools: string[];
+  /**
+   * strategy — part of THIS strategy's logic; account — an account-wide protection (news blackout, risk sizing)
+   * that applies to every strategy. Account items are offered separately and are not part of the strategy's identity.
+   */
+  scope: 'strategy' | 'account';
   /** Structured values applied when accepted. */
   apply?: { maxTrades?: number; minRR?: number; windowEnd?: string; windowStart?: string };
 }
@@ -131,6 +164,84 @@ export interface ClarifyingQuestion {
   answer?: string;
 }
 
+export type DnaKey =
+  | 'market'
+  | 'timeframe'
+  | 'setup'
+  | 'context'
+  | 'bias'
+  | 'entry'
+  | 'confirmation'
+  | 'invalidation'
+  | 'stop'
+  | 'target'
+  | 'management'
+  | 'session'
+  | 'volatility'
+  | 'volume'
+  | 'noTrade';
+
+/** One component of the strategy's decomposition — in the trader's words where they gave them. */
+export interface DnaComponent {
+  key: DnaKey;
+  label: string;
+  values: { text: string; provenance: RuleProvenance }[];
+}
+
+/** Why the strategy should work and where it can break — about the IDEA, never the trader. */
+export interface StrategyReasoning {
+  exploits: Insight[];
+  assumptions: Insight[];
+  falseSignals: Insight[];
+  earlyEntry: Insight[];
+  lateEntry: Insight[];
+  subjectiveDiscretion: Insight[];
+  overtrading: Insight[];
+  riskReward: Insight[];
+  regimeThreats: Insight[];
+}
+
+export type MarketRegime = 'trending' | 'ranging' | 'high_volatility' | 'low_volatility' | 'breakout' | 'mean_reversion' | 'news_driven' | 'opening_session' | 'late_session';
+
+export interface RegimeAssessment {
+  regime: MarketRegime;
+  label: string;
+  fit: 'designed_for' | 'avoid' | 'neutral';
+  reasons: string[];
+  confidence: ConfidenceLabel;
+}
+
+export interface RiskLevel {
+  level: 'low' | 'medium' | 'high';
+  reasons: string[];
+}
+
+export interface WeaknessReport {
+  strengths: string[];
+  weaknesses: string[];
+  missingRules: string[];
+  contradictions: Insight[];
+  ambiguity: Insight[];
+  overfittingRisk: RiskLevel;
+  executionRisk: RiskLevel;
+  /** Behavioral risks built into the plan (see `behavioralRisks`). */
+  psychologicalRisk: RiskLevel;
+  failureScenarios: Insight[];
+}
+
+export interface UniquenessReport {
+  /** Most similar library template whose concept the trader did NOT use (drift target). */
+  closestForeignTemplate: { id: string; name: string; similarity: number } | null;
+  /** Most similar previously analysed strategy (different text). */
+  closestPrevious: { name: string; similarity: number } | null;
+  /** Share of the improved strategy that comes from the trader's own words. */
+  identityRetention: number;
+  passes: boolean;
+  /** 1 = first pass was unique enough; 2 = regenerated in preserve mode. */
+  attempts: number;
+  notes: string[];
+}
+
 export interface StructuredStrategy {
   version: 1;
   originalText: string;
@@ -157,6 +268,8 @@ export interface StructuredStrategy {
   noTradeRules: StrategyRule[];
   riskRules: StrategyRule[];
   filterRules: StrategyRule[];
+  volatilityRules: StrategyRule[];
+  volumeRules: StrategyRule[];
   maxTrades: number | null;
   stopPoints: number | null;
   minRR: number | null;
@@ -167,6 +280,13 @@ export interface StructuredStrategy {
   missingVariables: string[];
   strategyHealthScore: StrategyHealthScore;
   behavioralRisks: BehavioralRisk[];
+  dna: DnaComponent[];
+  reasoning: StrategyReasoning;
+  regimes: RegimeAssessment[];
+  weaknessReport: WeaknessReport;
+  uniqueness: UniquenessReport | null;
+  /** Saved with the strategy so Practice / backtests use the trader's final rules. */
+  testableRules?: import('./ruleset').TestableRuleSet;
   analysisSource: 'ai' | 'local';
   analyzedAt: string;
 }

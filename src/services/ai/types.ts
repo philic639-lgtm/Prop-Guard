@@ -165,7 +165,7 @@ export const PracticeFeedbackSchema = z.object({ feedback: z.string().min(1).max
 export type AISource = 'ai' | 'local';
 
 // ---------- Strategy Intelligence (free-text strategy analysis) ----------
-const SECTION = z.enum(['bias', 'context', 'setup', 'entry', 'confirmation', 'stop', 'target', 'management', 'invalidation', 'noTrade', 'risk', 'maxTrades', 'filter']);
+const SECTION = z.enum(['bias', 'context', 'setup', 'entry', 'confirmation', 'stop', 'target', 'management', 'invalidation', 'noTrade', 'risk', 'maxTrades', 'filter', 'volatility', 'volume']);
 const HHMM = z.string().regex(/^\d{2}:\d{2}$/).nullable().catch(null);
 
 /** Model output for `strategy_analyze`. Validated, then merged with the on-device engine (which scores it). */
@@ -192,6 +192,8 @@ export const StrategyAnalysisAISchema = z.object({
         original: z.string().max(300).nullable().optional(),
         suggestedRule: z.string().min(1).max(300),
         rationale: z.string().max(300).catch(''),
+        // E (historically validated) can only come from Prop Guard's own verified data, never from a model.
+        confidence: z.enum(['A', 'B', 'C', 'D', 'E']).transform((c) => (c === 'E' ? 'D' : c)).catch('D'),
       }),
     )
     .max(16)

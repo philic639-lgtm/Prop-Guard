@@ -1,6 +1,8 @@
 import { isInstrumentSymbol } from '@/lib/engines/instrumentEngine';
 import { finalizeStructured, makeStrategyRule, UNSUPPORTED_CLAIMS, type BehavioralRisk, type ClarifyingQuestion, type StrategySuggestion, type StructuredStrategy } from '@/lib/engines/strategyIntelligence';
 import { allRules } from '@/lib/engines/strategyIntelligence/compose';
+import { introducedTools } from '@/lib/engines/strategyIntelligence/vagueness';
+import type { UniquenessReference } from '@/lib/engines/strategyIntelligence/uniqueness';
 
 import type { StrategyAnalysisAI } from './types';
 
@@ -28,7 +30,7 @@ const id = (p: string) => `ai_${p}_${(n++).toString(36)}`;
  *  - unsupported performance claims and statements about the person are dropped;
  *  - numbers the trader typed (window, limits, stop) come from the local parser first.
  */
-export function mergeAiStrategyAnalysis(ai: StrategyAnalysisAI, local: StructuredStrategy): StructuredStrategy {
+export function mergeAiStrategyAnalysis(ai: StrategyAnalysisAI, local: StructuredStrategy, references: UniquenessReference[] = []): StructuredStrategy {
   const text = local.originalText;
   const rules = ai.rules
     .filter((r) => clean(r.text))
@@ -45,7 +47,22 @@ export function mergeAiStrategyAnalysis(ai: StrategyAnalysisAI, local: Structure
 
   const aiSuggestions: StrategySuggestion[] = ai.suggestions
     .filter((s) => clean(s.suggestedRule) && clean(s.title) && s.section !== 'maxTrades')
-    .map((s) => ({ id: id('sg'), section: s.section, kind: s.kind, title: s.title, issue: s.issue, original: s.original ?? undefined, suggestedRule: s.suggestedRule, rationale: s.rationale, status: 'pending' as const }));
+    .map((s) => ({
+      id: id('sg'),
+      section: s.section,
+      kind: s.kind,
+      title: s.title,
+      issue: s.issue,
+      original: s.original ?? undefined,
+      suggestedRule: s.suggestedRule,
+      rationale: s.confidence === 'D' && !/requires testing/i.test(s.rationale) ? `${s.rationale} Suggested by Prop Guard — requires testing.` : s.rationale,
+      status: 'pending' as const,
+      confidence: s.confidence,
+      introducesTools: introducedTools(s.suggestedRule, text),
+      scope: s.section === 'risk' || /\b(news|cpi|fomc|nfp)\b/i.test(s.suggestedRule) ? ('account' as const) : ('strategy' as const),
+    }))
+    // Keep the trader's toolset: a model suggestion that swaps in a new indicator is dropped (local wording covers the gap).
+    .filter((s) => s.introducesTools.length === 0);
   // Local suggestions carry structured `apply` values (limits, windows) and fill sections the model skipped.
   const localKeep = local.aiSuggestedRules.filter((l) => l.section === 'maxTrades' || l.section === 'window' || !aiSuggestions.some((a) => a.section === l.section && a.kind === l.kind));
   const suggestions = [...aiSuggestions, ...localKeep];
@@ -85,5 +102,6 @@ export function mergeAiStrategyAnalysis(ai: StrategyAnalysisAI, local: Structure
     },
     finalRules,
     risks,
+    { references },
   );
 }

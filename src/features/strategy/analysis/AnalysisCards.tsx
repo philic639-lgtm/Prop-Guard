@@ -5,7 +5,9 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { AppText, Button, Card, Chip, CircularScore, Input, StatusBadge } from '@/components/ui';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import {
+  CONFIDENCE_LABELS,
   provenanceLabel,
+  type ConfidenceLabel,
   type BehavioralRisk,
   type ChecklistSection,
   type ClarifyingQuestion,
@@ -223,22 +225,24 @@ export function SuggestionCard({ s, onDecide }: { s: StrategySuggestion; onDecid
   const statusTone: Tone = s.status === 'rejected' ? 'neutral' : s.status === 'pending' ? 'accent' : 'positive';
   return (
     <Card style={s.status === 'rejected' ? { opacity: 0.6 } : undefined}>
-      <View style={styles.row}>
+      <View style={[styles.row, styles.wrap]}>
         <StatusBadge label="AI suggestion" tone="accent" icon="sparkles" size="sm" />
+        <ConfidenceBadge label={s.confidence} />
         {decided ? <StatusBadge label={s.status === 'edited' ? 'Edited' : s.status === 'accepted' ? 'Accepted' : 'Rejected'} tone={statusTone} size="sm" /> : null}
       </View>
       <AppText variant="bodyStrong" style={{ marginTop: spacing.sm }}>
         {s.title}
       </AppText>
-      <AppText variant="body" tone="secondary" style={{ marginTop: 2 }}>
-        {s.issue}
-      </AppText>
-      {s.original ? (
-        <View style={[styles.quote, { marginTop: spacing.sm }]}>
-          <AppText variant="caption">You wrote</AppText>
-          <AppText variant="body">“{s.original}”</AppText>
-        </View>
-      ) : null}
+      <FlowStep label="Original idea">
+        <AppText variant="body" style={s.original ? { fontStyle: 'italic' } : undefined} tone={s.original ? 'primary' : 'tertiary'}>
+          {s.original ? `“${s.original}”` : 'Not stated in your plan'}
+        </AppText>
+      </FlowStep>
+      <FlowStep label="Problem identified">
+        <AppText variant="body" tone="secondary">
+          {s.issue}
+        </AppText>
+      </FlowStep>
       {editing ? (
         <View style={{ marginTop: spacing.sm }}>
           <Input label="Your version of this rule" value={draft} onChangeText={setDraft} multiline inputStyle={{ minHeight: 72 }} />
@@ -260,14 +264,14 @@ export function SuggestionCard({ s, onDecide }: { s: StrategySuggestion; onDecid
       ) : (
         <View style={[styles.suggested, { marginTop: spacing.sm }]}>
           <AppText variant="caption" tone="accent">
-            {s.status === 'edited' ? 'Your edited rule' : 'Suggested measurable rule'}
+            {s.status === 'edited' ? 'Your edited rule' : 'Prop Guard improvement'}
           </AppText>
           <AppText variant="body">{s.status === 'edited' && s.editedText ? s.editedText : s.suggestedRule}</AppText>
         </View>
       )}
-      <AppText variant="caption" style={{ marginTop: spacing.sm }}>
-        {s.rationale}
-      </AppText>
+      <FlowStep label="Why the change helps" last>
+        <AppText variant="caption">{s.rationale}</AppText>
+      </FlowStep>
       {!editing ? (
         <View style={[styles.btnRow, { marginTop: spacing.md }]}>
           <Button label={s.status === 'accepted' ? 'Accepted' : 'Accept'} icon="checkmark" size="md" variant={s.status === 'accepted' ? 'success' : 'secondary'} style={styles.flex} onPress={() => onDecide(s.status === 'accepted' ? 'pending' : 'accepted')} />
@@ -276,6 +280,25 @@ export function SuggestionCard({ s, onDecide }: { s: StrategySuggestion; onDecid
         </View>
       ) : null}
     </Card>
+  );
+}
+
+const CONF_TONE: Record<ConfidenceLabel, Tone> = { A: 'positive', B: 'accent', C: 'neutral', D: 'warning', E: 'positive' };
+
+/** A–E confidence label; D always reads "requires testing". */
+export function ConfidenceBadge({ label }: { label: ConfidenceLabel }) {
+  return <StatusBadge label={`${label} · ${CONFIDENCE_LABELS[label]}`} tone={CONF_TONE[label]} size="sm" />;
+}
+
+function FlowStep({ label, children, last }: { label: string; children: React.ReactNode; last?: boolean }) {
+  return (
+    <View style={{ marginTop: spacing.sm }}>
+      <AppText variant="label" style={{ fontSize: 10 }}>
+        {label.toUpperCase()}
+      </AppText>
+      <View style={{ marginTop: 2 }}>{children}</View>
+      {!last ? <Ionicons name="arrow-down" size={12} color={colors.textTertiary} style={{ marginTop: 4 }} /> : null}
+    </View>
   );
 }
 

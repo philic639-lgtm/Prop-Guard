@@ -1,6 +1,7 @@
 import type { SessionReview } from '@/types/domain';
 
 import type { StructuredStrategy } from '@/lib/engines/strategyIntelligence/types';
+import type { UniquenessReference } from '@/lib/engines/strategyIntelligence/uniqueness';
 import type { ParsedStrategy } from '@/lib/engines/strategyParser';
 
 import type {
@@ -36,7 +37,7 @@ export interface AIProvider {
    * suggest measurable improvements for ANY free-text strategy. Analyses only
    * the given text — never a template or example.
    */
-  analyzeStrategy(text: string): Promise<StructuredStrategy>;
+  analyzeStrategy(text: string, opts?: { references?: UniquenessReference[] }): Promise<StructuredStrategy>;
   /** Read balance / P&L / drawdown from a prop-firm dashboard screenshot. */
   analyzeAccountScreenshot(input: ScreenshotInput): Promise<AccountExtraction>;
   /** Short, specific feedback for a practice attempt. */

@@ -16,6 +16,10 @@ export {
   acceptedSuggestionRules,
   allRules,
   answerQuestion,
+  compileStrategy,
+  finalPlanRules,
+  originalChecklist,
+  testableRulesOf,
   effectiveFields,
   effectiveRules,
   improvedChecklist,
@@ -26,3 +30,7 @@ export {
   type ChecklistLine,
   type ChecklistSection,
 } from './compose';
+export { assessRegimes, buildDna, buildReasoning, buildWeaknessReport, findContradictions } from './insights';
+export { assessUniqueness, improvedTexts, jaccard, tokens, UNIQUENESS_LIMITS, type UniquenessReference } from './uniqueness';
+export { buildRuleSet, compileRuleSet, evaluatePrimitive, parsePrimitive, type CompiledRuleSet, type IfThenBlock, type Primitive, type RuleCondition, type TestableRuleSet } from './ruleset';
+export { REGIME_LABELS } from './concepts';

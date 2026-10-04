@@ -25,7 +25,7 @@ function windowOf(t: StrategyTemplate): [number, number] {
   return [s ?? RTH_OPEN, e ?? RTH_CLOSE - 60];
 }
 
-function features(input: EvaluationInput, entry: number, retestNumber: number, strength: SetupFeatures['breakoutStrength'], orbSize: number | null): SetupFeatures {
+export function setupFeatures(input: EvaluationInput, entry: number, retestNumber: number, strength: SetupFeatures['breakoutStrength'], orbSize: number | null): SetupFeatures {
   const c = input.context;
   const atr = c.atr;
   const close = input.bars[input.bars.length - 1].close;
@@ -107,7 +107,7 @@ function orbEvaluator(strategyId: string, orMinutes: number): StrategyEvaluator 
           riskReward: t.defaultRiskReward,
           checks,
           levels,
-          features: features(input, entry, d.retestNumber, strength, orSize),
+          features: setupFeatures(input, entry, d.retestNumber, strength, orSize),
         } satisfies SetupSignal;
       }
       return null;
@@ -160,7 +160,7 @@ function previousDayEvaluator(strategyId: 'pdh-breakout' | 'pdl-breakdown'): Str
         riskReward: t.defaultRiskReward,
         checks,
         levels: [dir === 'long' ? { label: 'Previous day high', price: level, kind: 'pdh' } : { label: 'Previous day low', price: level, kind: 'pdl' }],
-        features: features(input, entry, d.retestNumber, strength, null),
+        features: setupFeatures(input, entry, d.retestNumber, strength, null),
       };
     },
   };
@@ -214,7 +214,7 @@ function vwapReclaimEvaluator(): StrategyEvaluator {
           riskReward: t.defaultRiskReward,
           checks,
           levels: [],
-          features: features(input, entry, d.retestNumber, strength, null),
+          features: setupFeatures(input, entry, d.retestNumber, strength, null),
         };
       }
       return null;

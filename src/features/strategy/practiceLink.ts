@@ -6,6 +6,7 @@ import type { StructuredStrategy } from '@/lib/engines/strategyIntelligence';
  * its STRUCTURE — or null when none does (never pretend a different strategy is the same).
  */
 export function practiceTemplateFor(s: StructuredStrategy): { templateId: string; exact: boolean } | null {
+  // Prefer the trader's OWN compiled rules (see analysis screen); templates are only for exact structural matches.
   const ids = new Set(s.detectedStyle.map((x) => x.id));
   if (ids.has('orb')) {
     const mins = /(\d+)\s*-?\s*(?:min(?:ute)?s?|m)\s*-?\s*(?:ORB|opening range)/i.exec(s.originalText)?.[1];

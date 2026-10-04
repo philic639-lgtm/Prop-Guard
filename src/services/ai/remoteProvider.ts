@@ -4,6 +4,7 @@ import { getTemplate } from '@/data/strategyLibrary';
 import { supabase } from '@/services/supabase/client';
 
 import { analyzeStrategyText } from '@/lib/engines/strategyIntelligence/analyze';
+import type { UniquenessReference } from '@/lib/engines/strategyIntelligence/uniqueness';
 
 import { MockAIProvider } from './mockProvider';
 import { mergeAiStrategyAnalysis } from './strategyAnalysis';
@@ -103,12 +104,12 @@ export class RemoteAIProvider implements AIProvider {
     return { ...r, unparsed: [], source: 'ai' as const };
   }
 
-  async analyzeStrategy(text: string) {
+  async analyzeStrategy(text: string, opts: { references?: UniquenessReference[] } = {}) {
     // Local analysis always runs: it scores the result and is the fallback.
     // Only the trader's own text is sent — no example, template or account data.
-    const local = analyzeStrategyText(text);
+    const local = analyzeStrategyText(text, { references: opts.references });
     const r = await this.call('strategy_analyze', { text: text.slice(0, 4000) }, StrategyAnalysisAISchema);
-    return r ? mergeAiStrategyAnalysis(r, local) : local;
+    return r ? mergeAiStrategyAnalysis(r, local, opts.references) : local;
   }
 
   async analyzeAccountScreenshot(input: ScreenshotInput) {

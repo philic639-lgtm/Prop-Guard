@@ -199,7 +199,9 @@ describe('provenance: trader rules vs AI interpretation vs AI suggestion', () =>
   it('subjective rules are flagged and get measurable suggestions labelled as Prop Guard thresholds', () => {
     const momentum = analyzeStrategyText('I trade ES. Enter when momentum looks strong after the 10:00 candle.');
     const s = momentum.aiSuggestedRules.find((x) => x.kind === 'objectify');
-    expect(s?.suggestedRule).toMatch(/body larger than 50% of its total range/);
+    expect(s?.suggestedRule).toMatch(/closes in the top 25% of its range in the trade direction, with volume above the previous 5-bar average/);
+    expect(s?.confidence).toBe('D');
+    expect(s?.rationale).toMatch(/Suggested by Prop Guard — requires testing/);
     expect(s?.original).toMatch(/momentum looks strong/i);
 
     const dump = analyzeStrategyText('I buy NQ when it dumps hard and reverses.');
@@ -322,7 +324,7 @@ describe('AI merge (server analysis is validated and scored locally)', () => {
       { section: 'stop', text: 'Stop 10 points below the low', provenance: 'trader', quote: 'stop 10 points' },
       { section: 'target', text: 'This setup is profitable and safe', provenance: 'inferred', quote: null },
     ],
-    suggestions: [{ section: 'stop', kind: 'missing', title: 'Add a stop', issue: 'No stop.', original: null, suggestedRule: 'Stop 1 tick below the sweep low', rationale: 'Defines risk.' }],
+    suggestions: [{ section: 'stop', kind: 'missing', title: 'Add a stop', issue: 'No stop.', original: null, suggestedRule: 'Stop 1 tick below the sweep low', rationale: 'Defines risk.', confidence: 'B' }],
     questions: [],
     behavioralRisks: [
       { behavior: 'fomo', title: 'Vague timing', explanation: '"Quickly" is undefined, so late entries can look valid.', mitigation: 'Time-box it.', severity: 'medium' },

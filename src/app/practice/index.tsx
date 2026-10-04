@@ -28,7 +28,7 @@ import { GRADE_TONE } from '@/features/practice/components/PracticeScoreCard';
 import { filtersFor, pickScenario, usePracticeSetup, type PracticeMode } from '@/features/practice/selection';
 import { summarizePractice } from '@/lib/engines';
 import { scenarioProvider } from '@/services/marketHistory';
-import { getVerifiedPractice, onVerifiedScenariosChange, simulatedReady, simulatedScenarios } from '@/services/marketHistory/historical';
+import { generateCustomStrategyScenarios, getVerifiedPractice, hasCustomScenarios, onVerifiedScenariosChange, simulatedReady, simulatedScenarios } from '@/services/marketHistory/historical';
 import { loadVerifiedScenarios } from '@/services/marketHistory/remote';
 import { useAppStore } from '@/store/useAppStore';
 import type { PracticeAttempt } from '@/types/practice';
@@ -47,7 +47,7 @@ const RESULT: Record<PracticeAttempt['result'], string> = {
 
 /** Historical Trading Trainer home: pick instrument / strategy / difficulty and practice. */
 export default function PracticeHome() {
-  const params = useLocalSearchParams<{ strategyId?: string; source?: string; fromAnalysis?: 'exact' | 'closest' | 'none' }>();
+  const params = useLocalSearchParams<{ strategyId?: string; source?: string; fromAnalysis?: 'exact' | 'closest' | 'none' | 'own' }>();
   const attempts = useAppStore((s) => s.practiceAttempts);
   const strategies = useAppStore((s) => s.strategies);
   const setup = usePracticeSetup((s) => s.setup);
@@ -87,7 +87,7 @@ export default function PracticeHome() {
   // Strategies come from the Strategy Library; only those with practice scenarios are offered.
   const strategyOptions = useMemo(() => {
     const ids = [...new Set(catalog.map((s) => s.strategyId))];
-    return ids.map((id) => ({ value: id, label: getTemplate(id)?.shortName ?? id, sub: `${catalog.filter((s) => s.strategyId === id).length} scenarios` }));
+    return ids.map((id) => ({ value: id, label: getTemplate(id)?.shortName ?? catalog.find((s) => s.strategyId === id)?.strategyName ?? id, sub: `${catalog.filter((s) => s.strategyId === id).length} scenarios` }));
   }, [catalog]);
   const instrumentOptions = useMemo(() => (historical ? [...new Set(catalog.map((s) => s.instrument))] : [...PRACTICE_INSTRUMENTS]), [historical, catalog]);
 
@@ -97,6 +97,16 @@ export default function PracticeHome() {
   useEffect(() => {
     if (params.source === 'historical' && usePracticeSetup.getState().setup.source !== 'historical') setSetup({ source: 'historical', strategyId: null, instrument: null, difficulty: null });
   }, [params.source, setSetup]);
+
+  // A saved custom strategy with testable rules practises on scenarios found by ITS OWN rules (SIMULATED data).
+  useEffect(() => {
+    const saved = strategies.find((s) => s.id === params.strategyId);
+    const rules = saved?.structured?.testableRules;
+    if (!saved || saved.libraryId || !rules?.coverage.testable || hasCustomScenarios(saved.id)) return;
+    // Registering notifies onVerifiedScenariosChange subscribers, which refreshes the catalog.
+    generateCustomStrategyScenarios(saved.id, saved.name, rules);
+    setSetup({ source: 'historical' });
+  }, [params.strategyId, strategies, setSetup]);
 
   // Arriving from a saved strategy ("Practice") preselects its library template.
   useEffect(() => {
@@ -144,6 +154,13 @@ export default function PracticeHome() {
           </View>
         </Card>
 
+        {params.fromAnalysis === 'own' ? (
+          <Card tone="accent">
+            <AppText variant="body">
+              These SIMULATED scenarios were found by running YOUR rules on simulated price data — not recorded market history. Rules marked “confirm visually” in your testable rules were not checked automatically.
+            </AppText>
+          </Card>
+        ) : null}
         {params.fromAnalysis === 'none' || params.fromAnalysis === 'closest' ? (
           <Card tone="warning">
             <AppText variant="body">

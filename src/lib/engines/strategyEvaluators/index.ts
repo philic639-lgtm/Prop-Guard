@@ -6,8 +6,8 @@ import type { OhlcvBar, SetupSignal, StrategyEvaluator } from './types';
 
 export * from './types';
 export { buildSessionContext } from './context';
-export { detectRetestHold, mapChecklist } from './core';
-export { STRATEGY_EVALUATORS, getEvaluator, hasEvaluator } from './evaluators';
+export { breakoutStrength, detectRetestHold, mapChecklist } from './core';
+export { STRATEGY_EVALUATORS, getEvaluator, hasEvaluator, setupFeatures } from './evaluators';
 
 /**
  * Evaluate a strategy "now" on the latest bar — the entry point for a live

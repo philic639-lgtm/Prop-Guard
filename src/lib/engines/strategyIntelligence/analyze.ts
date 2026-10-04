@@ -4,6 +4,7 @@ import { abbreviateLevel, CONCEPTS, conceptById, type Concept, type ConceptConte
 import { interpretStrategy, makeRule, type Interpretation } from './interpret';
 import type {
   BehavioralRisk,
+  ConfidenceLabel,
   ClarifyingQuestion,
   DetectedStyle,
   HealthDimension,
@@ -13,7 +14,9 @@ import type {
   StrategySuggestion,
   StructuredStrategy,
 } from './types';
-import { findVagueTerms } from './vagueness';
+import { assessRegimes, buildDna, buildReasoning, buildWeaknessReport } from './insights';
+import { assessUniqueness, tokens, type UniquenessReference } from './uniqueness';
+import { findVagueTerms, introducedTools } from './vagueness';
 
 /**
  * Strategy Intelligence pipeline (deterministic, on-device):
@@ -63,38 +66,77 @@ function inferredRules(i: Interpretation, concepts: Concept[]): StrategyRule[] {
 
 // ───────────────────────────── Suggestions (objectify + missing) ─────────────────────────────
 
-function suggestionsFor(i: Interpretation, concepts: Concept[], rules: StrategyRule[]): StrategySuggestion[] {
+/** standard — full set; preserve — regeneration mode that keeps only the trader's own vocabulary and essentials. */
+export type SuggestionMode = 'standard' | 'preserve';
+
+const REQUIRES_TESTING = ' Suggested by Prop Guard — requires testing.';
+
+function windowFor(i: Interpretation): { rule: string; start: string; end: string; confidence: ConfidenceLabel } {
+  const ids = new Set(i.styles.map((s) => s.id));
+  if (ids.has('orb') || ids.has('opening_drive') || ids.has('gap')) return { rule: 'Only take entries between 9:45 AM and 11:00 AM ET (while the opening move is still active)', start: '09:45', end: '11:00', confidence: 'B' };
+  if (ids.has('scalping') || ids.has('order_flow')) return { rule: 'Only take entries between 9:30 AM and 11:30 AM ET (highest volume, most readable order flow)', start: '09:30', end: '11:30', confidence: 'C' };
+  if (ids.has('range') || ids.has('mean_reversion') || ids.has('indicator')) return { rule: 'Only take entries between 10:30 AM and 3:00 PM ET (after the opening drive has settled into a range)', start: '10:30', end: '15:00', confidence: 'C' };
+  if (ids.has('multi_timeframe')) return { rule: `Only take entries on ${i.context.timeframe ? i.context.timeframe.replace(/m$/, '-minute') : 'execution-chart'} closes between 9:45 AM and 3:30 PM ET`, start: '09:45', end: '15:30', confidence: 'C' };
+  if (ids.has('trend_continuation') || ids.has('moving_average')) return { rule: 'Only take entries between 10:00 AM and 3:00 PM ET (once the day’s trend has shown itself)', start: '10:00', end: '15:00', confidence: 'C' };
+  return { rule: 'Only take entries between 9:30 AM and 3:30 PM ET, never in the last 30 minutes of the session', start: '09:30', end: '15:30', confidence: 'C' };
+}
+
+/** Trade limits worded for how THIS kind of setup repeats during a session. */
+function tradeLimitFor(i: Interpretation): { rule: string; n: number; why: string } {
+  const ids = new Set(i.styles.map((s) => s.id));
+  if (ids.has('scalping')) return { rule: 'Maximum 4 trades per day; stop after 2 consecutive losses', n: 4, why: 'Scalps repeat quickly — a loss streak limit stops the count growing after losses.' };
+  if (ids.has('orb')) return { rule: 'Maximum 2 trades per day — one per side of the opening range', n: 2, why: 'The opening range only breaks out meaningfully once per side; later attempts are a different setup.' };
+  if (ids.has('liquidity_sweep')) return { rule: 'One attempt per swept level, maximum 2 trades per day', n: 2, why: 'A level that is swept twice no longer holds the stops the idea depends on.' };
+  if (ids.has('range')) return { rule: 'Maximum 2 fades per range edge; stop fading once a candle closes outside the range', n: 3, why: 'Repeated edge tests weaken the edge — the third touch often breaks.' };
+  if (ids.has('mean_reversion')) return { rule: 'Maximum 2 fades per day — if both fail, the day is probably trending', n: 2, why: 'Two failed fades are the plan’s signal that the mean-reversion assumption is wrong today.' };
+  if (ids.has('multi_timeframe')) return { rule: 'Maximum 2 trades per day, both in the higher-timeframe direction; none after the lower-timeframe structure flips', n: 2, why: 'Once the lower timeframe stops agreeing with the bias, further entries are counter-structure.' };
+  if (ids.has('trend_continuation') || ids.has('moving_average')) return { rule: 'Maximum 3 pullback entries per trend leg and 2 losing trades per day', n: 3, why: 'Late pullbacks in an aging trend carry more risk than the first ones.' };
+  if (ids.has('indicator')) return { rule: 'Maximum 2 divergence trades per day', n: 2, why: 'Divergences can repeat many times in a trend; capping attempts limits the damage when they keep failing.' };
+  if (ids.has('order_flow') || ids.has('absorption')) return { rule: 'Maximum 3 trades per day; stop after 2 consecutive losses', n: 3, why: 'Order-flow reads degrade with fatigue; a loss limit protects the decisions that matter.' };
+  if (ids.has('opening_drive')) return { rule: 'One opening-drive trade per day', n: 1, why: 'There is only one open per session.' };
+  return { rule: 'Maximum 2 trades per day', n: 2, why: 'A hard limit removes the option to trade repeatedly after a loss.' };
+}
+
+function suggestionsFor(i: Interpretation, concepts: Concept[], rules: StrategyRule[], mode: SuggestionMode = 'standard'): StrategySuggestion[] {
   const out: StrategySuggestion[] = [];
   const has = (s: RuleSection) => rules.some((r) => r.section === s);
   const c = i.context;
+  const push = (s: Omit<StrategySuggestion, 'id' | 'status' | 'introducesTools' | 'scope'> & { idPrefix: string; scope?: StrategySuggestion['scope'] }) => {
+    const { idPrefix, scope = 'strategy', ...rest } = s;
+    const introducesTools = introducedTools(rest.suggestedRule, i.originalText);
+    // Never swap the trader's idea for a different toolset: in preserve mode, foreign tools are dropped outright.
+    if (mode === 'preserve' && introducesTools.length) return;
+    out.push({ ...rest, scope, id: sugId(idPrefix), status: 'pending', introducesTools, rationale: rest.confidence === 'D' && !rest.rationale.includes('requires testing') ? `${rest.rationale}${REQUIRES_TESTING}` : rest.rationale });
+  };
 
-  // STAGE 4 — make subjective rules objective.
+  // STAGE 3 — make subjective rules objective (in the trader's own vocabulary).
   const seen = new Set<string>();
   for (const r of rules.filter((x) => x.provenance === 'trader')) {
     for (const hit of findVagueTerms(r.quote ?? r.text, i.originalText)) {
       if (seen.has(hit.term.key)) continue;
       seen.add(hit.term.key);
-      out.push({
-        id: sugId('obj'),
-        section: hit.term.section ?? r.section,
+      push({
+        idPrefix: 'obj',
+        // A definition that replaces the trader's entry/confirmation keeps that role (it is still the trigger).
+        section: r.section === 'entry' || r.section === 'confirmation' ? r.section : (hit.term.section ?? r.section),
         kind: 'objectify',
         title: `Define "${hit.match}"`,
         issue: hit.term.issue(hit.match),
         original: r.text,
         suggestedRule: hit.term.suggest(c, r.quote ?? r.text),
-        rationale: 'A measurable definition means the same chart always gets the same decision — and the rule can be tested in Historical Practice.',
-        status: 'pending',
+        rationale: 'A measurable definition means the same chart always gets the same decision — and the rule can be tested in Practice.',
+        confidence: hit.term.confidence,
       });
     }
   }
 
-  // STAGE 5 — fill missing structure, worded for THIS strategy's concepts.
-  const missing = (section: RuleSection, key: 'stop' | 'target' | 'invalidation' | 'entry' | 'noTrade', title: string, issue: string, generic: string, rationale: string) => {
+  // Missing structure, worded for THIS strategy's concepts.
+  const missing = (section: RuleSection, key: 'stop' | 'target' | 'invalidation' | 'entry' | 'noTrade', title: string, issue: string, generic: string, rationale: string, conf: { concept: ConfidenceLabel; generic: ConfidenceLabel }) => {
     const concept = firstFrom(concepts, key);
     const fn = concept?.[key] as ((x: ConceptContext) => string) | undefined;
     let rule = fn ? fn(c) : generic;
     if (key === 'stop' && !/^stop/i.test(rule)) rule = `Stop ${rule.charAt(0).toLowerCase()}${rule.slice(1)}`;
-    out.push({ id: sugId(key), section, kind: 'missing', title, issue, suggestedRule: rule, rationale, status: 'pending' });
+    push({ idPrefix: key, section, kind: 'missing', title, issue, suggestedRule: rule, rationale, confidence: fn ? conf.concept : conf.generic });
   };
 
   // An entry "idea" (e.g. "enter pullbacks into the 20 EMA") still needs the exact trigger event.
@@ -102,89 +144,95 @@ function suggestionsFor(i: Interpretation, concepts: Concept[], rules: StrategyR
   const TRIGGER = /close|candle|break|cross|engulf|limit order|market order|stop order|tick (?:above|below)|reclaim/i;
   const entryImprecise = !traderEntries.length || traderEntries.every((r) => !r.measurable || !TRIGGER.test(r.text));
   if (!has('entry') || (entryImprecise && firstFrom(concepts, 'entry'))) {
-    missing('entry', 'entry', 'Define the exact entry trigger', has('entry') ? 'The entry describes the idea but not the exact moment to enter.' : 'No entry trigger is stated.', `Enter on the first ${c.timeframe ?? '5-minute'} candle that closes in the trade direction after the setup is complete`, 'An exact trigger prevents entering early on anticipation or late on a chase.');
+    missing('entry', 'entry', 'Define the exact entry trigger', has('entry') ? 'The entry describes the idea but not the exact moment to enter.' : 'No entry trigger is stated.', `Enter on the first ${c.timeframe ?? '5-minute'} candle that closes in the trade direction after the setup is complete`, 'An exact trigger prevents entering early on anticipation or late on a chase.', { concept: 'B', generic: 'B' });
   }
   if (!has('stop') && i.stopPoints == null) {
-    missing('stop', 'stop', 'Add a stop-loss rule', 'The plan has no stop-loss — risk on every trade is undefined.', 'Stop 1 tick beyond the structure that invalidates the idea (the setup high/low)', 'A pre-defined stop caps the loss before entry and makes position sizing possible.');
+    missing('stop', 'stop', 'Add a stop-loss rule', 'The plan has no stop-loss — risk on every trade is undefined.', 'Stop 1 tick beyond the structure that invalidates the idea (the setup high/low)', 'A stop placed where the idea is shown to be wrong caps the loss before entry and makes position sizing possible.', { concept: 'B', generic: 'C' });
   }
   if (!has('target') && i.minRR == null) {
-    missing('target', 'target', 'Add a take-profit rule', 'No exit for winning trades is defined.', 'First target at 2R; move the stop to break-even after 1R', 'A defined exit stops winners being cut early or given back.');
+    missing('target', 'target', 'Add a take-profit rule', 'No exit for winning trades is defined.', 'First target at 2R; move the stop to break-even after 1R', 'A defined exit stops winners being cut early or given back.', { concept: 'D', generic: 'C' });
   }
   if (!has('invalidation')) {
-    missing('invalidation', 'invalidation', 'Add an invalidation condition', 'Nothing says when the setup is no longer valid.', 'Setup is void if price closes beyond the setup extreme before the entry triggers', 'Invalidation tells you when to stand aside instead of forcing a late entry.');
+    missing('invalidation', 'invalidation', 'Add an invalidation condition', 'Nothing says when the setup is no longer valid.', 'Setup is void if price closes beyond the setup extreme before the entry triggers', 'Invalidation tells you when to stand aside instead of forcing a late entry.', { concept: 'B', generic: 'B' });
   }
   if (i.maxTrades == null && !has('maxTrades')) {
-    const scalp = i.styles.some((s) => s.id === 'scalping');
-    out.push({
-      id: sugId('max'),
+    const lim = tradeLimitFor(i);
+    push({
+      idPrefix: 'max',
       section: 'maxTrades',
       kind: 'protection',
       title: 'Set a maximum number of trades',
       issue: 'No daily trade limit — the plan allows unlimited attempts.',
-      suggestedRule: scalp ? 'Maximum 4 trades per day; stop after 2 consecutive losses' : 'Maximum 2 trades per day',
-      rationale: 'A hard limit removes the option to trade repeatedly after a loss.',
-      status: 'pending',
-      apply: { maxTrades: scalp ? 4 : 2 },
+      suggestedRule: lim.rule,
+      rationale: lim.why,
+      apply: { maxTrades: lim.n },
+      confidence: 'C',
     });
   }
-  if (!i.window.start && !i.window.end) {
-    out.push({
-      id: sugId('win'),
-      section: 'window',
-      kind: 'protection',
-      title: 'Add a trading window',
-      issue: 'No time window — the plan can be traded at any hour, including low-liquidity chop.',
-      suggestedRule: i.styles.some((s) => s.id === 'orb' || s.id === 'opening_drive') ? 'Only take entries between 9:45 AM and 11:00 AM ET' : 'Only take entries between 9:30 AM and 11:30 AM ET (the highest-liquidity part of the session)',
-      rationale: 'A fixed window keeps the strategy to the market conditions it was designed for.',
-      status: 'pending',
-      apply: i.styles.some((s) => s.id === 'orb' || s.id === 'opening_drive') ? { windowStart: '09:45', windowEnd: '11:00' } : { windowStart: '09:30', windowEnd: '11:30' },
-    });
+  if (mode === 'standard' && !i.window.start && !i.window.end) {
+    const w = windowFor(i);
+    push({ idPrefix: 'win', section: 'window', kind: 'protection', title: 'Add a trading window', issue: 'No time window — the plan can be traded at any hour, including conditions it was not designed for.', suggestedRule: w.rule, rationale: 'A fixed window keeps the strategy to the market conditions it was designed for.', apply: { windowStart: w.start, windowEnd: w.end }, confidence: w.confidence });
   } else if (i.window.start && !i.window.end) {
     const [h, m] = i.window.start.split(':').map(Number);
     const end = `${String(Math.min(15, h + 1)).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    out.push({
-      id: sugId('win'),
+    push({
+      idPrefix: 'win',
       section: 'window',
       kind: 'protection',
       title: 'Add an end to the trading window',
       issue: `The plan says when to start (${formatClock(i.window.start)}) but not when to stop looking for trades.`,
       suggestedRule: `No new entries after ${formatClock(end)} ET`,
       rationale: 'Setups that trigger late in the session behave differently from the ones the plan describes.',
-      status: 'pending',
       apply: { windowStart: i.window.start, windowEnd: end },
+      confidence: 'B',
     });
   }
-  if (!has('noTrade')) {
+  if (mode === 'standard' && !has('noTrade')) {
     const concept = firstFrom(concepts, 'noTrade');
-    out.push({
-      id: sugId('nt'),
+    const own = concept?.noTrade?.(c);
+    // Strategy-specific condition (from the concepts the trader uses)…
+    if (own) {
+      push({ idPrefix: 'nt', section: 'noTrade', kind: 'protection', title: 'Add a do-not-trade condition for this setup', issue: 'The plan never says when this setup should be skipped.', suggestedRule: own, rationale: 'Knowing when NOT to trade is part of the edge definition.', confidence: 'B' });
+    }
+  }
+  // …and the account-wide news blackout, offered separately (it is not this strategy's logic).
+  if (mode === 'standard' && !rules.some((r) => r.section === 'noTrade' && /news|cpi|fomc|nfp/i.test(r.text))) {
+    push({
+      idPrefix: 'news',
       section: 'noTrade',
       kind: 'protection',
-      title: 'Add do-not-trade conditions',
-      issue: 'The plan never says when to sit out.',
-      suggestedRule: concept?.noTrade ? `${concept.noTrade(c)}; no entries 5 minutes before/after scheduled high-impact news (CPI, FOMC, NFP)` : 'No entries 5 minutes before/after scheduled high-impact news (CPI, FOMC, NFP)',
-      rationale: 'Knowing when NOT to trade is part of the edge definition.',
-      status: 'pending',
+      scope: 'account',
+      title: 'Account protection: news blackout',
+      issue: 'Nothing pauses trading around scheduled high-impact releases.',
+      suggestedRule: 'No entries 5 minutes before/after scheduled high-impact news (CPI, FOMC, NFP)',
+      rationale: 'Releases gap through stops regardless of strategy; this applies to every plan on the account.',
+      confidence: 'C',
     });
   }
-  if (!has('risk')) {
-    out.push({
-      id: sugId('risk'),
+  if (mode === 'standard' && !has('risk')) {
+    // Size from THIS strategy's stop (the trader's, or the suggested one).
+    const stopText = rules.find((r) => r.section === 'stop')?.text ?? out.find((x) => x.section === 'stop')?.suggestedRule ?? '';
+    const anchor = /(?:below|above|beyond|under|over)\s+(?:the\s+)?(.+?)(?:\s*\(|$)/i.exec(stopText)?.[1];
+    push({
+      idPrefix: 'risk',
       section: 'risk',
       kind: 'protection',
+      scope: 'account',
       title: 'Define risk per trade',
       issue: 'Position size / risk per trade is not stated.',
-      suggestedRule: 'Risk a fixed dollar amount per trade (your account max risk per trade); size = risk ÷ (stop distance × point value)',
+      suggestedRule: i.stopPoints != null
+        ? `Fixed dollar risk per trade; with a ${i.stopPoints}-point stop, contracts = risk ÷ (${i.stopPoints} × point value)`
+        : anchor
+          ? `Fixed dollar risk per trade; contracts = risk ÷ (distance from entry to the ${anchor} × point value)`
+          : 'Risk a fixed dollar amount per trade (your account max risk per trade); size = risk ÷ (stop distance × point value)',
       rationale: 'Fixed risk keeps one trade from outweighing the rest of the plan.',
-      status: 'pending',
+      confidence: 'C',
     });
-  }
-  if (i.minRR == null && has('target') === false && !out.some((s) => s.section === 'target')) {
-    out.push({ id: sugId('rr'), section: 'target', kind: 'missing', title: 'Set a minimum reward:risk', issue: 'No minimum reward:risk.', suggestedRule: 'Only take trades with at least 1:2 reward:risk to the first target', rationale: 'Filters out trades where the stop is too wide for the available room.', status: 'pending', apply: { minRR: 2 } });
   }
   // Attach R:R to the target suggestion so accepting it sets the strategy's minimum.
   const target = out.find((s) => s.section === 'target' && s.kind === 'missing');
-  if (target && i.minRR == null && /\b2R\b/.test(target.suggestedRule)) target.apply = { ...target.apply, minRR: 2 };
+  const rr = target ? /\b(\d+(?:\.\d+)?)R\b/.exec(target.suggestedRule) : null;
+  if (target && rr && i.minRR == null) target.apply = { ...target.apply, minRR: Number(rr[1]) };
   return out;
 }
 
@@ -309,6 +357,8 @@ export function sectionName(s: RuleSection): string {
       maxTrades: 'Trade limit',
       window: 'Trading window',
       timeframe: 'Timeframe',
+      volatility: 'Volatility requirement',
+      volume: 'Volume requirement',
       filter: 'Filter',
     } as const
   )[s];
@@ -420,7 +470,15 @@ function nameFor(i: Interpretation, concepts: Concept[]): string {
   if (ids.includes('orb')) parts.push(`${c.orbMinutes ? `${c.orbMinutes}M ` : ''}ORB${ids.includes('retest') ? ' Retest' : ' Breakout'}`);
   else if (ids.includes('liquidity_sweep')) parts.push(`${c.level ? `${abbreviateLevel(c.level)} ` : ''}Sweep${ids.includes('reversal') ? ' Reversal' : ''}`);
   else if (ids.includes('order_flow') || ids.includes('absorption')) parts.push(ids.includes('absorption') ? `Absorption${/support/i.test(i.originalText) ? ' at Support' : /resistance/i.test(i.originalText) ? ' at Resistance' : ''}` : 'Order Flow');
+  else if (ids.includes('range') && ids.includes('mean_reversion') && !ids.includes('vwap')) parts.push('Range Fade');
   else if (ids.includes('mean_reversion')) parts.push(`${ids.includes('vwap') ? 'VWAP ' : ''}Mean Reversion`);
+  else if (ids.includes('multi_timeframe')) parts.push('Multi-Timeframe Trend');
+  else if (ids.includes('breakout') && ids.includes('support_resistance')) {
+    const res = /resistance/i.test(i.originalText);
+    const sup = /support/i.test(i.originalText);
+    parts.push(res && !sup ? 'Resistance Breakout' : sup && !res ? 'Support Breakdown' : 'S/R Breakout');
+  }
+  else if (ids.includes('scalping')) parts.push(ids.includes('momentum') ? 'Momentum Scalp' : 'Scalp');
   else if (ids.includes('moving_average') && (ids.includes('pullback') || ids.includes('trend_continuation'))) parts.push(`${c.emaPeriod ? `${c.emaPeriod} ${c.emaType ?? 'EMA'}` : 'MA'} ${ids.includes('pullback') ? 'Pullback' : 'Trend'}`);
   else {
     const named = concepts.filter((x) => x.name).slice(0, 2);
@@ -439,6 +497,8 @@ function classificationFor(styles: DetectedStyle[]): string {
 
 export interface AnalyzeOptions {
   now?: string;
+  /** Previously analysed strategies — the uniqueness test makes sure a new analysis does not converge on them. */
+  references?: UniquenessReference[];
 }
 
 export function diagnosisInput(s: Pick<StructuredStrategy, 'instrument' | 'tradingWindow' | 'timeframes' | 'direction' | 'maxTrades' | 'stopPoints' | 'minRR' | 'session'>, rules: StrategyRule[]): DiagnosisInput {
@@ -472,6 +532,8 @@ export function sectionArrays(rules: StrategyRule[]) {
     noTradeRules: pick('noTrade'),
     riskRules: [...pick('risk'), ...pick('maxTrades')],
     filterRules: pick('filter'),
+    volatilityRules: pick('volatility'),
+    volumeRules: pick('volume'),
   };
 }
 
@@ -496,23 +558,67 @@ export function missingVariablesOf(s: Pick<StructuredStrategy, 'instrument' | 't
   return m;
 }
 
-/** Re-derive score, risks and missing variables after rules change (AI merge, edits). */
-export function finalizeStructured(base: Omit<StructuredStrategy, 'strategyHealthScore' | 'behavioralRisks' | 'missingVariables' | 'traderProvidedRules' | 'aiInferredRules' | keyof ReturnType<typeof sectionArrays>>, rules: StrategyRule[], extraRisks: BehavioralRisk[] = []): StructuredStrategy {
+/** Words that belong to the trader's own kind of strategy (their concepts' vocabulary). */
+function conceptVocabulary(ctx: ConceptContext): Set<string> {
+  const texts: string[] = [];
+  for (const id of ctx.concepts) {
+    const c = conceptById(id);
+    if (!c) continue;
+    texts.push(c.label, ...(c.falseSignals ?? []), c.early ?? '', c.late ?? '');
+    for (const fn of [c.thesis, c.assumption, c.stop, c.target, c.invalidation, c.entry, c.noTrade, c.name]) if (fn) texts.push(fn(ctx));
+    texts.push(...(c.inferred?.(ctx) ?? []));
+  }
+  return tokens(texts);
+}
+
+type DerivedKeys =
+  | 'strategyHealthScore'
+  | 'behavioralRisks'
+  | 'missingVariables'
+  | 'traderProvidedRules'
+  | 'aiInferredRules'
+  | 'dna'
+  | 'reasoning'
+  | 'regimes'
+  | 'weaknessReport'
+  | 'uniqueness'
+  | keyof ReturnType<typeof sectionArrays>;
+
+export interface FinalizeOptions {
+  references?: UniquenessReference[];
+  attempts?: number;
+}
+
+/** Re-derive every analysis stage from the rules (after interpretation, an AI merge, or edits). */
+export function finalizeStructured(base: Omit<StructuredStrategy, DerivedKeys>, rules: StrategyRule[], extraRisks: BehavioralRisk[] = [], opts: FinalizeOptions = {}): StructuredStrategy {
   const d = diagnosisInput(base, rules);
   const local = behavioralRisksFor(d, base.detectedStyle.map((s) => s.id), base.originalText);
   const risks = [...local, ...extraRisks.filter((r) => !local.some((l) => l.behavior === r.behavior))];
+  const health = diagnoseStrategy(d);
+  const missing = missingVariablesOf(base, rules);
+  const ctx: ConceptContext = { ...interpretStrategy(base.originalText).context, direction: base.direction, concepts: base.detectedStyle.map((x) => x.id) };
   return {
     ...base,
     ...sectionArrays(rules),
     traderProvidedRules: rules.filter((r) => r.provenance === 'trader'),
     aiInferredRules: rules.filter((r) => r.provenance === 'inferred'),
-    strategyHealthScore: diagnoseStrategy(d),
+    strategyHealthScore: health,
     behavioralRisks: risks,
-    missingVariables: missingVariablesOf(base, rules),
+    missingVariables: missing,
+    dna: buildDna(base, rules),
+    reasoning: buildReasoning(base, rules, ctx),
+    regimes: assessRegimes(base, rules),
+    weaknessReport: buildWeaknessReport(base, rules, health, risks, missing, ctx),
+    uniqueness: assessUniqueness(base, rules, base.aiSuggestedRules, opts.references ?? [], opts.attempts ?? 1, conceptVocabulary(ctx)),
   };
 }
 
-/** Full deterministic analysis of a free-text strategy. */
+/**
+ * Full deterministic analysis of a free-text strategy.
+ * If the first set of recommendations fails the uniqueness test (drift toward
+ * a template the trader never described, tools they do not use, or too little
+ * of their own logic left), the recommendations are regenerated in preserve mode.
+ */
 export function analyzeStrategyText(text: string, opts: AnalyzeOptions = {}): StructuredStrategy {
   const i = interpretStrategy(text);
   const concepts = activeConcepts(i.styles);
@@ -520,30 +626,29 @@ export function analyzeStrategyText(text: string, opts: AnalyzeOptions = {}): St
   // Structured numbers the trader stated become explicit rules too.
   if (i.stopPoints != null && !rules.some((r) => r.section === 'stop')) rules.push(makeRule('stop', `Stop ${i.stopPoints} points`, 'trader', undefined, text, true));
   if (i.minRR != null && !rules.some((r) => r.section === 'target')) rules.push(makeRule('target', `Minimum 1:${i.minRR} reward:risk`, 'trader', undefined, text, true));
-  const suggestions = suggestionsFor(i, concepts, rules);
-  return finalizeStructured(
-    {
-      version: 1,
-      originalText: text,
-      name: nameFor(i, concepts),
-      detectedStyle: i.styles,
-      classification: classificationFor(i.styles),
-      direction: i.direction,
-      directionSource: i.directionProvenance,
-      instrument: i.instruments,
-      session: i.session,
-      tradingWindow: i.window,
-      timeframes: i.timeframes,
-      maxTrades: i.maxTrades,
-      stopPoints: i.stopPoints,
-      minRR: i.minRR,
-      aiSuggestedRules: suggestions,
-      unresolvedQuestions: questionsFor(i, rules),
-      analysisSource: 'local',
-      analyzedAt: opts.now ?? new Date().toISOString(),
-    },
-    rules,
-  );
+  const base = (suggestions: StrategySuggestion[]) => ({
+    version: 1 as const,
+    originalText: text,
+    name: nameFor(i, concepts),
+    detectedStyle: i.styles,
+    classification: classificationFor(i.styles),
+    direction: i.direction,
+    directionSource: i.directionProvenance,
+    instrument: i.instruments,
+    session: i.session,
+    tradingWindow: i.window,
+    timeframes: i.timeframes,
+    maxTrades: i.maxTrades,
+    stopPoints: i.stopPoints,
+    minRR: i.minRR,
+    aiSuggestedRules: suggestions,
+    unresolvedQuestions: questionsFor(i, rules),
+    analysisSource: 'local' as const,
+    analyzedAt: opts.now ?? new Date().toISOString(),
+  });
+  const first = finalizeStructured(base(suggestionsFor(i, concepts, rules, 'standard')), rules, [], { references: opts.references, attempts: 1 });
+  if (first.uniqueness?.passes) return first;
+  return finalizeStructured(base(suggestionsFor(i, concepts, rules, 'preserve')), rules, [], { references: opts.references, attempts: 2 });
 }
 
 export const ALL_RULE_SECTIONS = SECTIONS_WITH_RULES;

@@ -2,7 +2,8 @@ import type { ChecklistItem, InstrumentSymbol, Strategy } from '@/types/domain';
 import { formatClock } from '@/utils/dates';
 
 import { diagnoseStrategy, diagnosisInput, finalizeStructured, sectionName } from './analyze';
-import { makeRule } from './interpret';
+import { interpretStrategy, makeRule } from './interpret';
+import { buildRuleSet, compileRuleSet, type CompiledRuleSet, type TestableRuleSet } from './ruleset';
 import type { RuleProvenance, RuleSection, StrategyHealthScore, StrategyRule, StrategySuggestion, StructuredStrategy, SuggestionStatus } from './types';
 
 /** All rules of a structured strategy, in section order. */
@@ -20,6 +21,8 @@ export function allRules(s: StructuredStrategy): StrategyRule[] {
     ...s.noTradeRules,
     ...s.riskRules,
     ...s.filterRules,
+    ...(s.volatilityRules ?? []),
+    ...(s.volumeRules ?? []),
   ];
 }
 
@@ -100,7 +103,7 @@ export interface ChecklistSection {
 
 const SECTION_ORDER: { key: string; title: string; sections: RuleSection[] }[] = [
   { key: 'bias', title: 'Bias', sections: ['bias'] },
-  { key: 'setup', title: 'Setup', sections: ['context', 'setup', 'filter'] },
+  { key: 'setup', title: 'Setup', sections: ['context', 'setup', 'filter', 'volatility', 'volume'] },
   { key: 'entry', title: 'Entry', sections: ['entry'] },
   { key: 'confirmation', title: 'Confirmation', sections: ['confirmation'] },
   { key: 'stop', title: 'Stop loss', sections: ['stop'] },
@@ -147,6 +150,75 @@ export function improvedChecklist(s: StructuredStrategy, opts: { accountMaxTrade
   return out;
 }
 
+// ───────────────────────────── Comparison: your strategy vs optimized ─────────────────────────────
+
+/** Section-by-section view of ONLY the trader's own wording (left side of the comparison). */
+export function originalChecklist(s: StructuredStrategy): ChecklistSection[] {
+  const trader = allRules(s).filter((r) => r.provenance === 'trader');
+  return improvedChecklist({ ...s, aiSuggestedRules: [], ...splitBySection(trader), tradingWindow: s.tradingWindow.provenance === 'trader' ? s.tradingWindow : { start: null, end: null, provenance: null } }).map((sec) => ({
+    ...sec,
+    lines: sec.lines.filter((l) => l.provenance === 'trader'),
+    missing: !sec.lines.some((l) => l.provenance === 'trader'),
+  }));
+}
+
+function splitBySection(rules: StrategyRule[]) {
+  const pick = (...secs: RuleSection[]) => rules.filter((r) => secs.includes(r.section));
+  return {
+    biasRules: pick('bias'),
+    contextRules: pick('context'),
+    setupRules: pick('setup'),
+    entryRules: pick('entry'),
+    confirmationRules: pick('confirmation'),
+    stopRules: pick('stop'),
+    targetRules: pick('target'),
+    managementRules: pick('management'),
+    invalidationRules: pick('invalidation'),
+    noTradeRules: pick('noTrade'),
+    riskRules: pick('risk', 'maxTrades'),
+    filterRules: pick('filter'),
+    volatilityRules: pick('volatility'),
+    volumeRules: pick('volume'),
+  };
+}
+
+// ───────────────────────────── Testable rules (IF/THEN) ─────────────────────────────
+
+/** Rules that define the final plan: trader + inferred + accepted suggestions, with vague originals replaced by accepted definitions. */
+export function finalPlanRules(s: StructuredStrategy): StrategyRule[] {
+  const accepted = s.aiSuggestedRules.filter((g) => isApplied(g.status));
+  const replaced = new Set(accepted.filter((g) => g.kind === 'objectify' && g.original).map((g) => g.original));
+  return [...allRules(s).filter((r) => !(r.provenance === 'trader' && replaced.has(r.text))), ...acceptedSuggestionRules(s)];
+}
+
+/** Objective IF/THEN ruleset from the trader's current decisions (pending suggestions excluded). */
+export function testableRulesOf(s: StructuredStrategy): TestableRuleSet {
+  const f = effectiveFields(s);
+  const ctx = interpretStrategy(s.originalText).context;
+  return buildRuleSet({
+    name: s.name,
+    originalText: s.originalText,
+    direction: s.direction,
+    instrument: f.instrument,
+    timeframes: f.timeframes,
+    window: { start: f.start, end: f.end },
+    conceptIds: s.detectedStyle.map((d) => d.id),
+    orbMinutes: ctx.orbMinutes ?? (Number(s.unresolvedQuestions.find((q) => q.variable === 'openingRangeMinutes')?.answer) || null),
+    emaPeriod: ctx.emaPeriod,
+    emaType: ctx.emaType,
+    level: ctx.level,
+    stopPoints: s.stopPoints,
+    minRR: f.minRR,
+    maxTrades: f.maxTrades,
+    rules: finalPlanRules(s),
+  });
+}
+
+/** The trader's plan as an evaluator Practice Mode can run on candles. */
+export function compileStrategy(s: StructuredStrategy, strategyId: string): CompiledRuleSet {
+  return compileRuleSet(testableRulesOf(s), strategyId);
+}
+
 // ───────────────────────────── To a saved Strategy ─────────────────────────────
 
 export interface ToStrategyOptions {
@@ -165,7 +237,7 @@ const joinTexts = (rules: StrategyRule[]) => rules.map((r) => r.text).join('; ')
  */
 export function toStrategy(s: StructuredStrategy, o: ToStrategyOptions): Strategy {
   const finalized = finalizeStructured(s, effectiveRules(s));
-  const structured: StructuredStrategy = { ...s, strategyHealthScore: finalized.strategyHealthScore };
+  const structured: StructuredStrategy = { ...s, strategyHealthScore: finalized.strategyHealthScore, testableRules: testableRulesOf(s) };
   const f = effectiveFields(s);
   const rules = effectiveRules(s);
   const by = (...secs: RuleSection[]) => rules.filter((r) => secs.includes(r.section));

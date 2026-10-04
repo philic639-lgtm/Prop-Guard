@@ -3,7 +3,7 @@ import type { HistoricalScenario, ScenarioBar } from '@/types/marketHistory';
 
 import { computeTradeOutcome } from './historicalOutcomeEngine';
 import { etParts, RTH_CLOSE, RTH_OPEN } from './marketTime';
-import { getEvaluator, scanForSignals, type OhlcvBar } from './strategyEvaluators';
+import { getEvaluator, scanForSignals, type OhlcvBar, type StrategyEvaluator } from './strategyEvaluators';
 
 /**
  * Turn stored bars into practice scenarios:
@@ -26,6 +26,10 @@ export interface GenerateOptions {
   maxPostBars?: number;
   /** Also create WAIT scenarios from near-miss candidates. */
   includeInvalid?: boolean;
+  /** Custom evaluator (e.g. a trader's own compiled rules); defaults to the library evaluator for `strategyId`. */
+  evaluator?: StrategyEvaluator;
+  strategyName?: string;
+  maxPerSession?: number;
 }
 
 const strip = (b: OhlcvBar): ScenarioBar => ({ timestamp: b.timestamp, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume });
@@ -66,13 +70,13 @@ function displayVwap(bars: readonly OhlcvBar[], from: number, to: number): (numb
 }
 
 export function generateScenariosFromBars(o: GenerateOptions): HistoricalScenario[] {
-  const evaluator = getEvaluator(o.strategyId);
+  const evaluator = o.evaluator ?? getEvaluator(o.strategyId);
   if (!evaluator) throw new Error(`No evaluator for strategy "${o.strategyId}" yet.`);
   const template = getTemplate(o.strategyId);
   const bars = [...o.bars].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   const signals = scanForSignals(evaluator, o.instrument, bars, {
     includeInvalid: o.includeInvalid ?? true,
-    maxPerSession: Math.max(1, template?.defaults.maxTrades ?? 1),
+    maxPerSession: Math.max(1, o.maxPerSession ?? template?.defaults.maxTrades ?? 1),
   });
   const pre = o.preContextBars ?? 30;
   const maxPost = o.maxPostBars ?? 48;
@@ -97,7 +101,7 @@ export function generateScenariosFromBars(o: GenerateOptions): HistoricalScenari
       instrument: o.instrument,
       timeframe: o.timeframe,
       strategyId: o.strategyId,
-      strategyName: template?.shortName ?? o.strategyId,
+      strategyName: o.strategyName ?? template?.shortName ?? o.strategyId,
       strategyVersion: sig.strategyVersion,
       provider: o.provider,
       verified: o.verified,

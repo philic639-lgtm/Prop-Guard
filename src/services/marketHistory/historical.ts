@@ -1,6 +1,7 @@
 import { getTemplate } from '@/data/strategyLibrary';
 import { generateScenariosFromBars } from '@/lib/engines/historicalScenarioGenerator';
 import { hasEvaluator } from '@/lib/engines/strategyEvaluators';
+import { compileRuleSet, type TestableRuleSet } from '@/lib/engines/strategyIntelligence/ruleset';
 import { MockHistoricalProvider } from '@/services/market-data/MockHistoricalProvider';
 import type { HistoricalScenario } from '@/types/marketHistory';
 import type { PracticeLevel, PracticeScenario } from '@/types/practice';
@@ -150,3 +151,52 @@ export function onVerifiedScenariosChange(fn: () => void) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
+
+// ───────────────────────── Scenarios from a trader's OWN rules (Strategy Intelligence) ─────────────────────────
+
+const customPractice = new Map<string, PracticeScenario[]>();
+const MICRO_OF: Record<string, string> = { MES: 'ES', MNQ: 'NQ', MYM: 'YM', M2K: 'RTY', MCL: 'CL', MGC: 'GC' };
+
+export interface CustomScenarioResult {
+  scenarios: PracticeScenario[];
+  valid: number;
+  skips: number;
+  instrument: string;
+  timeframe: string;
+}
+
+/**
+ * Run the trader's compiled ruleset over SIMULATED bars (no lookahead, real
+ * outcome engine) and register the scenarios for Practice. They are labelled
+ * SIMULATED and never count as historical evidence. The same compiled
+ * evaluator runs unchanged on verified data once it is connected.
+ */
+export function generateCustomStrategyScenarios(strategyId: string, strategyName: string, ruleSet: TestableRuleSet): CustomScenarioResult {
+  const wanted = ruleSet.instrument[0] ?? 'ES';
+  const mock = new MockHistoricalProvider();
+  const instrument = mock.supports(wanted, '5m') ? wanted : mock.supports(MICRO_OF[wanted] ?? '', '5m') ? MICRO_OF[wanted] : 'ES';
+  const timeframe = ruleSet.timeframe === '1m' || ruleSet.timeframe === '15m' ? ruleSet.timeframe : '5m';
+  const end = timeframe === '1m' ? '2025-03-22T00:00:00Z' : SIM_RANGE.end;
+  const bars = mock.getHistoricalBarsSync({ instrument, timeframe, startTime: SIM_RANGE.start, endTime: end });
+  const evaluator = compileRuleSet(ruleSet, strategyId);
+  const historical = generateScenariosFromBars({
+    instrument,
+    timeframe,
+    strategyId,
+    strategyName,
+    provider: mock.id,
+    verified: false,
+    historical: false,
+    bars,
+    evaluator,
+    maxPerSession: Math.max(1, Math.min(3, ruleSet.maxTrades ?? 2)),
+    maxPostBars: 36,
+  }).map((h) => (instrument === wanted ? h : { ...h, instrument: wanted }));
+  const practice = historical.map(historicalToPracticeScenario);
+  customPractice.set(strategyId, practice);
+  listeners.forEach((l) => l());
+  return { scenarios: practice, valid: historical.filter((h) => h.valid).length, skips: historical.filter((h) => !h.valid).length, instrument: wanted, timeframe };
+}
+
+export const getCustomPractice = () => [...customPractice.values()].flat();
+export const hasCustomScenarios = (strategyId: string) => customPractice.has(strategyId);

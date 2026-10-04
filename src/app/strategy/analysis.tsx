@@ -2,24 +2,25 @@ import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Button, Card, EmptyState, Screen, SectionHeader } from '@/components/ui';
+import { AppHeader, AppText, Button, Card, EmptyState, Screen } from '@/components/ui';
 import { spacing } from '@/constants/theme';
+import { AnalysisProgress, ANALYSIS_STEPS, HealthCard, IdeaCard, ImprovedStrategyCard, QuestionCard, SuggestionCard } from '@/features/strategy/analysis/AnalysisCards';
 import {
-  AnalysisProgress,
-  ANALYSIS_STEPS,
-  BehaviorCard,
-  HealthCard,
-  IdeaCard,
-  ImprovedStrategyCard,
-  NeedsWorkCard,
-  QuestionCard,
-  StrongCard,
-  SuggestionCard,
-} from '@/features/strategy/analysis/AnalysisCards';
+  AnalyzerTabBar,
+  AvoidWhenTab,
+  BestConditionsTab,
+  ComparisonView,
+  DnaTab,
+  PracticeTab,
+  TestableRulesTab,
+  WeaknessesTab,
+  type AnalyzerTab,
+} from '@/features/strategy/analysis/AnalysisTabs';
 import { practiceTemplateFor } from '@/features/strategy/practiceLink';
 import { useStrategyAnalysisStore } from '@/features/strategy/useStrategyAnalysisStore';
 import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
-import { effectiveFields, improvedChecklist, improvedHealth, toStrategy, validateStrategy } from '@/lib/engines';
+import { allRules, effectiveFields, improvedChecklist, improvedHealth, improvedTexts, originalChecklist, testableRulesOf, toStrategy, validateStrategy } from '@/lib/engines';
+import { generateCustomStrategyScenarios } from '@/services/marketHistory/historical';
 import { aiService } from '@/services/ai';
 import { useAppStore } from '@/store/useAppStore';
 import { uuid } from '@/utils/id';
@@ -37,13 +38,20 @@ export default function StrategyAnalysisScreen() {
   const [step, setStep] = useState(analysis ? ANALYSIS_STEPS.length : 0);
   const [error, setError] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [tab, setTab] = useState<AnalyzerTab>('dna');
+  const [practicing, setPracticing] = useState(false);
 
   // Analyse exactly the submitted text (never an example or a template).
   useEffect(() => {
     if (!text.trim() || (analysis && analysis.originalText === text)) return;
     let alive = true;
+    // Earlier analysed strategies: the uniqueness test makes sure this one does not converge on them.
+    const references = useAppStore
+      .getState()
+      .strategies.filter((st) => st.structured)
+      .map((st) => ({ name: st.name, originalText: st.structured!.originalText, improved: improvedTexts(allRules(st.structured!), st.structured!.aiSuggestedRules) }));
     aiService
-      .analyzeStrategy(text)
+      .analyzeStrategy(text, { references })
       .then((a) => alive && setAnalysis(a))
       .catch((e: Error) => alive && setError(e.message));
     return () => {
@@ -60,6 +68,8 @@ export default function StrategyAnalysisScreen() {
 
   const checklist = useMemo(() => (analysis ? improvedChecklist(analysis, { accountMaxTrades }) : []), [analysis, accountMaxTrades]);
   const improved = useMemo(() => (analysis ? improvedHealth(analysis) : null), [analysis]);
+  const original = useMemo(() => (analysis ? originalChecklist(analysis) : []), [analysis]);
+  const rules = useMemo(() => (analysis ? testableRulesOf(analysis) : null), [analysis]);
 
   if (!text.trim()) {
     return (
@@ -90,7 +100,21 @@ export default function StrategyAnalysisScreen() {
     return s.id;
   };
 
+  /** Practice on scenarios found by the trader's OWN compiled rules (simulated candles). */
+  const practiceOwnRules = () => {
+    const id = save();
+    if (!id || !analysis || !rules?.coverage.testable) return;
+    setPracticing(true);
+    // Let the spinner render before the scan runs.
+    setTimeout(() => {
+      generateCustomStrategyScenarios(id, analysis.name, testableRulesOf(analysis));
+      setPracticing(false);
+      router.push({ pathname: '/practice', params: { strategyId: id, source: 'historical', fromAnalysis: 'own' } });
+    }, 30);
+  };
+
   const testInPractice = () => {
+    if (rules?.coverage.testable) return practiceOwnRules();
     const id = save();
     if (!id || !analysis) return;
     const link = practiceTemplateFor(analysis);
@@ -130,29 +154,58 @@ export default function StrategyAnalysisScreen() {
         </Card>
       ) : null}
 
-      {ready && analysis && improved ? (
+      {ready && analysis && improved && rules ? (
         <>
           <IdeaCard a={analysis} />
           <HealthCard health={analysis.strategyHealthScore} improved={improved} />
-          <StrongCard health={analysis.strategyHealthScore} />
-          <NeedsWorkCard health={analysis.strategyHealthScore} />
+          {analysis.uniqueness ? (
+            <AppText variant="caption" tone={analysis.uniqueness.passes ? 'secondary' : 'warning'}>
+              Identity check: {analysis.uniqueness.notes.join(' ')} ({Math.round(analysis.uniqueness.identityRetention * 100)}% of the improved plan uses your own vocabulary.)
+            </AppText>
+          ) : null}
           {analysis.unresolvedQuestions.map((q) => (
             <QuestionCard key={q.id} q={q} onAnswer={(a) => answer(q.id, a)} />
           ))}
-          <BehaviorCard risks={analysis.behavioralRisks} />
 
-          <SectionHeader title="Prop Guard suggestions" />
-          <AppText variant="caption">
-            Every threshold below is a Prop Guard suggestion, not your rule. Accept, edit or reject each one — only accepted or edited suggestions are saved.
-          </AppText>
-          {analysis.aiSuggestedRules.map((s) => (
-            <SuggestionCard key={s.id} s={s} onDecide={(status, edited) => decide(s.id, status, edited)} />
-          ))}
-          <View style={styles.bulk}>
-            <Button label={`Accept all ${pending} pending`} size="md" variant="ghost" disabled={!pending} onPress={() => analysis.aiSuggestedRules.filter((s) => s.status === 'pending').forEach((s) => decide(s.id, 'accepted'))} />
-          </View>
+          <AnalyzerTabBar value={tab} onChange={setTab} />
+          {tab === 'dna' ? <DnaTab a={analysis} /> : null}
+          {tab === 'weaknesses' ? <WeaknessesTab a={analysis} /> : null}
+          {tab === 'improved' ? (
+            <>
+              <ComparisonView original={original} optimized={checklist} />
+              <ImprovedStrategyCard sections={checklist} />
+            </>
+          ) : null}
+          {tab === 'why' ? (
+            <>
+              <AppText variant="caption">
+                Original idea → problem → Prop Guard improvement → why it helps. Thresholds are Prop Guard suggestions, not your rules: accept, edit or reject each one — only accepted or edited changes are saved.
+              </AppText>
+              {analysis.aiSuggestedRules
+                .filter((s) => s.scope !== 'account')
+                .map((s) => (
+                  <SuggestionCard key={s.id} s={s} onDecide={(status, edited) => decide(s.id, status, edited)} />
+                ))}
+              {analysis.aiSuggestedRules.some((s) => s.scope === 'account') ? (
+                <AppText variant="label" style={{ marginTop: spacing.sm }}>
+                  ACCOUNT-WIDE PROTECTIONS · apply to every strategy, not part of this one’s logic
+                </AppText>
+              ) : null}
+              {analysis.aiSuggestedRules
+                .filter((s) => s.scope === 'account')
+                .map((s) => (
+                  <SuggestionCard key={s.id} s={s} onDecide={(status, edited) => decide(s.id, status, edited)} />
+                ))}
+              <View style={styles.bulk}>
+                <Button label={`Accept all ${pending} pending`} size="md" variant="ghost" disabled={!pending} onPress={() => analysis.aiSuggestedRules.filter((s) => s.status === 'pending').forEach((s) => decide(s.id, 'accepted'))} />
+              </View>
+            </>
+          ) : null}
+          {tab === 'rules' ? <TestableRulesTab rules={rules} /> : null}
+          {tab === 'best' ? <BestConditionsTab a={analysis} /> : null}
+          {tab === 'avoid' ? <AvoidWhenTab a={analysis} /> : null}
+          {tab === 'practice' ? <PracticeTab rules={rules} onPractice={practiceOwnRules} busy={practicing} /> : null}
 
-          <ImprovedStrategyCard sections={checklist} />
           {blocker ? (
             <AppText variant="caption" tone="warning" align="center">
               {blocker}
