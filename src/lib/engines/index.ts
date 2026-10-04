@@ -8,6 +8,7 @@ export * from './sessionEngine';
 export * from './strategyEngine';
 export * from './liveTradeEngine';
 export * from './strategyParser';
+export * from './strategyIntelligence';
 export * from './journalEngine';
 export * from './strategyLibraryEngine';
 export * from './practiceScoringEngine';

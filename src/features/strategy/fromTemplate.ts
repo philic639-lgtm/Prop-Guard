@@ -29,18 +29,23 @@ export function strategyFromTemplate(t: LibraryTemplate, preferredMarkets?: Inst
   };
 }
 
-export function blankStrategy(): Strategy {
+/**
+ * An EMPTY strategy. It deliberately carries no strategy-specific defaults
+ * (no ORB window, no bias rule, no session) — earlier versions pre-filled an
+ * ORB-style plan here, which leaked into strategies built from descriptions.
+ */
+export function blankStrategy(markets: InstrumentSymbol[] = []): Strategy {
   const now = new Date().toISOString();
   return {
     id: uuid(),
     name: '',
-    markets: ['ES', 'MES'],
-    session: 'NY Open',
+    markets: [...markets],
+    session: '',
     timeframe: '',
-    entryWindowStart: '09:45',
-    entryWindowEnd: '10:45',
-    biasRequirement: '1H trend',
-    requiresBiasAlignment: true,
+    entryWindowStart: null,
+    entryWindowEnd: null,
+    biasRequirement: '',
+    requiresBiasAlignment: false,
     entryTrigger: '',
     confirmationRules: '',
     retestRules: '',

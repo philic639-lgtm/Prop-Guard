@@ -5,41 +5,34 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, Input, Screen } from '@/components/ui';
 import { colors, spacing } from '@/constants/theme';
-import { blankStrategy } from '@/features/strategy/fromTemplate';
-import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
-import { STRATEGY_EXAMPLE, strategyFromParsed } from '@/lib/engines';
-import { aiService } from '@/services/ai';
-import { useAppStore } from '@/store/useAppStore';
+import { useStrategyAnalysisStore } from '@/features/strategy/useStrategyAnalysisStore';
+import { STRATEGY_EXAMPLE } from '@/lib/engines';
 
-const TIPS = ['Market and timeframe', 'When you are allowed to trade', 'Entry trigger and confirmation', 'Stop size, minimum R:R and trade limit'];
+const TIPS = ['Market and timeframe', 'When you are allowed to trade', 'Entry trigger and confirmation', 'Stop, target and trade limit', 'When you do NOT trade'];
 
-/** "I have a strategy" — describe it in plain English; AI converts it to measurable rules. */
+/**
+ * "I have a strategy" — describe ANY strategy in plain English. Prop Guard
+ * analyses exactly what was typed. The example only fills the input when the
+ * trader presses "Use example"; it never takes part in analysis otherwise.
+ */
 export default function DescribeStrategy() {
-  const [text, setText] = useState('');
-  const [loading, setLoading] = useState(false);
-  const setDraft = useStrategyDraftStore((s) => s.setDraft);
-  const maxTrades = useAppStore((s) => s.tradingRules.maxTradesPerDay);
+  // Start from the last submitted text (editing after going back), never from an example.
+  const [text, setText] = useState(() => useStrategyAnalysisStore.getState().text);
+  const submit = useStrategyAnalysisStore((s) => s.submit);
 
-  const convert = async () => {
-    setLoading(true);
-    try {
-      const parsed = await aiService.parseStrategyDescription(text);
-      const base = { ...blankStrategy(), maxTrades: Math.min(2, maxTrades) };
-      setDraft(strategyFromParsed(parsed, base, text), 'describe', parsed.source);
-      router.push('/strategy/review');
-    } finally {
-      setLoading(false);
-    }
+  const analyze = () => {
+    submit(text.trim());
+    router.push('/strategy/analysis');
   };
 
   return (
     <Screen
       header={<AppHeader title="Teach PropGuard your plan" back />}
-      footer={<Button label="Convert to Rules" icon="sparkles" loading={loading} disabled={text.trim().length < 20} onPress={() => void convert()} />}>
+      footer={<Button label="Analyze My Strategy" icon="sparkles" disabled={text.trim().length < 20} onPress={analyze} />}>
       <View style={{ gap: spacing.xs }}>
         <AppText variant="title">Describe your strategy</AppText>
         <AppText variant="body" tone="secondary">
-          Write it the way you would explain it to another trader. Prop Guard turns it into measurable rules you can review and edit.
+          Write it the way you would explain it to another trader — any style, even if it is rough or incomplete. Prop Guard finds what is vague or missing and helps you make it measurable.
         </AppText>
       </View>
       <Input
@@ -47,7 +40,7 @@ export default function DescribeStrategy() {
         value={text}
         onChangeText={setText}
         multiline
-        placeholder="I trade a 15 minute ORB on ES. I wait until after 9:45…"
+        placeholder="What you trade, what you wait for, how you enter, where your stop and target go…"
         inputStyle={{ minHeight: 170 }}
         hint={`${text.trim().length} characters`}
       />
@@ -65,7 +58,7 @@ export default function DescribeStrategy() {
         ))}
       </Card>
       <AppText variant="caption" tone="tertiary">
-        Prop Guard only converts rules you state. It never adds signals or predicts results.
+        Prop Guard keeps your words, labels its own interpretations, and never adds a suggestion to your plan unless you accept it. It does not predict results.
       </AppText>
     </Screen>
   );

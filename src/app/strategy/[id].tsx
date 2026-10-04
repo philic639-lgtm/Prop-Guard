@@ -94,7 +94,7 @@ export default function StrategyBuilder() {
   const initial = useMemo<Strategy>(() => {
     if (existing) return existing;
     const t = template ? getTemplate(template) : undefined;
-    return t ? strategyFromTemplate(t, markets) : blankStrategy();
+    return t ? strategyFromTemplate(t, markets) : blankStrategy(markets.slice(0, 2));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, template]);
 

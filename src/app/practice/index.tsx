@@ -47,7 +47,7 @@ const RESULT: Record<PracticeAttempt['result'], string> = {
 
 /** Historical Trading Trainer home: pick instrument / strategy / difficulty and practice. */
 export default function PracticeHome() {
-  const params = useLocalSearchParams<{ strategyId?: string }>();
+  const params = useLocalSearchParams<{ strategyId?: string; source?: string; fromAnalysis?: 'exact' | 'closest' | 'none' }>();
   const attempts = useAppStore((s) => s.practiceAttempts);
   const strategies = useAppStore((s) => s.strategies);
   const setup = usePracticeSetup((s) => s.setup);
@@ -92,6 +92,11 @@ export default function PracticeHome() {
   const instrumentOptions = useMemo(() => (historical ? [...new Set(catalog.map((s) => s.instrument))] : [...PRACTICE_INSTRUMENTS]), [historical, catalog]);
 
   const setSource = (source: 'samples' | 'historical') => setSetup({ source, strategyId: null, instrument: null, difficulty: null });
+
+  // Arriving from Strategy Analysis ("Test in Historical Practice") switches to historical data.
+  useEffect(() => {
+    if (params.source === 'historical' && usePracticeSetup.getState().setup.source !== 'historical') setSetup({ source: 'historical', strategyId: null, instrument: null, difficulty: null });
+  }, [params.source, setSetup]);
 
   // Arriving from a saved strategy ("Practice") preselects its library template.
   useEffect(() => {
@@ -138,6 +143,16 @@ export default function PracticeHome() {
             <StatusBadge label="No capital at risk" tone="positive" size="sm" />
           </View>
         </Card>
+
+        {params.fromAnalysis === 'none' || params.fromAnalysis === 'closest' ? (
+          <Card tone="warning">
+            <AppText variant="body">
+              {params.fromAnalysis === 'none'
+                ? 'Your strategy is saved. Historical Practice does not have scenarios for this exact strategy type yet, so none is preselected — practise related setups, or use your strategy with screenshot practice.'
+                : 'Your strategy is saved. Historical Practice is showing the closest matching structure (not your exact rules) — check the strategy name on each scenario.'}
+            </AppText>
+          </Card>
+        ) : null}
 
         <TileGrid>
           <MetricTile label="Practice accuracy" value={pct(summary.accuracy)} sub={`${summary.attempts} scenario${summary.attempts === 1 ? '' : 's'}`} tone={summary.accuracy == null ? 'primary' : summary.accuracy >= 0.6 ? 'positive' : 'warning'} />

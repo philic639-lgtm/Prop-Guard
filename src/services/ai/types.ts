@@ -163,3 +163,61 @@ export interface PracticeInput {
 export const PracticeFeedbackSchema = z.object({ feedback: z.string().min(1).max(400) });
 
 export type AISource = 'ai' | 'local';
+
+// ---------- Strategy Intelligence (free-text strategy analysis) ----------
+const SECTION = z.enum(['bias', 'context', 'setup', 'entry', 'confirmation', 'stop', 'target', 'management', 'invalidation', 'noTrade', 'risk', 'maxTrades', 'filter']);
+const HHMM = z.string().regex(/^\d{2}:\d{2}$/).nullable().catch(null);
+
+/** Model output for `strategy_analyze`. Validated, then merged with the on-device engine (which scores it). */
+export const StrategyAnalysisAISchema = z.object({
+  name: z.string().min(1).max(60),
+  classification: z.string().max(120).catch(''),
+  styles: z.array(z.object({ id: z.string().min(1).max(40), label: z.string().min(1).max(60), evidence: z.array(z.string().max(120)).max(6).catch([]) })).max(8).catch([]),
+  direction: z.enum(['long', 'short', 'both']).nullable().catch(null),
+  instruments: z.array(z.string().max(8)).max(6).catch([]),
+  session: z.string().max(40).catch(''),
+  tradingWindow: z.object({ start: HHMM, end: HHMM }).catch({ start: null, end: null }),
+  timeframes: z.array(z.string().max(12)).max(6).catch([]),
+  maxTrades: z.number().int().positive().max(50).nullable().catch(null),
+  stopPoints: z.number().positive().max(10000).nullable().catch(null),
+  minRR: z.number().positive().max(20).nullable().catch(null),
+  rules: z.array(z.object({ section: SECTION, text: z.string().min(1).max(220), provenance: z.enum(['trader', 'inferred']), quote: z.string().max(300).nullable().optional() })).max(40),
+  suggestions: z
+    .array(
+      z.object({
+        section: SECTION,
+        kind: z.enum(['objectify', 'missing', 'protection']),
+        title: z.string().min(1).max(100),
+        issue: z.string().max(300),
+        original: z.string().max(300).nullable().optional(),
+        suggestedRule: z.string().min(1).max(300),
+        rationale: z.string().max(300).catch(''),
+      }),
+    )
+    .max(16)
+    .catch([]),
+  questions: z
+    .array(
+      z.object({
+        variable: z.enum(['instrument', 'entryTrigger', 'openingRangeMinutes', 'timeframe', 'direction']),
+        question: z.string().min(1).max(200),
+        why: z.string().max(200).catch(''),
+        options: z.array(z.string().max(20)).max(8).optional(),
+      }),
+    )
+    .max(3)
+    .catch([]),
+  behavioralRisks: z
+    .array(
+      z.object({
+        behavior: z.enum(['chasing', 'revenge_trading', 'entering_too_early', 'over_confirmation', 'fomo', 'oversized_risk', 'moving_stops', 'holding_losers', 'cutting_winners_early', 'overtrading', 'trading_chop', 'predicting_not_reacting']),
+        title: z.string().min(1).max(100),
+        explanation: z.string().max(400),
+        mitigation: z.string().max(240).catch(''),
+        severity: z.enum(['low', 'medium', 'high']).catch('medium'),
+      }),
+    )
+    .max(10)
+    .catch([]),
+});
+export type StrategyAnalysisAI = z.infer<typeof StrategyAnalysisAISchema>;

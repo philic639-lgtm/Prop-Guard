@@ -3,7 +3,10 @@ import type { z } from 'zod';
 import { getTemplate } from '@/data/strategyLibrary';
 import { supabase } from '@/services/supabase/client';
 
+import { analyzeStrategyText } from '@/lib/engines/strategyIntelligence/analyze';
+
 import { MockAIProvider } from './mockProvider';
+import { mergeAiStrategyAnalysis } from './strategyAnalysis';
 import { matchStrategies } from './strategyMatcher';
 import type { AIProvider } from './provider';
 import {
@@ -14,6 +17,7 @@ import {
   ScreenshotExtractionSchema,
   SessionReviewSchema,
   SetupAnalysisSchema,
+  StrategyAnalysisAISchema,
   StrategyReasonsSchema,
   type DailyCoachInput,
   type PracticeInput,
@@ -23,7 +27,7 @@ import {
   type StrategyFinderAnswers,
 } from './types';
 
-type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach' | 'strategy_parse' | 'account_screenshot' | 'practice';
+type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach' | 'strategy_parse' | 'strategy_analyze' | 'account_screenshot' | 'practice';
 
 /**
  * Calls the `ai-gateway` Supabase Edge Function. Provider API keys live ONLY
@@ -97,6 +101,14 @@ export class RemoteAIProvider implements AIProvider {
     const r = await this.call('strategy_parse', { text: text.slice(0, 2000) }, ParsedStrategySchema);
     if (!r) return this.fallback.parseStrategyDescription(text);
     return { ...r, unparsed: [], source: 'ai' as const };
+  }
+
+  async analyzeStrategy(text: string) {
+    // Local analysis always runs: it scores the result and is the fallback.
+    // Only the trader's own text is sent — no example, template or account data.
+    const local = analyzeStrategyText(text);
+    const r = await this.call('strategy_analyze', { text: text.slice(0, 4000) }, StrategyAnalysisAISchema);
+    return r ? mergeAiStrategyAnalysis(r, local) : local;
   }
 
   async analyzeAccountScreenshot(input: ScreenshotInput) {

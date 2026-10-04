@@ -1,5 +1,5 @@
 import type { ChecklistItem, InstrumentSymbol, Strategy } from '@/types/domain';
-import { formatClock, parseClock } from '@/utils/dates';
+import { formatClock } from '@/utils/dates';
 
 import { allInstruments } from './instrumentEngine';
 
@@ -49,11 +49,6 @@ function toClock(h: number, m: number): string {
   return `${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function addMinutesClock(clock: string, minutes: number): string {
-  const total = (parseClock(clock)! + minutes) % 1440;
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-
 function sentences(text: string): string[] {
   return text
     .replace(/\s+/g, ' ')
@@ -93,9 +88,10 @@ export function parseStrategyText(input: string): ParsedStrategy {
   const hasOrb = !!orb || /\bORB\b|opening range/i.test(text);
   const retest = /re-?test/i.test(text);
   if (hasOrb) {
-    const mins = orb ? Number(orb[1]) : 15;
-    conditions.push(`Identify ${mins} minute opening range`);
-    result.name = `${mins}M ORB${retest ? ' Retest' : ''}`;
+    // Never assume an opening-range length the trader did not state.
+    const mins = orb ? Number(orb[1]) : null;
+    conditions.push(mins ? `Identify ${mins} minute opening range` : 'Identify the opening range (length not stated)');
+    result.name = `${mins ? `${mins}M ` : ''}ORB${retest ? ' Retest' : ''}`;
   } else if (/vwap/i.test(text)) {
     result.name = /pull ?back/i.test(text) ? 'VWAP Pullback' : 'VWAP Strategy';
     conditions.push('Price reaction at VWAP confirmed');
@@ -108,7 +104,8 @@ export function parseStrategyText(input: string): ParsedStrategy {
   const until = /(?:until|till|before|by|to|-)\s*(\d{1,2}):(\d{2})/i.exec(after ? text.slice(after.index + after[0].length) : '');
   if (after) {
     result.entryWindowStart = toClock(Number(after[1]), Number(after[2]));
-    result.entryWindowEnd = until ? toClock(Number(until[1]), Number(until[2])) : addMinutesClock(result.entryWindowStart, 75);
+    // No invented end time: an unstated end stays unstated.
+    result.entryWindowEnd = until ? toClock(Number(until[1]), Number(until[2])) : null;
   }
 
   // Bias
@@ -163,12 +160,14 @@ export function parseStrategyText(input: string): ParsedStrategy {
 /** Turn a parsed description into a full Strategy (caller supplies id/timestamps). */
 export function strategyFromParsed(p: ParsedStrategy, base: Strategy, description: string): Strategy {
   const checklist: ChecklistItem[] = p.conditions.map((label, i) => ({ id: `nl_${i}_${label.length}`, label, kind: 'yesno', required: true }));
+  const fullWindow = !!(p.entryWindowStart && p.entryWindowEnd);
+  if (p.entryWindowStart && !p.entryWindowEnd) checklist.unshift({ id: 'nl_after', label: `Time is after ${formatClock(p.entryWindowStart)} ET`, kind: 'yesno', required: true });
   return {
     ...base,
     name: p.name,
     markets: p.instrument ? [p.instrument] : base.markets,
-    entryWindowStart: p.entryWindowStart,
-    entryWindowEnd: p.entryWindowEnd,
+    entryWindowStart: fullWindow ? p.entryWindowStart : null,
+    entryWindowEnd: fullWindow ? p.entryWindowEnd : null,
     biasRequirement: p.biasRequirement,
     requiresBiasAlignment: p.requiresBiasAlignment,
     entryTrigger: p.conditions.find((c) => /close|break/i.test(c)) ?? base.entryTrigger,

@@ -7,7 +7,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach' | 'strategy_parse' | 'account_screenshot' | 'practice';
+type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach' | 'strategy_parse' | 'strategy_analyze' | 'account_screenshot' | 'practice';
 
 const PROVIDER = (Deno.env.get('AI_PROVIDER') ?? 'anthropic').toLowerCase();
 const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-sonnet-5-5';
@@ -34,9 +34,34 @@ Return JSON: {"explanations": [{"templateId": string, "reasons": string[]}]}`,
   daily_coach: `Write a short coaching note that prioritizes discipline over generating trades.
 Return JSON: {"message": string (<=400 chars), "bestAction": string (<=160 chars)}`,
   strategy_parse: `Convert the trader's plain-English strategy into MEASURABLE rules. Do not add rules they did not state.
+Never assume an opening-range strategy, a time window, a bias or any other default — use null / empty when not stated.
 Times are US/Eastern 24h "HH:mm". Return JSON: {"name": string, "instrument": "ES"|"MES"|"NQ"|"MNQ"|null,
 "entryWindowStart": string|null, "entryWindowEnd": string|null, "biasRequirement": string, "requiresBiasAlignment": boolean,
 "stopMaxPoints": number|null, "minRR": number|null, "maxTrades": number|null, "conditions": string[] (yes/no checklist items, <=12)}`,
+  strategy_analyze: `You are analysing ONE trader's own futures strategy description (INPUT.text). Analyse THIS text only.
+Rules:
+- Identify what the trader actually described. Do NOT force it into a preset (never assume an opening range breakout, a 9:45 window,
+  a 1H bias, ES, or any example strategy). Styles are open-ended snake_case ids (e.g. "liquidity_sweep", "vwap", "mean_reversion",
+  "order_flow", "absorption", "orb", "trend_continuation", "pullback", "moving_average", ...). If nothing fits use "custom".
+- rules[]: every rule the trader STATED gets provenance "trader" and "quote" = the exact words copied from INPUT.text.
+  Standard definitions of terms they used (e.g. what "previous day's low" means) are provenance "inferred". Never mark your own ideas as "trader".
+- Leave anything not stated as null / empty. Missing stops, targets, windows, limits are gaps, not things to fill in.
+- suggestions[]: measurable improvements that PRESERVE the trader's concept. Subjective wording ("looks strong", "stretched", "quickly",
+  "absorbed") gets kind "objectify" with "original" = the trader's words and a concrete threshold. Gaps get kind "missing";
+  guard-rails (trade limit, window, no-trade conditions) get kind "protection". Thresholds are YOUR suggestions.
+- behavioralRisks[]: behaviours the PLAN could encourage (chasing, revenge_trading, entering_too_early, over_confirmation, fomo,
+  oversized_risk, moving_stops, holding_losers, cutting_winners_early, overtrading, trading_chop, predicting_not_reacting).
+  Describe the plan, never the person. Do not psychoanalyse or diagnose the trader.
+- questions[]: only for critical variables that cannot reasonably be inferred (max 3).
+- Never call a strategy proven, profitable, safe, high win rate or guaranteed. Use "more measurable", "better defined", "more testable".
+Times are US/Eastern 24h "HH:mm". sections: bias|context|setup|entry|confirmation|stop|target|management|invalidation|noTrade|risk|maxTrades|filter.
+Return JSON: {"name": string (<=60), "classification": string, "styles": [{"id": string, "label": string, "evidence": string[]}],
+"direction": "long"|"short"|"both"|null, "instruments": string[], "session": string, "tradingWindow": {"start": string|null, "end": string|null},
+"timeframes": string[], "maxTrades": number|null, "stopPoints": number|null, "minRR": number|null,
+"rules": [{"section": string, "text": string, "provenance": "trader"|"inferred", "quote": string|null}],
+"suggestions": [{"section": string, "kind": "objectify"|"missing"|"protection", "title": string, "issue": string, "original": string|null, "suggestedRule": string, "rationale": string}],
+"questions": [{"variable": "instrument"|"entryTrigger"|"openingRangeMinutes"|"timeframe"|"direction", "question": string, "why": string, "options": string[]}],
+"behavioralRisks": [{"behavior": string, "title": string, "explanation": string, "mitigation": string, "severity": "low"|"medium"|"high"}]}`,
   account_screenshot: `Read this prop-firm account dashboard screenshot. Use null for anything not clearly visible. Never guess.
 Return JSON: {"balance": number|null, "dailyPnl": number|null, "totalPnl": number|null, "drawdownRemaining": number|null,
 "accountType": string|null, "confidence": "low"|"medium"|"high", "notes": string}`,
@@ -73,7 +98,7 @@ async function callAnthropic(task: Task, input: Record<string, unknown>) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 1024, system: SYSTEM, messages: [{ role: 'user', content }] }),
+    body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: task === 'strategy_analyze' ? 4096 : 1024, system: SYSTEM, messages: [{ role: 'user', content }] }),
   });
   if (!res.ok) throw new Error(`Anthropic ${res.status}`);
   const data = await res.json();

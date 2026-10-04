@@ -113,6 +113,8 @@ export function strategyToRows(s: Strategy, userId: string) {
       source: s.source,
       library_id: s.libraryId ?? null,
       source_type: s.sourceType ?? null,
+      original_text: s.originalText ?? null,
+      structured: s.structured ?? null,
       created_at: s.createdAt,
     },
     checklist: s.checklist.map((c, i) => ({
@@ -140,7 +142,7 @@ export function rowsToStrategy(r: Row, items: Row[]): Strategy {
     entryWindowStart: (r.entry_window_start as string | null) ?? null,
     entryWindowEnd: (r.entry_window_end as string | null) ?? null,
     biasRequirement: str(r.bias_requirement),
-    requiresBiasAlignment: r.requires_bias_alignment !== false,
+    requiresBiasAlignment: r.requires_bias_alignment === true,
     entryTrigger: str(r.entry_trigger),
     confirmationRules: str(r.confirmation_rules),
     retestRules: str(r.retest_rules),
@@ -156,6 +158,8 @@ export function rowsToStrategy(r: Row, items: Row[]): Strategy {
     source: r.source === 'library' ? 'library' : 'custom',
     libraryId: (r.library_id as string | null) ?? undefined,
     ...(r.source_type === 'BUILT_IN' || r.source_type === 'CUSTOM' || r.source_type === 'AI_ADAPTED' ? { sourceType: r.source_type } : {}),
+    ...(typeof r.original_text === 'string' ? { originalText: r.original_text } : {}),
+    ...(r.structured && typeof r.structured === 'object' && (r.structured as { version?: number }).version === 1 ? { structured: r.structured as unknown as Strategy['structured'] } : {}),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
   };

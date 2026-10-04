@@ -75,7 +75,7 @@ export default function StrategyTab() {
       ) : null}
 
       <SectionHeader title="Build a strategy" />
-      <OptionCard icon="shield-checkmark-outline" title="I have a strategy" description="Describe your plan in plain English. AI turns it into measurable rules." onPress={() => gate('/strategy/describe')} />
+      <OptionCard icon="shield-checkmark-outline" title="I have a strategy" description="Describe any strategy in plain English. Prop Guard analyzes it, finds vague rules and helps make it measurable." onPress={() => gate('/strategy/describe')} />
       <OptionCard icon="sparkles" title="Help me build a strategy" description="Create a structured plan from your account, risk limits and preferences." selected onPress={() => gate('/strategy/generating')} />
       <OptionCard icon="compass-outline" title="Find something repeatable" description="Answer a few questions and compare matching templates." onPress={() => router.push('/strategy/finder')} />
 

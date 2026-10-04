@@ -120,6 +120,10 @@ export interface Strategy {
    * Older records derive it from `source`.
    */
   sourceType?: StrategySourceType;
+  /** The trader's own description, exactly as written (strategies created by "Teach Prop Guard your plan"). */
+  originalText?: string;
+  /** Strategy Intelligence analysis: provenance-labelled rules, suggestions and health score. */
+  structured?: import('@/lib/engines/strategyIntelligence/types').StructuredStrategy;
   createdAt: string;
   updatedAt: string;
 }

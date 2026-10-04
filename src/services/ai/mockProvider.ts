@@ -1,6 +1,7 @@
 import { localSessionReview } from '@/lib/engines/sessionEngine';
 import { DEFAULT_TRADING_RULES } from '@/data/demo';
 import { GRADE_LABEL } from '@/lib/engines/strategyEngine';
+import { analyzeStrategyText } from '@/lib/engines/strategyIntelligence/analyze';
 import { parseStrategyText } from '@/lib/engines/strategyParser';
 
 import type { AIProvider } from './provider';
@@ -138,6 +139,11 @@ export class MockAIProvider implements AIProvider {
   async parseStrategyDescription(text: string) {
     await delay(700);
     return { ...parseStrategyText(text), source: 'local' as const };
+  }
+
+  async analyzeStrategy(text: string) {
+    await delay(400);
+    return analyzeStrategyText(text);
   }
 
   async analyzeAccountScreenshot(input: ScreenshotInput): Promise<AccountExtraction> {
