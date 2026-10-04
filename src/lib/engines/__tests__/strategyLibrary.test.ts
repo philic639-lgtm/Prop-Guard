@@ -51,6 +51,31 @@ describe('built-in strategy library', () => {
   });
 });
 
+describe('visual examples', () => {
+  it('every template has a 5-stage diagram with a consistent trade and a common-mistake chart', () => {
+    for (const t of STRATEGY_LIBRARY) {
+      const v = t.visual;
+      expect(v).not.toBeNull();
+      const d = v!.diagram;
+      expect(d.stages.map((s) => s.step)).toEqual([1, 2, 3, 4, 5]);
+      for (const s of d.stages) expect(d.candles[s.candle]).toBeDefined();
+      const { entry, stop, target, entryCandle } = d.trade;
+      expect(d.candles[entryCandle]).toBeDefined();
+      // Entry sits between stop and target, on the side the direction implies.
+      if (v!.direction === 'long') expect(stop < entry && entry < target).toBe(true);
+      else expect(target < entry && entry < stop).toBe(true);
+      expect(Math.abs(target - entry) / Math.abs(entry - stop)).toBeCloseTo(t.defaultRiskReward, 5);
+      // The illustrated move actually reaches the target after entry.
+      const after = d.candles.slice(entryCandle + 1);
+      expect(after.some((k) => (v!.direction === 'long' ? k.h >= target : k.l <= target))).toBe(true);
+      expect(v!.mistake.chart.mistake).toBeDefined();
+      expect(v!.whyItWorks.length).toBeGreaterThan(0);
+      expect(v!.realExamples).toEqual([]);
+      expect([v!.mistake.title, v!.mistake.explanation, ...d.stages.map((s) => s.detail)].join(' ')).not.toMatch(BANNED);
+    }
+  });
+});
+
 describe('library filters', () => {
   it('searches by name, tag or instrument', () => {
     expect(filterTemplates(STRATEGY_LIBRARY, { query: 'vwap' }).every((t) => /vwap/i.test(t.name + t.tags.join()))).toBe(true);

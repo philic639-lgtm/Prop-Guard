@@ -1,4 +1,5 @@
 import { ALL_LIQUID, BROAD_FUTURES, defineTemplate, INDEX_FUTURES, type StrategyTemplate } from './schema';
+import { breakoutRetest, meanReversion, pullbackContinuation, reversalAtLevel } from './visuals';
 
 /**
  * Prop Guard's curated built-in strategy frameworks.
@@ -9,6 +10,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   // ───────────────────────── Opening range ─────────────────────────
   defineTemplate({
     id: 'orb-15',
+    visual: breakoutRetest({ level: 'ORB high', zone: 'Opening range 9:30–9:45', stages: { 1: { title: 'ORB marked', detail: 'Mark the 9:30–9:45 high and low. The 1H bias here is up, so only longs count.' }, 2: { detail: 'A 5-minute candle closes above the ORB high in the direction of the 1H bias.' } } }),
     name: '15-Minute ORB Breakout + Retest',
     shortName: '15M ORB Retest',
     category: 'opening_range',
@@ -53,6 +55,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'orb-5',
+    visual: breakoutRetest({ level: '5M range high', zone: 'Opening range 9:30–9:35', stages: { 3: { title: 'Retest (optional)', detail: 'This version allows a momentum entry, but waiting for a retest gives a tighter, clearer stop.' } } }),
     name: '5-Minute ORB Breakout',
     shortName: '5M ORB',
     category: 'opening_range',
@@ -88,6 +91,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'orb-30',
+    visual: breakoutRetest({ level: '30M range high', zone: 'Opening range 9:30–10:00', stages: { 2: { detail: 'After 10:00, a 5-minute candle closes above the 30-minute range high.' } } }),
     name: '30-Minute ORB',
     shortName: '30M ORB',
     category: 'opening_range',
@@ -123,6 +127,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'orb-failed-breakout',
+    visual: reversalAtLevel({ variant: 'failed_break', level: 'ORB high', zone: 'Opening range' }),
     name: 'ORB Failed Breakout Reversal',
     shortName: 'ORB Failed Break',
     category: 'opening_range',
@@ -158,6 +163,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'orb-liquidity-sweep',
+    visual: reversalAtLevel({ variant: 'sweep', level: 'ORB high', zone: 'Opening range' }),
     name: 'ORB Liquidity Sweep',
     shortName: 'ORB Sweep',
     category: 'opening_range',
@@ -195,6 +201,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   // ───────────────────────── VWAP ─────────────────────────
   defineTemplate({
     id: 'vwap-pullback',
+    visual: pullbackContinuation({ guide: 'curve', level: 'VWAP' }),
     name: 'VWAP Pullback',
     shortName: 'VWAP Pullback',
     category: 'vwap',
@@ -231,6 +238,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'vwap-reclaim',
+    visual: breakoutRetest({ level: 'VWAP', stages: { 1: { title: 'Below VWAP', detail: 'Price has been trading below VWAP.' }, 2: { title: 'Reclaim close', detail: 'A 5-minute candle closes back above VWAP.' } }, mistake: { title: 'Reclaim that never retests', explanation: 'Price closed back above VWAP but ran away without retesting it. Chasing here leaves no tested level for your stop — wait for VWAP to hold on a retest.' } }),
     name: 'VWAP Reclaim',
     shortName: 'VWAP Reclaim',
     category: 'vwap',
@@ -266,6 +274,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'vwap-rejection',
+    visual: reversalAtLevel({ variant: 'rejection', level: 'VWAP', stages: { 1: { title: 'Trend below VWAP', detail: 'The session is trending down and trading below VWAP.' } } }),
     name: 'VWAP Rejection',
     shortName: 'VWAP Rejection',
     category: 'vwap',
@@ -301,6 +310,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'vwap-mean-reversion',
+    visual: meanReversion({ guide: 'curve', level: 'VWAP' }),
     name: 'VWAP Mean Reversion',
     shortName: 'VWAP Reversion',
     category: 'vwap',
@@ -338,6 +348,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   // ───────────────────────── Trend ─────────────────────────
   defineTemplate({
     id: 'trend-pullback',
+    visual: pullbackContinuation({ guide: 'level', level: 'Prior structure' }),
     name: 'Trend Pullback',
     shortName: 'Trend Pullback',
     category: 'trend',
@@ -374,6 +385,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'ema-pullback',
+    visual: pullbackContinuation({ guide: 'curve', level: '21 EMA' }),
     name: 'EMA Pullback',
     shortName: 'EMA Pullback',
     category: 'trend',
@@ -409,6 +421,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'trend-continuation-breakout',
+    visual: breakoutRetest({ level: 'Consolidation high', zone: 'Pause', stages: { 1: { title: 'Trend pauses', detail: 'After a strong leg, price pauses in a tight consolidation.' } } }),
     name: 'Trend Continuation Breakout',
     shortName: 'Trend Continuation',
     category: 'trend',
@@ -444,6 +457,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'hl-lh-continuation',
+    visual: pullbackContinuation({ guide: 'none', level: 'higher low', stages: { 3: { title: 'Higher low', detail: 'The pullback stops above the previous low — a higher low.' }, 4: { title: 'Structure confirmed', detail: 'Price breaks the minor swing high, confirming the higher low.' } } }),
     name: 'Higher-Low / Lower-High Continuation',
     shortName: 'HL / LH Continuation',
     category: 'trend',
@@ -481,6 +495,13 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   // ───────────────────────── Breakout ─────────────────────────
   defineTemplate({
     id: 'breakout-retest',
+    visual: breakoutRetest({ level: 'Resistance', stages: { 1: { title: 'Resistance marked', detail: 'A clear resistance level is marked before the session, where price stalled before.' }, 2: { title: 'Breakout close', detail: 'A strong candle closes above resistance — the close, not a wick, is what counts.' }, 3: { title: 'Retest', detail: 'Price pulls back to the old resistance, which should now act as support.' }, 4: { title: 'Hold confirmed', detail: 'The level holds: the candle wicks into it and closes back up.' }, 5: { title: 'Entry', detail: 'Enter on the hold. Stop just below the retest low; target twice the risk (1:2).' } }, whyItWorks: [
+      'Pre-marked level — resistance was marked before price reached it (stage 1).',
+      'Close beyond the level — the breakout candle closed above resistance, not just a wick (stage 2).',
+      'Retest occurred — price came back to the broken level instead of being chased (stage 3).',
+      'Level held — the retest candle closed back up, so old resistance is acting as support (stage 4).',
+      'Risk defined — stop sits below the retest low and the target is 2× that distance (stage 5).',
+    ] }),
     name: 'Breakout + Retest',
     shortName: 'Breakout + Retest',
     category: 'breakout',
@@ -517,6 +538,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'consolidation-breakout',
+    visual: breakoutRetest({ level: 'Range high', zone: 'Tight range', stages: { 1: { title: 'Range compresses', detail: 'Candles shrink inside a tight range — volatility is compressing.' } } }),
     name: 'Consolidation Breakout',
     shortName: 'Range Breakout',
     category: 'breakout',
@@ -552,6 +574,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'momentum-continuation',
+    visual: pullbackContinuation({ guide: 'none', level: 'flag', stages: { 1: { title: 'Impulse (pole)', detail: 'A strong impulsive move forms the flag pole.' }, 2: { title: 'Flag forms', detail: 'Price drifts back in small, controlled candles.' }, 3: { title: 'Flag holds', detail: 'The pullback stays shallow — well under half of the impulse.' }, 4: { title: 'Flag break', detail: 'A candle closes out of the flag in the trend direction.' } } }),
     name: 'Bull / Bear Flag Breakout',
     shortName: 'Flag Breakout',
     category: 'breakout',
@@ -587,6 +610,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'inside-bar-breakout',
+    visual: breakoutRetest({ level: 'Parent candle high', stages: { 1: { title: 'Inside bar', detail: 'An inside candle forms within the parent candle; mark the parent high.' } } }),
     name: 'Inside-Bar Breakout',
     shortName: 'Inside Bar',
     category: 'breakout',
@@ -624,6 +648,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   // ───────────────────────── Support / Resistance ─────────────────────────
   defineTemplate({
     id: 'sr-reversal',
+    visual: reversalAtLevel({ variant: 'rejection', level: 'Resistance' }),
     name: 'Support / Resistance Rejection',
     shortName: 'S/R Rejection',
     category: 'support_resistance',
@@ -659,6 +684,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'sr-break-retest',
+    visual: breakoutRetest({ level: 'Old resistance', stages: { 3: { title: 'Flip retest', detail: 'Price returns to the old resistance, now acting as support.' } } }),
     name: 'Support / Resistance Break + Retest',
     shortName: 'S/R Flip',
     category: 'support_resistance',
@@ -694,6 +720,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'multi-touch-break',
+    visual: breakoutRetest({ level: 'Multi-touch level', stages: { 1: { title: 'Repeated tests', detail: 'The level is tested several times with weaker bounces each time.' } } }),
     name: 'Multiple-Touch Level Break',
     shortName: 'Multi-Touch Break',
     category: 'support_resistance',
@@ -731,6 +758,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   // ───────────────────────── Previous day levels ─────────────────────────
   defineTemplate({
     id: 'pdh-breakout',
+    visual: breakoutRetest({ level: 'Previous day high', stages: { 4: { title: 'Acceptance', detail: 'Price holds above the previous day high on a closing basis.' } } }),
     name: 'Previous Day High Breakout',
     shortName: 'PDH Breakout',
     category: 'previous_day',
@@ -767,6 +795,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'pdl-breakdown',
+    visual: breakoutRetest({ level: 'Previous day low', direction: 'short', stages: { 4: { title: 'Acceptance', detail: 'Price holds below the previous day low on a closing basis.' } } }),
     name: 'Previous Day Low Breakdown',
     shortName: 'PDL Breakdown',
     category: 'previous_day',
@@ -802,6 +831,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'pd-level-rejection',
+    visual: reversalAtLevel({ variant: 'sweep', level: 'Previous day high' }),
     name: 'Previous Day High / Low Rejection',
     shortName: 'PDH/PDL Rejection',
     category: 'previous_day',
@@ -837,6 +867,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'prev-close-reclaim',
+    visual: breakoutRetest({ level: 'Previous close', stages: { 1: { title: 'Gap below', detail: 'Price opens below the previous session close.' }, 2: { title: 'Reclaim', detail: 'A 5-minute candle closes back above the previous close.' } } }),
     name: 'Previous Close Reclaim',
     shortName: 'Prior Close Reclaim',
     category: 'previous_day',
@@ -874,6 +905,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   // ───────────────────────── Liquidity / reversal ─────────────────────────
   defineTemplate({
     id: 'liquidity-sweep',
+    visual: reversalAtLevel({ variant: 'sweep', level: 'Swing high' }),
     name: 'Liquidity Sweep Reversal',
     shortName: 'Liquidity Sweep',
     category: 'liquidity',
@@ -909,6 +941,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'double-top-bottom',
+    visual: reversalAtLevel({ variant: 'double_top', level: 'Double top' }),
     name: 'Double Top / Double Bottom Reversal',
     shortName: 'Double Top/Bottom',
     category: 'liquidity',
@@ -944,6 +977,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'failed-breakout',
+    visual: reversalAtLevel({ variant: 'failed_break', level: 'Range high' }),
     name: 'Failed Breakout',
     shortName: 'Failed Breakout',
     category: 'liquidity',
@@ -979,6 +1013,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'exhaustion-reversal',
+    visual: meanReversion({ guide: 'none', level: 'value', mistake: { title: 'Catching the knife', explanation: 'Price was extended, but the candles were still expanding. Fading here meant standing in front of the move — exhaustion needs slowing momentum and a structure shift first.' } }),
     name: 'Exhaustion Reversal',
     shortName: 'Exhaustion Reversal',
     category: 'liquidity',
@@ -1016,6 +1051,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   // ───────────────────────── Opening session / momentum ─────────────────────────
   defineTemplate({
     id: 'opening-drive',
+    visual: pullbackContinuation({ guide: 'none', level: 'pause low', stages: { 1: { title: 'Opening drive', detail: 'Right after the open, price drives in one direction with little overlap.' }, 2: { title: 'Brief pause', detail: 'Price pauses for a few small candles instead of chasing.' }, 3: { title: 'Pause holds', detail: 'The pause stays in the top half of the drive.' } }, mistake: { title: 'Chasing the drive candle', explanation: 'Buying the biggest, most extended candle of the drive leaves a huge stop and no structure. The rules say wait for a pause — if the pause breaks down, there is no trade.' } }),
     name: 'Opening Drive',
     shortName: 'Opening Drive',
     category: 'opening_session',
@@ -1051,6 +1087,7 @@ export const BUILT_IN_TEMPLATES: StrategyTemplate[] = [
   }),
   defineTemplate({
     id: 'opening-drive-pullback',
+    visual: pullbackContinuation({ guide: 'none', level: 'first pullback low', stages: { 1: { title: 'Opening drive', detail: 'A strong one-directional move right after the open.' }, 2: { title: 'First pullback', detail: 'The first controlled pullback begins.' } } }),
     name: 'First Pullback After Opening Drive',
     shortName: 'First Pullback',
     category: 'opening_session',

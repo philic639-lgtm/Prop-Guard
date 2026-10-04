@@ -17,6 +17,7 @@ import {
   type StrategyTemplate,
 } from '@/data/strategyLibrary';
 import { COMPLEXITY_TONE, windowLabel } from '@/features/strategy/LibraryCard';
+import { StrategyVisualExample } from '@/features/strategy/StrategyVisualExample';
 import { customizeTemplate, openTemplateInAnalyze, practiceTemplate, saveTemplate, savedStrategyFor } from '@/features/strategy/templateActions';
 import { strategyPerformance } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
@@ -119,6 +120,13 @@ function Detail({ t }: { t: StrategyTemplate }) {
       </Card>
 
       <Section title="Setup" body={t.setup} />
+
+      {t.visual ? (
+        <>
+          <SectionHeader title="Visual example" />
+          <StrategyVisualExample visual={t.visual} strategyName={t.shortName} />
+        </>
+      ) : null}
 
       <SectionHeader title="Entry checklist" />
       <Card>

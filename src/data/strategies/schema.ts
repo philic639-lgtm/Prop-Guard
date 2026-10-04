@@ -42,6 +42,88 @@ export interface TemplatePerformanceData {
   avgR: number;
 }
 
+// ---------------------------------------------------------------------------
+// Visual examples (educational diagrams; data only — rendered by StrategyVisualExample)
+// ---------------------------------------------------------------------------
+
+/** One candle in abstract chart units (0–100). Diagrams are illustrations, not market data. */
+export interface VisualCandle {
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+}
+
+/** A horizontal level (`value`) or a moving line such as VWAP/EMA (`values`, one per candle). */
+export interface VisualLine {
+  label: string;
+  value?: number;
+  values?: number[];
+}
+
+/** Shaded box, e.g. the opening range. */
+export interface VisualZone {
+  label: string;
+  top: number;
+  bottom: number;
+  from: number;
+  to: number;
+}
+
+export interface VisualStage {
+  /** 1–5, drawn on the chart. */
+  step: number;
+  /** Candle index the number is pinned to. */
+  candle: number;
+  /** Pin the number above the candle's high or below its low. */
+  at: 'high' | 'low';
+  title: string;
+  detail: string;
+}
+
+export interface VisualTrade {
+  entryCandle: number;
+  entry: number;
+  stop: number;
+  target: number;
+}
+
+export interface VisualChart {
+  candles: VisualCandle[];
+  lines: VisualLine[];
+  zones?: VisualZone[];
+  stages?: VisualStage[];
+  trade?: VisualTrade;
+  /** "Don't enter here" marker for common-mistake charts. */
+  mistake?: { candle: number; price: number; label: string };
+}
+
+/**
+ * A real, historical annotated chart. Added later from actual market data —
+ * `image` is a bundled asset (require(...)) or a hosted URL.
+ */
+export interface RealChartExample {
+  image: number | string;
+  instrument: string;
+  timeframe: string;
+  date: string;
+  caption: string;
+  notes?: string[];
+}
+
+export interface VisualExample {
+  direction: 'long' | 'short';
+  rr: number;
+  diagram: VisualChart & { stages: VisualStage[]; trade: VisualTrade };
+  /** Which rules the example satisfies (defaults to the template checklist). */
+  whyItWorks: string[];
+  mistake: { title: string; explanation: string; chart: VisualChart };
+  realExamples: RealChartExample[];
+}
+
+/** Builders receive the template's default R:R so the diagram's target matches the plan. */
+export type VisualExampleBuilder = (rr: number) => Omit<VisualExample, 'whyItWorks'> & { whyItWorks?: string[] };
+
 export interface StrategyTemplateInput {
   id: string;
   name: string;
@@ -79,9 +161,12 @@ export interface StrategyTemplateInput {
   maxTrades: number;
   tags?: string[];
   popular?: boolean;
+  /** Beginner-friendly diagram for the detail page. */
+  visual?: VisualExampleBuilder;
 }
 
-export interface StrategyTemplate extends StrategyTemplateInput {
+export interface StrategyTemplate extends Omit<StrategyTemplateInput, 'visual'> {
+  visual: VisualExample | null;
   directionTypes: ('long' | 'short')[];
   tags: string[];
   isBuiltIn: true;
@@ -198,6 +283,18 @@ function timingOf(sessions: SessionKey[]): StrategyTemplate['timing'] {
   return 'any';
 }
 
+function buildVisual(input: StrategyTemplateInput): VisualExample | null {
+  if (!input.visual) return null;
+  const v = input.visual(input.defaultRiskReward);
+  return {
+    ...v,
+    whyItWorks: v.whyItWorks ?? [
+      ...input.checklist,
+      `Risk defined before entry — stop at the invalidation point, target at 1:${input.defaultRiskReward}.`,
+    ],
+  };
+}
+
 /** Build a template from its input: derives the display fields and strategy defaults. */
 export function defineTemplate(input: StrategyTemplateInput): StrategyTemplate {
   const tfLabel = input.timeframes.join(' / ');
@@ -208,6 +305,7 @@ export function defineTemplate(input: StrategyTemplateInput): StrategyTemplate {
     isBuiltIn: true,
     isBacktested: false,
     performanceData: null,
+    visual: buildVisual(input),
     summary: input.description,
     markets: input.instruments,
     session: input.sessions.map((s) => SESSION_LABEL[s]).join(' · '),
