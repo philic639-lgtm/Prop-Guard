@@ -42,6 +42,67 @@ export interface PropRules {
   maxTradingDays: number | null;
   payoutThreshold: number | null;
   custom: CustomRule[];
+  /** Further firm terms (payouts, holding, news…). Text / tri-state, always editable. */
+  terms?: FirmTerms;
+}
+
+/** 'allowed' | 'not_allowed' | '' (not set). */
+export type Permission = 'allowed' | 'not_allowed' | '';
+
+export interface FirmTerms {
+  minProfitableDays: number | null;
+  payoutFrequency: string;
+  payoutRequirements: string;
+  scalingRule: string;
+  positionLimits: string;
+  activationThreshold: string;
+  newsTrading: Permission;
+  overnight: Permission;
+  weekendHolding: Permission;
+  copyTrading: Permission;
+}
+
+/** Account rule fields that can be imported from the firm rules database (form keys). */
+export type FirmRuleField =
+  | 'size'
+  | 'profitTarget'
+  | 'dailyLossLimit'
+  | 'maxDrawdown'
+  | 'drawdownType'
+  | 'maxContracts'
+  | 'consistencyPct'
+  | 'minTradingDays'
+  | 'maxTradingDays'
+  | 'minProfitableDays'
+  | 'payoutThreshold'
+  | 'payoutFrequency'
+  | 'payoutRequirements'
+  | 'scalingRule'
+  | 'positionLimits'
+  | 'activationThreshold'
+  | 'newsTrading'
+  | 'overnight'
+  | 'weekendHolding'
+  | 'copyTrading';
+
+export type FirmRuleValues = Partial<Record<FirmRuleField, string>>;
+
+/**
+ * Where an account's rules came from. `imported` keeps the verified values as
+ * imported so edits show as "Custom override"; `custom` = firm not in the database.
+ */
+export interface AccountFirmLink {
+  firmId: string | null;
+  programId: string | null;
+  programName: string | null;
+  stage: 'evaluation' | 'funded' | 'live' | null;
+  status: 'verified' | 'unverified' | 'custom';
+  ruleVersion: string | null;
+  effectiveDate: string | null;
+  lastVerifiedAt: string | null;
+  importedAt: string | null;
+  imported: FirmRuleValues;
+  overrides: FirmRuleField[];
 }
 
 export interface Account {
@@ -58,6 +119,8 @@ export interface Account {
   highWaterMark: number;
   status: AccountStatus;
   rules: PropRules;
+  /** Firm / program / rule version the rules were loaded from (absent for older accounts). */
+  firmLink?: AccountFirmLink;
   createdAt: string;
 }
 

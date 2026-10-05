@@ -62,7 +62,10 @@
     "data:ingest": "tsx --env-file-if-exists=.env.server scripts/market-data.ts ingest",
     "data:generate": "tsx --env-file-if-exists=.env.server scripts/market-data.ts generate",
     "data:pipeline": "tsx --env-file-if-exists=.env.server scripts/market-data.ts pipeline",
-    "data:coverage": "tsx --env-file-if-exists=.env.server scripts/market-data.ts coverage"
+    "data:coverage": "tsx --env-file-if-exists=.env.server scripts/market-data.ts coverage",
+    "firm-rules:export": "tsx scripts/firm-rules.ts export",
+    "firm-rules:validate": "tsx scripts/firm-rules.ts validate",
+    "firm-rules:publish": "tsx --env-file-if-exists=.env.server scripts/firm-rules.ts publish"
   },
   "private": true
 }

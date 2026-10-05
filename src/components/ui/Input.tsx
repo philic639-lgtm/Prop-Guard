@@ -96,6 +96,8 @@ const styles = StyleSheet.create({
   errored: { borderColor: colors.danger },
   input: {
     flex: 1,
+    // Let the field shrink to its column (web inputs otherwise keep an intrinsic width).
+    minWidth: 0,
     color: colors.text,
     fontSize: 16,
     paddingVertical: spacing.md,

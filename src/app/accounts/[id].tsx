@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
@@ -20,8 +20,10 @@ import {
 } from '@/components/ui';
 import { colors, spacing } from '@/constants/theme';
 import { AccountFields } from '@/features/accounts/AccountFields';
-import { accountSchema, accountToForm, formToAccount, type AccountFormValues } from '@/features/accounts/accountSchema';
-import { evaluateAccount, type RuleStatus } from '@/lib/engines';
+import { accountSchema, accountToForm, formToAccount, ruleValuesOf, type AccountFormValues } from '@/features/accounts/accountSchema';
+import { FirmAutocomplete, FirmRulesStatus, ProgramPicker } from '@/features/accounts/FirmRulePicker';
+import { isFirmCustomRule, useFirmRuleLink } from '@/features/accounts/useFirmRuleLink';
+import { detectOverrides, evaluateAccount, type RuleStatus } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { AccountStatus, CustomRule } from '@/types/domain';
 import { uuid } from '@/utils/id';
@@ -45,12 +47,18 @@ export default function AccountEditor() {
   const [newRule, setNewRule] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const { control, handleSubmit } = useForm<AccountFormValues>({ resolver: zodResolver(accountSchema), defaultValues: accountToForm(existing), mode: 'onBlur' });
+  const { control, handleSubmit, setValue, getValues } = useForm<AccountFormValues>({ resolver: zodResolver(accountSchema), defaultValues: accountToForm(existing), mode: 'onBlur' });
   const evaluation = useMemo(() => (existing ? evaluateAccount(existing, trades) : null), [existing, trades]);
+  const firmRules = useFirmRuleLink({ existing, setValue, getValues, setCustom });
+  const { link } = firmRules;
+  const firmText = useWatch({ control, name: 'firm' });
+  const values = useWatch({ control }) as AccountFormValues;
+  const overrides = useMemo(() => (link ? detectOverrides(link.imported, ruleValuesOf(values)) : []), [link, values]);
 
   const save = handleSubmit((v) => {
     const base = existing ? { ...existing, status, rules: { ...existing.rules, custom } } : null;
-    const account = formToAccount(v, base, existing?.id ?? uuid());
+    const firmLink = link && (link.firmId || v.firm.trim()) ? { ...link, overrides: detectOverrides(link.imported, ruleValuesOf(v)) } : undefined;
+    const account = formToAccount(v, base, existing?.id ?? uuid(), undefined, firmLink);
     account.rules.custom = custom;
     account.status = status;
     upsert(account);
@@ -80,7 +88,18 @@ export default function AccountEditor() {
       ) : null}
 
       <SectionHeader title="Details" />
-      <AccountFields control={control} />
+      <AccountFields
+        control={control}
+        imported={link?.status === 'verified' ? link.imported : undefined}
+        onRestore={firmRules.restore}
+        firmSlot={
+          <>
+            <FirmAutocomplete db={firmRules.db} value={firmText ?? ''} selected={firmRules.firm} onChangeText={firmRules.changeFirmText} onSelectFirm={firmRules.selectFirm} />
+            {firmRules.firm ? <ProgramPicker key={firmRules.firm.id} db={firmRules.db} firm={firmRules.firm} link={link} onSelectProgram={firmRules.selectProgram} onCustomProgram={firmRules.customProgram} /> : null}
+          </>
+        }
+        rulesFooter={<FirmRulesStatus link={link} program={firmRules.program} overrides={overrides} firmName={firmRules.firm?.name ?? firmText ?? ''} />}
+      />
 
       <SectionHeader title="Custom rules" />
       <Card>
@@ -88,9 +107,11 @@ export default function AccountEditor() {
         {custom.map((c) => (
           <View key={c.id} style={styles.custom}>
             <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
-            <AppText variant="body" style={styles.flex}>
-              {c.label}
-            </AppText>
+            <View style={styles.flex}>
+              <AppText variant="body">{c.label}</AppText>
+              {c.description ? <AppText variant="caption">{c.description}</AppText> : null}
+            </View>
+            {isFirmCustomRule(c) ? <StatusBadge label="Firm rule" tone="positive" size="sm" /> : null}
             <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${c.label}`} hitSlop={10} onPress={() => setCustom((cur) => cur.filter((x) => x.id !== c.id))}>
               <Ionicons name="close" size={18} color={colors.textTertiary} />
             </Pressable>

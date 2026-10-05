@@ -37,6 +37,7 @@ export function accountToRows(a: Account, userId: string) {
       cycle_start_balance: a.cycleStartBalance,
       high_water_mark: a.highWaterMark,
       status: a.status,
+      firm_link: a.firmLink ?? null,
       created_at: a.createdAt,
     },
     rules: {
@@ -53,6 +54,7 @@ export function accountToRows(a: Account, userId: string) {
       max_trading_days: a.rules.maxTradingDays,
       payout_threshold: a.rules.payoutThreshold,
       custom_rules: a.rules.custom,
+      firm_terms: a.rules.terms ?? null,
     },
   };
 }
@@ -82,7 +84,9 @@ export function rowsToAccount(r: Row, rules: Row | undefined): Account {
       maxTradingDays: numOrNull(rules?.max_trading_days),
       payoutThreshold: numOrNull(rules?.payout_threshold),
       custom: Array.isArray(rules?.custom_rules) ? (rules!.custom_rules as Account['rules']['custom']) : [],
+      ...(rules?.firm_terms && typeof rules.firm_terms === 'object' ? { terms: rules.firm_terms as NonNullable<Account['rules']['terms']> } : {}),
     },
+    ...(r.firm_link && typeof r.firm_link === 'object' ? { firmLink: r.firm_link as NonNullable<Account['firmLink']> } : {}),
   };
 }
 

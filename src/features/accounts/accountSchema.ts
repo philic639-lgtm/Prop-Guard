@@ -1,11 +1,13 @@
 import { z } from 'zod';
 
-import type { Account, DrawdownType } from '@/types/domain';
+import type { Account, AccountFirmLink, DrawdownType, FirmRuleValues, FirmTerms, Permission } from '@/types/domain';
 import { numToInput, parseNum } from '@/utils/format';
 
 const money = (msg: string) => z.string().refine((v) => (parseNum(v) ?? -1) > 0, msg);
 const optionalMoney = z.string().refine((v) => v.trim() === '' || (parseNum(v) ?? -1) >= 0, 'Enter a valid amount');
 const optionalInt = z.string().refine((v) => v.trim() === '' || (Number.isInteger(parseNum(v)) && (parseNum(v) ?? 0) > 0), 'Whole number');
+
+const permission = z.enum(['allowed', 'not_allowed', '']);
 
 export const accountSchema = z
   .object({
@@ -21,7 +23,18 @@ export const accountSchema = z
     maxContracts: optionalInt,
     consistencyPct: z.string().refine((v) => v.trim() === '' || ((parseNum(v) ?? 0) > 0 && (parseNum(v) ?? 0) <= 100), '1–100'),
     minTradingDays: optionalInt,
+    maxTradingDays: optionalInt,
+    minProfitableDays: optionalInt,
     payoutThreshold: optionalMoney,
+    payoutFrequency: z.string().trim().max(120),
+    payoutRequirements: z.string().trim().max(1000),
+    scalingRule: z.string().trim().max(500),
+    positionLimits: z.string().trim().max(500),
+    activationThreshold: z.string().trim().max(500),
+    newsTrading: permission,
+    overnight: permission,
+    weekendHolding: permission,
+    copyTrading: permission,
   })
   .refine((v) => (parseNum(v.maxDrawdown) ?? 0) < (parseNum(v.size) ?? Infinity), {
     message: 'Drawdown must be smaller than the account size',
@@ -46,6 +59,7 @@ export function accountToForm(a: Account | null, defaults?: Partial<AccountFormV
       consistencyPct: '',
       minTradingDays: '',
       payoutThreshold: '',
+      ...EMPTY_TERMS,
       ...defaults,
     };
   }
@@ -63,14 +77,81 @@ export function accountToForm(a: Account | null, defaults?: Partial<AccountFormV
     consistencyPct: numToInput(a.rules.consistencyPct),
     minTradingDays: numToInput(a.rules.minTradingDays),
     payoutThreshold: numToInput(a.rules.payoutThreshold),
+    maxTradingDays: numToInput(a.rules.maxTradingDays),
+    minProfitableDays: numToInput(a.rules.terms?.minProfitableDays ?? null),
+    payoutFrequency: a.rules.terms?.payoutFrequency ?? '',
+    payoutRequirements: a.rules.terms?.payoutRequirements ?? '',
+    scalingRule: a.rules.terms?.scalingRule ?? '',
+    positionLimits: a.rules.terms?.positionLimits ?? '',
+    activationThreshold: a.rules.terms?.activationThreshold ?? '',
+    newsTrading: a.rules.terms?.newsTrading ?? '',
+    overnight: a.rules.terms?.overnight ?? '',
+    weekendHolding: a.rules.terms?.weekendHolding ?? '',
+    copyTrading: a.rules.terms?.copyTrading ?? '',
   };
+}
+
+const EMPTY_TERMS = {
+  maxTradingDays: '',
+  minProfitableDays: '',
+  payoutFrequency: '',
+  payoutRequirements: '',
+  scalingRule: '',
+  positionLimits: '',
+  activationThreshold: '',
+  newsTrading: '' as Permission,
+  overnight: '' as Permission,
+  weekendHolding: '' as Permission,
+  copyTrading: '' as Permission,
+};
+
+/** The form fields the firm rules database can fill (for override detection). */
+export function ruleValuesOf(v: AccountFormValues): FirmRuleValues {
+  return {
+    size: v.size,
+    profitTarget: v.profitTarget,
+    dailyLossLimit: v.dailyLossLimit,
+    maxDrawdown: v.maxDrawdown,
+    drawdownType: v.drawdownType,
+    maxContracts: v.maxContracts,
+    consistencyPct: v.consistencyPct,
+    minTradingDays: v.minTradingDays,
+    maxTradingDays: v.maxTradingDays,
+    minProfitableDays: v.minProfitableDays,
+    payoutThreshold: v.payoutThreshold,
+    payoutFrequency: v.payoutFrequency,
+    payoutRequirements: v.payoutRequirements,
+    scalingRule: v.scalingRule,
+    positionLimits: v.positionLimits,
+    activationThreshold: v.activationThreshold,
+    newsTrading: v.newsTrading,
+    overnight: v.overnight,
+    weekendHolding: v.weekendHolding,
+    copyTrading: v.copyTrading,
+  };
+}
+
+function termsOf(v: AccountFormValues): FirmTerms | undefined {
+  const t: FirmTerms = {
+    minProfitableDays: parseNum(v.minProfitableDays ?? ''),
+    payoutFrequency: v.payoutFrequency ?? '',
+    payoutRequirements: v.payoutRequirements ?? '',
+    scalingRule: v.scalingRule ?? '',
+    positionLimits: v.positionLimits ?? '',
+    activationThreshold: v.activationThreshold ?? '',
+    newsTrading: v.newsTrading ?? '',
+    overnight: v.overnight ?? '',
+    weekendHolding: v.weekendHolding ?? '',
+    copyTrading: v.copyTrading ?? '',
+  };
+  return Object.values(t).some((x) => x !== '' && x != null) ? t : undefined;
 }
 
 /**
  * @param drawdownRemaining Optional current buffer (e.g. from a dashboard). When given for a
  * trailing account, the high-water mark is derived so the engine reproduces that buffer.
  */
-export function formToAccount(v: AccountFormValues, base: Account | null, id: string, drawdownRemaining?: number | null): Account {
+export function formToAccount(v: AccountFormValues, base: Account | null, id: string, drawdownRemaining?: number | null, firmLink?: AccountFirmLink): Account {
   const size = parseNum(v.size)!;
   const balance = parseNum(v.balance)!;
   const maxDd = parseNum(v.maxDrawdown);
@@ -97,9 +178,11 @@ export function formToAccount(v: AccountFormValues, base: Account | null, id: st
       maxContracts: parseNum(v.maxContracts),
       consistencyPct: parseNum(v.consistencyPct),
       minTradingDays: parseNum(v.minTradingDays),
-      maxTradingDays: base?.rules.maxTradingDays ?? null,
+      maxTradingDays: v.maxTradingDays != null ? parseNum(v.maxTradingDays) : (base?.rules.maxTradingDays ?? null),
       payoutThreshold: parseNum(v.payoutThreshold),
       custom: base?.rules.custom ?? [],
+      ...(termsOf(v) ? { terms: termsOf(v) } : {}),
     },
+    ...(firmLink ? { firmLink } : base?.firmLink ? { firmLink: base.firmLink } : {}),
   };
 }
