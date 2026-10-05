@@ -12,8 +12,9 @@ const FIRM_RULE_PREFIX = 'firm-';
 export const isFirmCustomRule = (c: CustomRule) => c.id.startsWith(FIRM_RULE_PREFIX);
 
 /**
- * Firm → program → verified rules for the account form. Selecting a program
- * fills ONLY verified values; switching firm/program clears values that were
+ * Firm → program → account size → verified rules for the account form.
+ * Selecting a size fills ONLY that program's verified values (and snapshots
+ * them with their sources); switching firm/program clears values that were
  * imported and left untouched, so a previous firm's rules never linger.
  */
 export function useFirmRuleLink({
@@ -39,6 +40,11 @@ export function useFirmRuleLink({
   });
   const firm = getFirm(db, link?.firmId);
   const program = getProgram(db, link?.programId);
+  // Program (family) chosen before the account size.
+  const [familyKey, setFamilyKey] = useState<string | null>(() => {
+    const p = getProgram(db, existing?.firmLink?.programId);
+    return p ? `${p.stage}:${p.family}` : null;
+  });
 
   const set = (k: FirmRuleField, v: string) => setValue(k as keyof AccountFormValues, v as never, { shouldDirty: true, shouldValidate: false });
 
@@ -57,13 +63,23 @@ export function useFirmRuleLink({
     clearImported(link?.imported);
     setValue('firm', f.name, { shouldDirty: true });
     setValue('kind', 'prop', { shouldDirty: true });
+    setFamilyKey(null);
     setLink(linkFor(f, null, null, new Date().toISOString()));
+  };
+
+  /** Program picked: wait for the size; drop rules imported from another program. */
+  const selectFamily = (key: string) => {
+    if (!firm) return;
+    clearImported(link?.imported);
+    setFamilyKey(key);
+    setLink(linkFor(firm, null, null, new Date().toISOString()));
   };
 
   const changeFirmText = (text: string) => {
     setValue('firm', text, { shouldDirty: true });
     if (firm && text.trim() !== firm.name) {
       clearImported(link?.imported);
+      setFamilyKey(null);
       setLink(text.trim() ? linkFor(null, null, null, new Date().toISOString()) : null);
     } else if (!firm) {
       setLink(text.trim() ? linkFor(null, null, null, new Date().toISOString()) : null);
@@ -74,6 +90,7 @@ export function useFirmRuleLink({
     if (!firm) return;
     const now = new Date().toISOString();
     clearImported(link?.imported);
+    setFamilyKey(`${p.stage}:${p.family}`);
     const prevSize = getValues('size');
     if (p.accountSize) {
       // The trader picked this size; keep the balance in step for a new account.
@@ -97,10 +114,11 @@ export function useFirmRuleLink({
   const customProgram = (name: string) => {
     if (!firm) return;
     if (link?.programId) clearImported(link.imported);
+    setFamilyKey(null);
     setLink({ ...linkFor(firm, null, null, new Date().toISOString()), programName: name || null });
   };
 
   const restore = (k: FirmRuleField, v: string) => set(k, v);
 
-  return { db, link, firm, program, selectFirm, changeFirmText, selectProgram, customProgram, restore };
+  return { db, link, firm, program, familyKey, selectFirm, selectFamily, changeFirmText, selectProgram, customProgram, restore };
 }

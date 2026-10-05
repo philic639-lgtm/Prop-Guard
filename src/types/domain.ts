@@ -103,6 +103,39 @@ export interface AccountFirmLink {
   importedAt: string | null;
   imported: FirmRuleValues;
   overrides: FirmRuleField[];
+  /** Program family ("Trading Combine") and size the trader picked. */
+  family?: string | null;
+  accountSize?: number | null;
+  /**
+   * The firm rules as they were when the account was saved. Later master-rule
+   * updates never rewrite it (nor the account's own rules).
+   */
+  snapshot?: AccountRuleSnapshot;
+}
+
+export interface AccountRuleSnapshotRule {
+  key: string;
+  label: string;
+  value: string;
+  status: 'verified' | 'needs_review' | 'unverified';
+  sources: { url: string; title?: string; retrievedAt: string; method?: 'page' | 'search_excerpt' }[];
+  checkedAt: string;
+  note?: string;
+  program: string;
+  accountSize: number | null;
+  stage: 'evaluation' | 'funded' | 'live';
+}
+
+export interface AccountRuleSnapshot {
+  takenAt: string;
+  firmId: string;
+  firmName: string;
+  programId: string;
+  programName: string;
+  ruleVersion: string;
+  effectiveDate: string;
+  lastVerifiedAt: string | null;
+  rules: AccountRuleSnapshotRule[];
 }
 
 export interface Account {

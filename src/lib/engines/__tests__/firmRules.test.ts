@@ -85,11 +85,13 @@ describe('firm rules — seed', () => {
     expect(new Set(programs.map((p) => p.id)).size).toBe(programs.length);
   });
 
-  it('a seeded program without verified rules imports nothing', () => {
-    const p = programsForFirm(FIRM_RULES_SEED, 'topstep')[0];
+  it('a program without verified rules imports nothing', () => {
+    const p = { ...programsForFirm(FIRM_RULES_SEED, 'topstep')[0], versions: [] };
     const imp = importProgramRules(p, NOW);
     expect(imp.status).toBe('unverified');
     expect(linkFor(FIRM_RULES_SEED.firms[0], p, imp, NOW)).toMatchObject({ status: 'unverified', imported: {}, lastVerifiedAt: null });
+    // Firms without researched programs list none (traders enter rules manually).
+    expect(programsForFirm(FIRM_RULES_SEED, 'apex')).toEqual([]);
   });
 });
 
@@ -159,13 +161,15 @@ describe('firm rules — central feed', () => {
   });
 
   it('merges a remote update over the seed by program and rule version', () => {
-    const remote: FirmRulesDatabase = { ...exampleDb([]), firms: [], programs: [{ ...programsForFirm(FIRM_RULES_SEED, 'topstep')[0], versions: [verifiedVersion()] }] };
+    const newer = verifiedVersion({ ruleVersion: '2026-10-20', effectiveDate: '2026-10-20' });
+    const remote: FirmRulesDatabase = { ...exampleDb([]), firms: [], programs: [{ ...programsForFirm(FIRM_RULES_SEED, 'topstep')[0], versions: [newer] }] };
     const merged = mergeFirmRules(FIRM_RULES_SEED, remote);
     expect(merged.firms).toHaveLength(FIRM_RULES_SEED.firms.length);
     const p = merged.programs.find((x) => x.id === remote.programs[0].id)!;
-    expect(importProgramRules(p, NOW).status).toBe('verified');
+    expect(p.versions.map((v) => v.ruleVersion).sort()).toEqual(['2026-10-05', '2026-10-20']);
+    expect(activeRuleVersion(p, '2026-10-25')?.ruleVersion).toBe('2026-10-20');
     // The seed itself is untouched.
-    expect(FIRM_RULES_SEED.programs.find((x) => x.id === p.id)!.versions).toHaveLength(0);
+    expect(FIRM_RULES_SEED.programs.find((x) => x.id === p.id)!.versions).toHaveLength(1);
   });
 
   it('table rows round-trip through the same shape the app reads', () => {

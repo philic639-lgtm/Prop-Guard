@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   FIRM_RULES_SCHEMA_VERSION,
+  type FirmRuleRecord,
   type FirmRulesDatabase,
   type ProgramRules,
   type ProgramRuleVersion,
@@ -9,7 +10,7 @@ import {
   type PropFirm,
   type PropFirmProgram,
 } from '@/data/propFirms/types';
-import type { AccountFirmLink, DrawdownType, FirmRuleField, FirmRuleValues } from '@/types/domain';
+import type { AccountFirmLink, AccountRuleSnapshot, AccountRuleSnapshotRule, DrawdownType, FirmRuleField, FirmRuleValues } from '@/types/domain';
 
 /**
  * Prop-firm rules: search, program lookup, rule-version selection and import.
@@ -74,10 +75,34 @@ const STAGE_ORDER: ProgramStage[] = ['evaluation', 'funded', 'live'];
 
 /** Active programs of a firm: evaluation → funded → live, then by family and size. */
 export function programsForFirm(db: FirmRulesDatabase, firmId: string): PropFirmProgram[] {
-  return db.programs
-    .filter((p) => p.firmId === firmId && p.active)
-    .sort((a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage) || a.family.localeCompare(b.family) || (a.accountSize ?? Infinity) - (b.accountSize ?? Infinity));
+  const own = db.programs.filter((p) => p.firmId === firmId && p.active);
+  // Families keep the database's order (e.g. Standard before Consistency).
+  const familyRank = (f: string) => own.findIndex((p) => p.family === f);
+  return own.sort((a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage) || familyRank(a.family) - familyRank(b.family) || (a.accountSize ?? Infinity) - (b.accountSize ?? Infinity));
 }
+
+export interface ProgramFamily {
+  /** Stable key: `${stage}:${family}`. */
+  key: string;
+  family: string;
+  stage: ProgramStage;
+  programs: PropFirmProgram[];
+}
+
+/** The "Program" choices for a firm (family + stage), each with its sizes. */
+export function programFamilies(db: FirmRulesDatabase, firmId: string): ProgramFamily[] {
+  const out: ProgramFamily[] = [];
+  for (const p of programsForFirm(db, firmId)) {
+    const key = `${p.stage}:${p.family}`;
+    const f = out.find((x) => x.key === key);
+    if (f) f.programs.push(p);
+    else out.push({ key, family: p.family, stage: p.stage, programs: [p] });
+  }
+  return out;
+}
+
+/** Account sizes available for one program family — only that family's own programs. */
+export const sizesForFamily = (family: ProgramFamily) => family.programs.map((p) => ({ size: p.accountSize, program: p }));
 
 /** The rule version in force on `onDate` (latest effective date not in the future). */
 export function activeRuleVersion(program: PropFirmProgram, onDate: string): ProgramRuleVersion | null {
@@ -126,18 +151,101 @@ export function rulesToValues(rules: ProgramRules): FirmRuleValues {
   return out;
 }
 
+/** Which `ProgramRules` field fills each form field. */
+const FIELD_SOURCE: Record<Exclude<FirmRuleField, 'size'>, keyof ProgramRules> = {
+  profitTarget: 'profitTarget',
+  dailyLossLimit: 'dailyLossLimit',
+  maxDrawdown: 'maxDrawdown',
+  drawdownType: 'drawdownType',
+  maxContracts: 'maxContracts',
+  consistencyPct: 'consistencyRule',
+  minTradingDays: 'minTradingDays',
+  maxTradingDays: 'maxTradingDays',
+  minProfitableDays: 'minProfitableDays',
+  payoutThreshold: 'payoutThreshold',
+  payoutFrequency: 'payoutFrequency',
+  payoutRequirements: 'payoutRequirements',
+  scalingRule: 'scalingRule',
+  positionLimits: 'positionLimits',
+  activationThreshold: 'activationThreshold',
+  newsTrading: 'newsTradingAllowed',
+  overnight: 'overnightAllowed',
+  weekendHolding: 'weekendHoldingAllowed',
+  copyTrading: 'copyTradingAllowed',
+};
+
+/**
+ * Is this structured field backed by a VERIFIED rule record? Versions without
+ * per-rule records rely on the version-level verification alone.
+ */
+export function fieldVerified(version: ProgramRuleVersion, field: keyof ProgramRules): boolean {
+  if (!version.records?.length) return true;
+  return version.records.some((r) => r.field === field && r.status === 'verified' && hasEvidence(r));
+}
+
+const hasEvidence = (r: FirmRuleRecord) => r.sources.length > 0 && r.sources.every((s) => !!s.url && !!s.title && !!s.retrievedAt) && !!r.checkedAt;
+
 export type FirmRuleImport =
-  | { status: 'verified'; version: ProgramRuleVersion; values: FirmRuleValues; additionalRules: ProgramRules['additionalRules'] }
+  | { status: 'verified'; version: ProgramRuleVersion; values: FirmRuleValues; additionalRules: ProgramRules['additionalRules']; withheld: FirmRuleRecord[] }
   | { status: 'unverified'; version: ProgramRuleVersion | null; reason: string };
 
-/** What selecting `program` imports. Unverified data is reported, never applied. */
+/**
+ * What selecting `program` imports — from THIS program's own active version
+ * only (never another program or size). Unverified / needs-review rules are
+ * reported in `withheld`, never applied.
+ */
 export function importProgramRules(program: PropFirmProgram, onDate: string): FirmRuleImport {
   const version = activeRuleVersion(program, onDate);
   if (!version) return { status: 'unverified', version: null, reason: 'No verified rules are on file for this program yet.' };
   if (!isVerified(version)) return { status: 'unverified', version, reason: 'The rules on file for this program have not been verified against the firm’s official terms.' };
-  const values = rulesToValues(version.rules);
+  const all = rulesToValues(version.rules);
+  const values: FirmRuleValues = {};
+  for (const [k, v] of Object.entries(all) as [Exclude<FirmRuleField, 'size'>, string][]) if (fieldVerified(version, FIELD_SOURCE[k])) values[k] = v;
   if (program.accountSize) values.size = String(program.accountSize);
-  return { status: 'verified', version, values, additionalRules: version.rules.additionalRules };
+  const extraOk = (id: string) => !version.records?.length || version.records.some((r) => r.key === `extra:${id}` && r.status === 'verified');
+  return {
+    status: 'verified',
+    version,
+    values,
+    additionalRules: version.rules.additionalRules.filter((a) => extraOk(a.id)),
+    withheld: (version.records ?? []).filter((r) => r.status !== 'verified'),
+  };
+}
+
+/** Every rule of a program version with its evidence, labelled with program, size and stage. */
+export function ruleSourceRows(program: PropFirmProgram, version: ProgramRuleVersion): AccountRuleSnapshotRule[] {
+  const records: FirmRuleRecord[] = version.records?.length
+    ? version.records
+    : ruleLines(version.rules)
+        .filter((l) => l.value != null)
+        .map((l) => ({ key: l.key, label: l.label, value: l.value!, status: version.verification.status, sources: version.verification.sources, checkedAt: version.lastVerifiedAt ?? version.effectiveDate }));
+  return records.map((r) => ({
+    key: r.key,
+    label: r.label,
+    value: r.value,
+    status: r.status,
+    sources: r.sources.map((x) => ({ ...x })),
+    checkedAt: r.checkedAt,
+    ...(r.note ? { note: r.note } : {}),
+    program: program.name,
+    accountSize: program.accountSize,
+    stage: program.stage,
+  }));
+}
+
+/** Frozen copy of the rules an account was set up with (survives later master updates). */
+export function snapshotOf(firm: PropFirm, program: PropFirmProgram, version: ProgramRuleVersion, now: string): AccountRuleSnapshot {
+  return {
+    takenAt: now,
+    firmId: firm.id,
+    firmName: firm.name,
+    programId: program.id,
+    programName: program.name,
+    ruleVersion: version.ruleVersion,
+    effectiveDate: version.effectiveDate,
+    lastVerifiedAt: version.lastVerifiedAt,
+    rules: ruleSourceRows(program, version),
+  };
 }
 
 /** The account's link to the database after selecting a program. */
@@ -155,7 +263,18 @@ export function linkFor(firm: PropFirm | null, program: PropFirmProgram | null, 
     importedAt: verified ? now : null,
     imported: verified?.values ?? {},
     overrides: [],
+    family: program?.family ?? null,
+    accountSize: program?.accountSize ?? null,
+    ...(verified && firm && program ? { snapshot: snapshotOf(firm, program, verified.version, now) } : {}),
   };
+}
+
+/** A newer rule version than the account's snapshot exists (shown, never auto-applied). */
+export function newerRulesAvailable(db: FirmRulesDatabase, link: AccountFirmLink | null, onDate: string): ProgramRuleVersion | null {
+  if (!link?.snapshot) return null;
+  const p = db.programs.find((x) => x.id === link.snapshot!.programId);
+  const v = p ? activeRuleVersion(p, onDate) : null;
+  return v && isVerified(v) && v.ruleVersion !== link.snapshot.ruleVersion ? v : null;
 }
 
 const normValue = (v: string | undefined | null) => {
@@ -235,17 +354,32 @@ const rulesSchema = z.object({
   copyTradingAllowed: z.boolean().nullable(),
   additionalRules: z.array(z.object({ id: z.string(), label: z.string(), description: z.string().optional() })),
 });
+const sourceSchema = z.object({ url: z.string().url(), title: z.string().optional(), retrievedAt: iso, method: z.enum(['page', 'search_excerpt']).optional() });
 const versionSchema = z.object({
   ruleVersion: z.string().min(1),
   effectiveDate: iso,
   lastVerifiedAt: iso.nullable(),
   verification: z.object({
     status: z.enum(['verified', 'unverified']),
-    sources: z.array(z.object({ url: z.string().url(), title: z.string().optional(), retrievedAt: iso })),
+    sources: z.array(sourceSchema),
     verifiedBy: z.string().nullable(),
     notes: z.string().optional(),
   }),
   rules: rulesSchema,
+  records: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        label: z.string().min(1),
+        value: z.string(),
+        field: z.string().optional(),
+        status: z.enum(['verified', 'needs_review', 'unverified']),
+        sources: z.array(sourceSchema),
+        checkedAt: iso,
+        note: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 const dbSchema = z.object({
   schemaVersion: z.number().int(),
@@ -269,8 +403,18 @@ const dbSchema = z.object({
 export interface ParsedFirmRules {
   db: FirmRulesDatabase | null;
   errors: string[];
-  /** Versions marked verified without the evidence to back it — downgraded to unverified. */
+  /** Versions / rules marked verified without the evidence to back it — downgraded. */
   downgraded: string[];
+}
+
+const RULE_FIELDS = new Set(Object.keys(emptyRulesShape()));
+function emptyRulesShape(): Record<keyof ProgramRules, true> {
+  return {
+    profitTarget: true, dailyLossLimit: true, maxDrawdown: true, drawdownType: true, trailingLocksAtStart: true, maxContracts: true, consistencyRule: true,
+    minTradingDays: true, maxTradingDays: true, minProfitableDays: true, payoutThreshold: true, payoutRequirements: true, payoutFrequency: true, scalingRule: true,
+    positionLimits: true, activationThreshold: true, newsTradingAllowed: true, newsRestriction: true, overnightAllowed: true, weekendHoldingAllowed: true,
+    copyTradingAllowed: true, additionalRules: true,
+  };
 }
 
 /**
@@ -287,10 +431,16 @@ export function parseFirmRulesDatabase(input: unknown): ParsedFirmRules {
   const downgraded: string[] = [];
   const programs = r.data.programs.map((p) => ({
     ...p,
-    versions: p.versions.map((v) => {
+    versions: p.versions.map((raw) => {
+      let v = raw as ProgramRuleVersion;
+      for (const rec of v.records ?? []) if (rec.field && !RULE_FIELDS.has(rec.field)) errors.push(`${p.id}@${v.ruleVersion}: unknown field ${rec.field}`);
+      // A rule claiming "verified" needs an official source with title and check date.
+      if (v.records?.some((rec) => rec.status === 'verified' && !hasEvidence(rec))) {
+        v = { ...v, records: v.records!.map((rec) => (rec.status === 'verified' && !hasEvidence(rec) ? (downgraded.push(`${p.id}@${v.ruleVersion}#${rec.key}`), { ...rec, status: 'needs_review' as const }) : rec)) };
+      }
       if (v.verification.status === 'verified' && !isVerified(v)) {
         downgraded.push(`${p.id}@${v.ruleVersion}`);
-        return { ...v, verification: { ...v.verification, status: 'unverified' as const } };
+        v = { ...v, verification: { ...v.verification, status: 'unverified' as const } };
       }
       return v;
     }),

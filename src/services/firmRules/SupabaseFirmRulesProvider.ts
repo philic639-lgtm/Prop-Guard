@@ -18,7 +18,7 @@ export class SupabaseFirmRulesProvider implements FirmRulesProvider {
     const [firms, programs, versions] = await Promise.all([
       this.client.from('prop_firms').select('id,name,aliases,logo_url,website,active,updated_at'),
       this.client.from('prop_firm_programs').select('id,firm_id,name,family,stage,account_size,active,sort_order').order('sort_order'),
-      this.client.from('prop_firm_rule_versions').select('program_id,rule_version,effective_date,last_verified_at,verification_status,verified_by,sources,notes,rules,created_at'),
+      this.client.from('prop_firm_rule_versions').select('program_id,rule_version,effective_date,last_verified_at,verification_status,verified_by,sources,notes,rules,records,created_at'),
     ]);
     const err = firms.error ?? programs.error ?? versions.error;
     if (err) throw new Error(`Firm rules could not be loaded: ${err.message}`);

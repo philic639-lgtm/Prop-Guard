@@ -32,8 +32,34 @@ export interface RuleSource {
   /** Official firm page or document the values were checked against. */
   url: string;
   title?: string;
-  /** ISO date the source was read. */
+  /** ISO date the source was checked. */
   retrievedAt: string;
+  /**
+   * How the page was read: `page` = opened directly; `search_excerpt` = the
+   * official page's text as returned by a search restricted to the firm's own
+   * domains (used when the page itself could not be opened).
+   */
+  method?: 'page' | 'search_excerpt';
+}
+
+/** Status of ONE rule. `needs_review` = official sources conflict or are unclear — never auto-applied. */
+export type RuleRecordStatus = 'verified' | 'needs_review' | 'unverified';
+
+/** One rule of a program version with its own evidence. */
+export interface FirmRuleRecord {
+  /** Stable key, e.g. "profitTarget", "hedging". */
+  key: string;
+  label: string;
+  /** The rule as the firm states it (display text). */
+  value: string;
+  /** The structured `ProgramRules` field this record backs, if any. */
+  field?: keyof ProgramRules;
+  status: RuleRecordStatus;
+  sources: RuleSource[];
+  /** ISO date the rule was last checked. */
+  checkedAt: string;
+  /** Conflict explanation / caveats. */
+  note?: string;
 }
 
 export type VerificationStatus = 'verified' | 'unverified';
@@ -99,6 +125,11 @@ export interface ProgramRuleVersion {
   lastVerifiedAt: string | null;
   verification: RuleVerification;
   rules: ProgramRules;
+  /**
+   * Per-rule evidence. When present, a structured value is applied ONLY if
+   * the record backing its field is `verified`.
+   */
+  records?: FirmRuleRecord[];
 }
 
 export interface PropFirmProgram {
@@ -106,7 +137,11 @@ export interface PropFirmProgram {
   firmId: string;
   /** Display name, e.g. "50K Trading Combine". */
   name: string;
-  /** Program family, e.g. "Trading Combine" (groups sizes together). */
+  /**
+   * Program family, e.g. "Trading Combine" — the "Program" the trader picks
+   * before the account size. Each size is its own program with its own rules
+   * (sizes never inherit from each other).
+   */
   family: string;
   stage: ProgramStage;
   accountSize: number | null;

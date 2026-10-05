@@ -22,6 +22,7 @@ export function dbToRows(db: FirmRulesDatabase) {
         sources: v.verification.sources,
         notes: v.verification.notes ?? null,
         rules: v.rules,
+        records: v.records ?? [],
       })),
     ),
   };
@@ -43,6 +44,7 @@ export function rowsToDb(firms: Row[], programs: Row[], versions: Row[], publish
         ...(v.notes ? { notes: String(v.notes) } : {}),
       },
       rules: v.rules as ProgramRuleVersion['rules'],
+      ...(Array.isArray(v.records) && v.records.length ? { records: v.records as NonNullable<ProgramRuleVersion['records']> } : {}),
     });
     byProgram.set(String(v.program_id), list);
   }

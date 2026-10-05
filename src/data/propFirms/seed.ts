@@ -1,9 +1,11 @@
-import { FIRM_RULES_SCHEMA_VERSION, type FirmRulesDatabase, type PropFirm, type PropFirmProgram, type ProgramStage } from './types';
+import { TOPSTEP_PROGRAMS } from './firms/topstep';
+import { FIRM_RULES_SCHEMA_VERSION, type FirmRulesDatabase, type PropFirm } from './types';
 
 /**
  * Seed for the prop-firm rules database.
  *
- * Add a firm: one entry in FIRMS. Add a program: one entry in PROGRAMS.
+ * Add a firm: one entry in FIRMS. Add its programs in `firms/<firm>.ts` (one
+ * entry per program × size × stage, each with its own rule records).
  * Add rules: a `versions` entry with `verification.status: 'verified'`, at
  * least one official source URL, `verifiedBy` and `lastVerifiedAt` — every
  * value checked against that source. Unverified values are never applied, so
@@ -27,32 +29,12 @@ const FIRMS: PropFirm[] = [
   { id: 'tickticktrader', name: 'TickTickTrader', aliases: ['Tick Tick Trader', 'TTT'], logo: null, website: 'https://tickticktrader.com', active: true },
 ];
 
-/** A program without verified rules: listed so it can be selected, rules entered by the trader. */
-const program = (firmId: string, family: string, stage: ProgramStage, size: number | null, name?: string): PropFirmProgram => ({
-  id: `${firmId}:${family.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${size ? `:${size / 1000}k` : ''}`,
-  firmId,
-  name: name ?? (size ? `${size / 1000}K ${family}` : family),
-  family,
-  stage,
-  accountSize: size,
-  active: true,
-  versions: [],
-});
-
 /**
- * Program catalogue. Only programs the product was asked to list are seeded;
- * the other firms are placeholders until their programs are verified (the
- * trader can still enter a custom program and its rules).
+ * Program catalogue. Topstep is fully researched (`firms/topstep.ts`, every
+ * rule with its official source); the other firms are placeholders until
+ * their programs and rules are verified — traders enter those manually.
  */
-const PROGRAMS: PropFirmProgram[] = [
-  program('topstep', 'Trading Combine', 'evaluation', 50_000),
-  program('topstep', 'Trading Combine', 'evaluation', 100_000),
-  program('topstep', 'Trading Combine', 'evaluation', 150_000),
-  program('topstep', 'Express Funded Account', 'funded', 50_000),
-  program('topstep', 'Express Funded Account', 'funded', 100_000),
-  program('topstep', 'Express Funded Account', 'funded', 150_000),
-  program('topstep', 'Live Funded Account', 'live', null),
-];
+const PROGRAMS = [...TOPSTEP_PROGRAMS];
 
 export const FIRM_RULES_SEED: FirmRulesDatabase = {
   schemaVersion: FIRM_RULES_SCHEMA_VERSION,

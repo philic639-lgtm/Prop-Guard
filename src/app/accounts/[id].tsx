@@ -95,10 +95,19 @@ export default function AccountEditor() {
         firmSlot={
           <>
             <FirmAutocomplete db={firmRules.db} value={firmText ?? ''} selected={firmRules.firm} onChangeText={firmRules.changeFirmText} onSelectFirm={firmRules.selectFirm} />
-            {firmRules.firm ? <ProgramPicker key={firmRules.firm.id} db={firmRules.db} firm={firmRules.firm} link={link} onSelectProgram={firmRules.selectProgram} onCustomProgram={firmRules.customProgram} /> : null}
+            {firmRules.firm ? <ProgramPicker
+                key={firmRules.firm.id}
+                db={firmRules.db}
+                firm={firmRules.firm}
+                link={link}
+                familyKey={firmRules.familyKey}
+                onSelectFamily={firmRules.selectFamily}
+                onSelectProgram={firmRules.selectProgram}
+                onCustomProgram={firmRules.customProgram}
+              /> : null}
           </>
         }
-        rulesFooter={<FirmRulesStatus link={link} program={firmRules.program} overrides={overrides} firmName={firmRules.firm?.name ?? firmText ?? ''} />}
+        rulesFooter={<FirmRulesStatus db={firmRules.db} link={link} overrides={overrides} firmName={firmRules.firm?.name ?? firmText ?? ''} />}
       />
 
       <SectionHeader title="Custom rules" />

@@ -143,7 +143,7 @@ export function AccountFields({
       ) : null}
       <View style={styles.row}>
         <View style={styles.flex}>
-          <Money control={control} name="size" label="Account size" {...imp} />
+          <Money control={control} name="size" label="Account size ($)" {...imp} />
         </View>
         <View style={styles.flex}>
           <Money control={control} name="balance" label="Current balance" />

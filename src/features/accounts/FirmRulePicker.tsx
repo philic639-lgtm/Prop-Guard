@@ -5,8 +5,8 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import { AppText, Button, Card, Input, Sheet, StatusBadge } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { FirmRulesDatabase, PropFirm, PropFirmProgram } from '@/data/propFirms/types';
-import { activeRuleVersion, isVerified, programsForFirm, ruleLines, searchFirms, STAGE_LABEL } from '@/lib/engines/firmRulesEngine';
-import type { AccountFirmLink, FirmRuleField } from '@/types/domain';
+import { activeRuleVersion, isVerified, newerRulesAvailable, programFamilies, searchFirms, sizesForFamily, STAGE_LABEL, type ProgramFamily } from '@/lib/engines/firmRulesEngine';
+import type { AccountFirmLink, AccountRuleSnapshot, FirmRuleField } from '@/types/domain';
 import { longDate } from '@/utils/format';
 
 const today = () => new Date().toISOString();
@@ -103,100 +103,140 @@ export function FirmAutocomplete({
 }
 
 function programSummary(db: FirmRulesDatabase, firmId: string) {
-  const programs = programsForFirm(db, firmId);
-  if (!programs.length) return 'Programs not yet verified — enter rules manually';
-  const verified = programs.filter((p) => isVerified(activeRuleVersion(p, today()))).length;
-  return `${programs.length} program${programs.length === 1 ? '' : 's'} · ${verified ? `${verified} with verified rules` : 'rules not yet verified'}`;
+  const families = programFamilies(db, firmId);
+  if (!families.length) return 'Programs not yet verified — enter rules manually';
+  const verified = families.some((f) => f.programs.some((p) => isVerified(activeRuleVersion(p, today()))));
+  return `${families.length} program${families.length === 1 ? '' : 's'} · ${verified ? '✓ verified rules' : 'rules not yet verified'}`;
 }
 
-// ───────────────────────────── Program / Account ─────────────────────────────
+// ───────────────────────────── Program / Account → Account size ─────────────────────────────
 
-const programSub = (p: PropFirmProgram) => {
+const verifiedOn = (p: PropFirmProgram) => {
   const v = activeRuleVersion(p, today());
-  return `${STAGE_LABEL[p.stage]} · ${isVerified(v) && v?.lastVerifiedAt ? `Rules verified ${longDate(v.lastVerifiedAt)}` : 'Rules not yet verified'}`;
+  return isVerified(v) && v?.lastVerifiedAt ? v.lastVerifiedAt : null;
 };
 
-/** Second field after a database firm is chosen: the exact program / account. */
+function Select({ label, value, placeholder, sub, icon, onPress }: { label: string; value: string | null; placeholder: string; sub?: string | null; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+  return (
+    <View style={styles.gap}>
+      <AppText variant="label">{label}</AppText>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value ?? placeholder}`} onPress={onPress} style={({ pressed }) => [styles.select, pressed && styles.pressed]}>
+        <Ionicons name={icon} size={18} color={colors.textSecondary} />
+        <View style={styles.flex}>
+          <AppText variant="bodyStrong" numberOfLines={1} tone={value ? 'primary' : 'tertiary'}>
+            {value ?? placeholder}
+          </AppText>
+          {value && sub ? <AppText variant="caption">{sub}</AppText> : null}
+        </View>
+        <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+      </Pressable>
+    </View>
+  );
+}
+
+function Option({ title, sub, on, onPress }: { title: string; sub?: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={title} onPress={onPress} style={[styles.option, on && styles.optionOn]}>
+      <View style={styles.flex}>
+        <AppText variant="bodyStrong">{title}</AppText>
+        {sub ? <AppText variant="caption">{sub}</AppText> : null}
+      </View>
+      {on ? <Ionicons name="checkmark-circle" size={20} color={colors.accentBright} /> : null}
+    </Pressable>
+  );
+}
+
+/**
+ * After a database firm is chosen: Program / Account (dropdown of the firm's
+ * programs) → Account Size (only the sizes that program offers) → rules.
+ * A firm without programs on file falls back to free text.
+ */
 export function ProgramPicker({
   db,
   firm,
   link,
+  familyKey,
+  onSelectFamily,
   onSelectProgram,
   onCustomProgram,
 }: {
   db: FirmRulesDatabase;
   firm: PropFirm;
   link: AccountFirmLink | null;
+  familyKey: string | null;
+  onSelectFamily: (key: string) => void;
   onSelectProgram: (p: PropFirmProgram) => void;
   onCustomProgram: (name: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const programs = programsForFirm(db, firm.id);
-  const current = programs.find((p) => p.id === link?.programId) ?? null;
-  const custom = !current && link?.programName ? link.programName : null;
-  const [writing, setWriting] = useState(!programs.length || !!custom);
+  const [sheet, setSheet] = useState<'program' | 'size' | null>(null);
+  const families = programFamilies(db, firm.id);
+  const family = families.find((f) => f.key === familyKey) ?? null;
+  const current = family?.programs.find((p) => p.id === link?.programId) ?? null;
+  const custom = !link?.programId && link?.programName ? link.programName : null;
+  const [writing, setWriting] = useState(!families.length || !!custom);
 
-  if (!programs.length || writing) {
+  if (!families.length || writing) {
     return (
       <View style={styles.gap}>
         <Input label="Program / Account" value={custom ?? ''} onChangeText={onCustomProgram} placeholder="e.g. 50K Evaluation" />
         <AppText variant="caption" tone="warning">
-          {programs.length ? 'Custom program — enter its rules manually.' : `${firm.name}’s programs are not yet verified in Prop Guard — enter the program and its rules manually.`}
+          {families.length ? 'Custom program — enter its rules manually.' : `${firm.name}’s programs are not yet verified in Prop Guard — enter the program and its rules manually.`}
         </AppText>
-        {programs.length ? <Button label="Choose from the list instead" variant="ghost" size="md" onPress={() => setWriting(false)} /> : null}
+        {families.length ? <Button label="Choose from the list instead" variant="ghost" size="md" onPress={() => setWriting(false)} /> : null}
       </View>
     );
   }
 
-  const stages = (['evaluation', 'funded', 'live'] as const).filter((s) => programs.some((p) => p.stage === s));
+  const stages = (['evaluation', 'funded', 'live'] as const).filter((s) => families.some((f) => f.stage === s));
+  const familyVerified = (f: ProgramFamily) => f.programs.some((p) => verifiedOn(p));
   return (
     <View style={styles.gap}>
-      <AppText variant="label">Program / Account</AppText>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Program / Account: ${current?.name ?? 'Select'}`} onPress={() => setOpen(true)} style={({ pressed }) => [styles.select, pressed && styles.pressed]}>
-        <Ionicons name="layers-outline" size={18} color={colors.textSecondary} />
-        <View style={styles.flex}>
-          <AppText variant="bodyStrong" numberOfLines={1} tone={current ? 'primary' : 'tertiary'}>
-            {current ? current.name : `Select a ${firm.name} program`}
-          </AppText>
-          {current ? <AppText variant="caption">{programSub(current)}</AppText> : null}
-        </View>
-        <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
-      </Pressable>
-      <Sheet visible={open} onClose={() => setOpen(false)} title={`${firm.name} · PROGRAM / ACCOUNT`}>
+      <Select
+        label="Program / Account"
+        icon="layers-outline"
+        value={family?.family ?? null}
+        placeholder={`Select a ${firm.name} program`}
+        sub={family ? `${STAGE_LABEL[family.stage]} · ${familyVerified(family) ? 'Verified rules' : 'Rules not yet verified'}` : null}
+        onPress={() => setSheet('program')}
+      />
+      {family ? (
+        <Select
+          label="Account size"
+          icon="cash-outline"
+          value={current ? sizeLabel(current) : null}
+          placeholder="Select an account size"
+          sub={current ? (verifiedOn(current) ? `Verified rules · checked ${longDate(verifiedOn(current)!)}` : 'Rules not yet verified') : null}
+          onPress={() => setSheet('size')}
+        />
+      ) : null}
+
+      <Sheet visible={sheet === 'program'} onClose={() => setSheet(null)} title={`${firm.name} · PROGRAM / ACCOUNT`}>
         {stages.map((stage) => (
           <View key={stage} style={styles.gap}>
             <AppText variant="label" style={{ marginTop: spacing.sm }}>
               {STAGE_LABEL[stage]}
             </AppText>
-            {programs
-              .filter((p) => p.stage === stage)
-              .map((p) => {
-                const on = p.id === current?.id;
-                return (
-                  <Pressable
-                    key={p.id}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: on }}
-                    accessibilityLabel={p.name}
-                    onPress={() => {
-                      onSelectProgram(p);
-                      setOpen(false);
-                    }}
-                    style={[styles.option, on && styles.optionOn]}>
-                    <View style={styles.flex}>
-                      <AppText variant="bodyStrong">{p.name}</AppText>
-                      <AppText variant="caption">{programSub(p)}</AppText>
-                    </View>
-                    {on ? <Ionicons name="checkmark-circle" size={20} color={colors.accentBright} /> : null}
-                  </Pressable>
-                );
-              })}
+            {families
+              .filter((f) => f.stage === stage)
+              .map((f) => (
+                <Option
+                  key={f.key}
+                  title={f.family}
+                  sub={`${f.programs.map(sizeLabel).join(' · ')} · ${familyVerified(f) ? 'Verified rules' : 'Rules not yet verified'}`}
+                  on={f.key === familyKey}
+                  onPress={() => {
+                    if (f.key !== familyKey) onSelectFamily(f.key);
+                    setSheet(f.programs.length > 1 ? 'size' : null);
+                    if (f.programs.length === 1) onSelectProgram(f.programs[0]);
+                  }}
+                />
+              ))}
           </View>
         ))}
         <Pressable
           accessibilityRole="button"
           onPress={() => {
-            setOpen(false);
+            setSheet(null);
             setWriting(true);
           }}
           style={[styles.option, { marginTop: spacing.sm }]}>
@@ -206,15 +246,32 @@ export function ProgramPicker({
           </View>
         </Pressable>
       </Sheet>
+
+      <Sheet visible={sheet === 'size' && !!family} onClose={() => setSheet(null)} title={`${family?.family ?? ''} · ACCOUNT SIZE`.toUpperCase()}>
+        {(family ? sizesForFamily(family) : []).map(({ program: p }) => (
+          <Option
+            key={p.id}
+            title={sizeLabel(p)}
+            sub={verifiedOn(p) ? `Verified rules · checked ${longDate(verifiedOn(p)!)}` : 'Rules not yet verified — enter manually'}
+            on={p.id === current?.id}
+            onPress={() => {
+              onSelectProgram(p);
+              setSheet(null);
+            }}
+          />
+        ))}
+      </Sheet>
     </View>
   );
 }
 
-// ───────────────────────────── Imported rules status ─────────────────────────────
+const sizeLabel = (p: PropFirmProgram) => (p.accountSize ? `$${Math.round(p.accountSize / 1000)}K` : p.name);
 
-/** Underneath the rules: where they came from, when they were verified, and a full review. */
-export function FirmRulesStatus({ link, program, overrides, firmName }: { link: AccountFirmLink | null; program: PropFirmProgram | null; overrides: FirmRuleField[]; firmName: string }) {
-  const [review, setReview] = useState(false);
+// ───────────────────────────── Imported rules status + sources ─────────────────────────────
+
+/** Underneath the rules: verification status, last verified date and every rule's source. */
+export function FirmRulesStatus({ db, link, overrides, firmName }: { db: FirmRulesDatabase; link: AccountFirmLink | null; overrides: FirmRuleField[]; firmName: string }) {
+  const [sources, setSources] = useState(false);
   if (!link || link.status === 'custom') return null;
   if (link.status !== 'verified') {
     if (!link.firmId) return null;
@@ -228,18 +285,20 @@ export function FirmRulesStatus({ link, program, overrides, firmName }: { link: 
         </View>
         <AppText variant="caption" style={{ marginTop: 4 }}>
           {link.programName ? `${firmName} · ${link.programName}: ` : `${firmName}: `}
-          Prop Guard has no verified copy of these rules yet, so nothing was filled in. Enter them from the firm’s current official terms — Prop Guard never guesses firm rules.
+          {link.programName || !link.firmId ? 'Prop Guard has no verified copy of these rules yet, so nothing was filled in. Enter them from the firm’s current official terms — Prop Guard never guesses firm rules.' : 'Choose the program and account size to load its rules.'}
         </AppText>
       </Card>
     );
   }
-  const version = program ? activeRuleVersion(program, today()) : null;
+  const snap = link.snapshot;
+  const review = snap?.rules.filter((r) => r.status !== 'verified') ?? [];
+  const newer = newerRulesAvailable(db, link, today());
   return (
     <Card tone="positive">
       <View style={styles.row}>
         <Ionicons name="shield-checkmark" size={18} color={colors.positive} />
         <AppText variant="bodyStrong" tone="positive" style={styles.flex}>
-          Firm rules imported
+          ✓ Verified rules
         </AppText>
         {overrides.length ? <StatusBadge label={`${overrides.length} custom override${overrides.length === 1 ? '' : 's'}`} tone="warning" size="sm" /> : null}
       </View>
@@ -248,78 +307,97 @@ export function FirmRulesStatus({ link, program, overrides, firmName }: { link: 
       </AppText>
       <AppText variant="caption">
         Last verified: {link.lastVerifiedAt ? longDate(link.lastVerifiedAt) : '—'} · Rule version {link.ruleVersion}
-        {link.effectiveDate ? ` (effective ${longDate(link.effectiveDate)})` : ''}
       </AppText>
+      {review.length ? (
+        <AppText variant="caption" tone="warning" style={{ marginTop: 4 }}>
+          {review.length} rule{review.length === 1 ? '' : 's'} need review and {review.length === 1 ? 'was' : 'were'} not filled in: {review.map((r) => r.label).join(', ')}.
+        </AppText>
+      ) : null}
+      {newer ? (
+        <AppText variant="caption" tone="accent" style={{ marginTop: 4 }}>
+          {firmName} rules were updated ({newer.ruleVersion}). This account keeps the rules it was set up with — re-select the account size to load the new ones.
+        </AppText>
+      ) : null}
       <AppText variant="caption" tone="tertiary" style={{ marginTop: 4 }}>
         Every imported value stays editable. Firm terms change — check the official source before trading.
       </AppText>
       <View style={{ marginTop: spacing.md }}>
-        <Button label="Review rules" icon="document-text-outline" variant="secondary" size="md" onPress={() => setReview(true)} />
+        <Button label="View rule sources" icon="link-outline" variant="secondary" size="md" onPress={() => setSources(true)} />
       </View>
-      <Sheet visible={review} onClose={() => setReview(false)} title={`${firmName} · ${link.programName ?? ''}`.toUpperCase()}>
-        {version ? <ReviewBody version={version} overrides={overrides} /> : <AppText variant="body">This rule version is no longer in the database.</AppText>}
+      <Sheet visible={sources} onClose={() => setSources(false)} title="RULE SOURCES">
+        {snap ? <SourcesBody snap={snap} overrides={overrides} /> : <AppText variant="body">No source snapshot is stored for this account.</AppText>}
       </Sheet>
     </Card>
   );
 }
 
-const LINE_FIELD: Record<string, FirmRuleField | undefined> = {
+const OVERRIDE_KEY: Record<string, FirmRuleField> = {
   profitTarget: 'profitTarget',
+  maxLossLimit: 'maxDrawdown',
+  drawdownMethod: 'drawdownType',
   dailyLossLimit: 'dailyLossLimit',
-  maxDrawdown: 'maxDrawdown',
-  drawdownType: 'drawdownType',
   maxContracts: 'maxContracts',
   consistency: 'consistencyPct',
   minTradingDays: 'minTradingDays',
-  maxTradingDays: 'maxTradingDays',
-  minProfitableDays: 'minProfitableDays',
-  payoutThreshold: 'payoutThreshold',
+  tradingDays: 'minTradingDays',
+  winningDays: 'minProfitableDays',
+  payoutEligibility: 'payoutRequirements',
   payoutFrequency: 'payoutFrequency',
-  payoutRequirements: 'payoutRequirements',
-  scalingRule: 'scalingRule',
-  positionLimits: 'positionLimits',
-  activationThreshold: 'activationThreshold',
+  scaling: 'scalingRule',
+  passing: 'activationThreshold',
+  activation: 'activationThreshold',
   news: 'newsTrading',
   overnight: 'overnight',
   weekend: 'weekendHolding',
-  copy: 'copyTrading',
+  copyTrading: 'copyTrading',
 };
 
-function ReviewBody({ version, overrides }: { version: NonNullable<ReturnType<typeof activeRuleVersion>>; overrides: FirmRuleField[] }) {
-  const lines = ruleLines(version.rules);
+function SourcesBody({ snap, overrides }: { snap: AccountRuleSnapshot; overrides: FirmRuleField[] }) {
+  const first = snap.rules[0];
+  const rules = snap.rules.filter((r) => !r.key.startsWith('extra:'));
   return (
     <View style={styles.gap}>
-      <AppText variant="caption">
-        Rule version {version.ruleVersion} · effective {longDate(version.effectiveDate)} · verified {version.lastVerifiedAt ? longDate(version.lastVerifiedAt) : '—'}
-        {version.verification.verifiedBy ? ` by ${version.verification.verifiedBy}` : ''}
+      <AppText variant="bodyStrong">
+        {snap.firmName} · {snap.programName}
       </AppText>
-      {lines.map((l) => {
-        const overridden = LINE_FIELD[l.key] && overrides.includes(LINE_FIELD[l.key]!);
+      <AppText variant="caption">
+        {first ? `${STAGE_LABEL[first.stage]} · ${first.accountSize ? `$${first.accountSize.toLocaleString('en-US')}` : 'size set by firm'} · ` : ''}
+        Rule version {snap.ruleVersion} · saved with this account {longDate(snap.takenAt)}
+      </AppText>
+      {rules.map((r) => {
+        const overridden = OVERRIDE_KEY[r.key] && overrides.includes(OVERRIDE_KEY[r.key]);
         return (
-          <View key={l.key} style={styles.line}>
+          <View key={r.key} style={styles.line}>
             <View style={styles.row}>
               <AppText variant="label" style={styles.flex}>
-                {l.label}
+                {r.label}
               </AppText>
+              {r.status === 'verified' ? <StatusBadge label="Verified" tone="positive" size="sm" /> : <StatusBadge label="Needs review" tone="warning" icon="alert-circle-outline" size="sm" />}
               {overridden ? <StatusBadge label="Custom override" tone="warning" size="sm" /> : null}
             </View>
-            <AppText variant="body" tone={l.value ? 'primary' : 'tertiary'}>
-              {l.value ?? 'Not stated in the verified source — enter it if it applies'}
+            <AppText variant="body">{r.value}</AppText>
+            {r.note ? (
+              <AppText variant="caption" tone="warning">
+                {r.note}
+              </AppText>
+            ) : null}
+            {r.sources.map((s) => (
+              <Pressable key={s.url} accessibilityRole="link" accessibilityLabel={`Open source ${s.title ?? s.url}`} onPress={() => Linking.openURL(s.url)}>
+                <AppText variant="caption" tone="accent">
+                  {s.title ?? 'Source'} ↗
+                </AppText>
+                <AppText variant="caption" tone="tertiary" numberOfLines={1}>
+                  {s.url}
+                </AppText>
+              </Pressable>
+            ))}
+            <AppText variant="caption" tone="tertiary">
+              Checked {longDate(r.checkedAt)}
+              {r.sources.some((s) => s.method === 'search_excerpt') ? ' · from the official page text (search excerpt)' : ''}
             </AppText>
           </View>
         );
       })}
-      {version.verification.notes ? <AppText variant="caption">{version.verification.notes}</AppText> : null}
-      <AppText variant="label" style={{ marginTop: spacing.sm }}>
-        Sources
-      </AppText>
-      {version.verification.sources.map((s) => (
-        <Pressable key={s.url} accessibilityRole="link" onPress={() => Linking.openURL(s.url)}>
-          <AppText variant="caption" tone="accent">
-            {s.title ?? s.url} · read {longDate(s.retrievedAt)}
-          </AppText>
-        </Pressable>
-      ))}
     </View>
   );
 }
