@@ -34,3 +34,25 @@ export { assessRegimes, buildDna, buildReasoning, buildWeaknessReport, findContr
 export { assessUniqueness, improvedTexts, jaccard, tokens, UNIQUENESS_LIMITS, type UniquenessReference } from './uniqueness';
 export { buildRuleSet, compileRuleSet, evaluatePrimitive, parsePrimitive, type CompiledRuleSet, type IfThenBlock, type Primitive, type RuleCondition, type TestableRuleSet } from './ruleset';
 export { REGIME_LABELS } from './concepts';
+export {
+  applyResolutions,
+  buildRuleItems,
+  clearResolution,
+  finalRuleSheet,
+  joinCriteria,
+  makeResolution,
+  nextItem,
+  openItems,
+  practiceSpecOf,
+  resolveProgress,
+  setResolution,
+  strategyOwnership,
+  testReadiness,
+  type PracticeStrategySpec,
+  type ResolveInput,
+  type ResolveProgress,
+  type RuleSheetSection,
+  type SheetOrigin,
+  type StrategyOwnership,
+  type TestReadiness,
+} from './resolve';

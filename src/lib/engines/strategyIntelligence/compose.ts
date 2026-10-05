@@ -3,8 +3,9 @@ import { formatClock } from '@/utils/dates';
 
 import { diagnoseStrategy, diagnosisInput, finalizeStructured, sectionName } from './analyze';
 import { interpretStrategy, makeRule } from './interpret';
+import { applyResolutions, buildRuleItems, practiceSpecOf } from './resolve';
 import { buildRuleSet, compileRuleSet, type CompiledRuleSet, type TestableRuleSet } from './ruleset';
-import type { RuleProvenance, RuleSection, StrategyHealthScore, StrategyRule, StrategySuggestion, StructuredStrategy, SuggestionStatus } from './types';
+import type { RuleProvenance, RuleSection, RuleSource, StrategyHealthScore, StrategyRule, StrategySuggestion, StructuredStrategy, SuggestionStatus } from './types';
 
 /** All rules of a structured strategy, in section order. */
 export function allRules(s: StructuredStrategy): StrategyRule[] {
@@ -88,6 +89,8 @@ export function answerQuestion(s: StructuredStrategy, id: string, answer: string
 export interface ChecklistLine {
   text: string;
   provenance: RuleProvenance | 'account';
+  /** Set for rules created in Resolve Missing Rules. */
+  origin?: RuleSource;
   /** Suggestion lines: pending ones are previewed but NOT saved. */
   status?: SuggestionStatus;
   suggestionId?: string;
@@ -119,7 +122,7 @@ export function improvedChecklist(s: StructuredStrategy, opts: { accountMaxTrade
   const rulesIn = (secs: RuleSection[]): ChecklistLine[] => [
     ...allRules(s)
       .filter((r) => secs.includes(r.section) && !(r.provenance === 'trader' && replaced.has(r.text)))
-      .map((r) => ({ text: r.text, provenance: r.provenance, measurable: r.measurable })),
+      .map((r) => ({ text: r.text, provenance: r.provenance, measurable: r.measurable, ...(r.origin ? { origin: r.origin } : {}) })),
     ...live
       .filter((g) => secs.includes(g.section))
       .map((g) => ({ text: (g.status === 'edited' && g.editedText) || g.suggestedRule, provenance: 'suggested' as const, status: g.status, suggestionId: g.id, measurable: true })),
@@ -203,7 +206,7 @@ export function testableRulesOf(s: StructuredStrategy): TestableRuleSet {
     timeframes: f.timeframes,
     window: { start: f.start, end: f.end },
     conceptIds: s.detectedStyle.map((d) => d.id),
-    orbMinutes: ctx.orbMinutes ?? (Number(s.unresolvedQuestions.find((q) => q.variable === 'openingRangeMinutes')?.answer) || null),
+    orbMinutes: s.definitions?.rangeMinutes ?? ctx.orbMinutes ?? (Number(s.unresolvedQuestions.find((q) => q.variable === 'openingRangeMinutes')?.answer) || null),
     emaPeriod: ctx.emaPeriod,
     emaType: ctx.emaType,
     level: ctx.level,
@@ -235,9 +238,19 @@ const joinTexts = (rules: StrategyRule[]) => rules.map((r) => r.text).join('; ')
  * Strategy usable everywhere in Prop Guard. Pending and rejected suggestions
  * are NOT included. The original text and full structured analysis are kept.
  */
-export function toStrategy(s: StructuredStrategy, o: ToStrategyOptions): Strategy {
+export function toStrategy(analysis: StructuredStrategy, o: ToStrategyOptions): Strategy {
+  // Resolved rules (Resolve Missing Rules) are part of the saved plan; the decisions themselves are kept too.
+  const s = applyResolutions(analysis);
   const finalized = finalizeStructured(s, effectiveRules(s));
-  const structured: StructuredStrategy = { ...s, strategyHealthScore: finalized.strategyHealthScore, testableRules: testableRulesOf(s) };
+  const testableRules = testableRulesOf(s);
+  const structured: StructuredStrategy = {
+    ...s,
+    strategyHealthScore: finalized.strategyHealthScore,
+    testableRules,
+    resolutions: analysis.resolutions ?? [],
+    ruleItems: buildRuleItems(analysis),
+    practiceSpec: practiceSpecOf(s, testableRules),
+  };
   const f = effectiveFields(s);
   const rules = effectiveRules(s);
   const by = (...secs: RuleSection[]) => rules.filter((r) => secs.includes(r.section));
@@ -284,7 +297,9 @@ export function toStrategy(s: StructuredStrategy, o: ToStrategyOptions): Strateg
   };
 }
 
-export function provenanceLabel(p: ChecklistLine['provenance'], status?: SuggestionStatus): string {
+export function provenanceLabel(p: ChecklistLine['provenance'], status?: SuggestionStatus, origin?: RuleSource): string {
+  if (origin === 'custom') return 'Custom rule ✓';
+  if (origin === 'ai_approved') return 'AI suggestion — approved ✓';
   if (p === 'trader') return 'Your rule';
   if (p === 'inferred') return 'AI interpretation';
   if (p === 'account') return 'Account rule';

@@ -64,6 +64,14 @@ export interface StrategyRule {
   vagueTerms: string[];
   /** For accepted / edited suggestions. */
   suggestionId?: string;
+  /** Set when the rule came from resolving a missing rule. */
+  origin?: RuleSource;
+  /** Resolved rule item this rule answers. */
+  ruleItemId?: string;
+  /** Trader rule whose subjective wording was defined by this rule item (kept, now defined). */
+  definedBy?: string;
+  /** Structured condition attached at resolution time (Practice reads it instead of parsing text). */
+  primitive?: import('./ruleset').Primitive;
 }
 
 /** Open-ended: well-known ids are listed in `concepts.ts`; anything else is "custom". */
@@ -185,7 +193,7 @@ export type DnaKey =
 export interface DnaComponent {
   key: DnaKey;
   label: string;
-  values: { text: string; provenance: RuleProvenance }[];
+  values: { text: string; provenance: RuleProvenance; origin?: RuleSource; definedBy?: string }[];
 }
 
 /** Why the strategy should work and where it can break — about the IDEA, never the trader. */
@@ -242,6 +250,123 @@ export interface UniquenessReport {
   notes: string[];
 }
 
+// ───────────────────────────── Resolve Missing Rules ─────────────────────────────
+
+export type RuleCategory =
+  | 'instrument'
+  | 'direction'
+  | 'timeframe'
+  | 'subjective'
+  | 'levelDefinition'
+  | 'breakoutDefinition'
+  | 'entryTrigger'
+  | 'retest'
+  | 'chaseProtection'
+  | 'stop'
+  | 'target'
+  | 'riskReward'
+  | 'invalidation'
+  | 'marketContext'
+  | 'timeWindow'
+  | 'timeCutoff'
+  | 'tradeLimit'
+  | 'positionSizing'
+  | 'management'
+  | 'newsFilter'
+  | 'volatilityFilter';
+
+/** stated — the trader said it; missing — not stated; subjective — stated but not measurable; suggested — an AI suggestion the trader accepted; resolved — defined via Resolve Missing Rules. */
+export type ResolvableStatus = 'stated' | 'missing' | 'subjective' | 'suggested' | 'resolved';
+
+/** user — trader's own words; ai — Prop Guard proposal (not yet approved); ai_approved — Prop Guard option the trader chose; custom — trader-written definition. */
+export type RuleSource = 'user' | 'ai' | 'ai_approved' | 'custom';
+
+/** Structured values a resolution sets on the strategy. */
+export interface ResolutionValues {
+  instrument?: string;
+  direction?: 'long' | 'short' | 'both';
+  timeframe?: string;
+  windowStart?: string;
+  windowEnd?: string;
+  maxTrades?: number;
+  stopPoints?: number;
+  targetPoints?: number;
+  minRR?: number;
+  /** Minutes after 9:30 ET that define the opening / morning range. */
+  rangeMinutes?: number;
+  /** Chase protection: maximum distance beyond the breakout level at entry. */
+  maxExtensionPoints?: number;
+  riskDollars?: number;
+  riskPercent?: number;
+  contracts?: number;
+}
+
+export interface ResolveOption {
+  id: string;
+  label: string;
+  /** Example / what it means. */
+  detail: string;
+  /** Short trade-off (earlier vs later entry, more vs fewer signals…). */
+  tradeoff?: string;
+  /** The rule as it will read in the strategy. `{v}` is replaced by the trader's value. */
+  ruleText: string;
+  section: RuleSection | null;
+  values?: ResolutionValues;
+  /** Value the trader types (e.g. points); its unit and which value key it fills. */
+  input?: { label: string; unit: string; key: keyof ResolutionValues; placeholder: string; defaultValue?: number };
+  primitive?: import('./ruleset').Primitive;
+  confidence: ConfidenceLabel;
+}
+
+/** One rule of the strategy in the Resolve Missing Rules model. */
+export interface StrategyRuleItem {
+  id: string;
+  category: RuleCategory;
+  title: string;
+  /** The trader's words this item is about (subjective phrases, stated rules). */
+  originalText?: string;
+  /** The rule as it currently reads (stated / resolved). */
+  normalizedRule?: string;
+  status: ResolvableStatus;
+  source?: RuleSource;
+  confidence?: ConfidenceLabel;
+  required: boolean;
+  /** Critical risk rule (stop) — shown in red while missing. */
+  critical: boolean;
+  subjective: boolean;
+  resolved: boolean;
+  /** 1 (entry/setup ambiguity) … 10 (optional refinements). */
+  priority: number;
+  /** Why this rule matters for THIS strategy. */
+  why: string;
+  question: string;
+  options: ResolveOption[];
+  multiSelect: boolean;
+  aiRecommendation?: { optionIds: string[]; reasoning: string };
+  selectedOption?: string[];
+  customValue?: string;
+  testable: boolean;
+  /** DNA row this item belongs to. */
+  dnaKey: DnaKey;
+}
+
+/** The trader's explicit decision for one rule item. */
+export interface RuleResolution {
+  itemId: string;
+  category: RuleCategory;
+  optionIds: string[];
+  customValue?: string;
+  inputValue?: number;
+  source: 'ai_approved' | 'custom';
+  ruleText: string;
+  section: RuleSection | null;
+  values: ResolutionValues;
+  primitive?: import('./ruleset').Primitive;
+  /** Trader rule this resolution replaces (subjective phrases). */
+  replaces?: string;
+  resolvedAt: string;
+}
+
 export interface StructuredStrategy {
   version: 1;
   originalText: string;
@@ -287,6 +412,14 @@ export interface StructuredStrategy {
   uniqueness: UniquenessReport | null;
   /** Saved with the strategy so Practice / backtests use the trader's final rules. */
   testableRules?: import('./ruleset').TestableRuleSet;
+  /** Decisions made in Resolve Missing Rules (applied on top of the analysis). */
+  resolutions?: RuleResolution[];
+  /** Snapshot of the rule-item model at save time. */
+  ruleItems?: StrategyRuleItem[];
+  /** Definitions the trader resolved (e.g. the morning-range length). */
+  definitions?: { rangeMinutes?: number; riskDollars?: number; riskPercent?: number; contracts?: number };
+  /** Structured strategy handed to Historical Practice. */
+  practiceSpec?: import('./resolve').PracticeStrategySpec;
   analysisSource: 'ai' | 'local';
   analyzedAt: string;
 }

@@ -145,6 +145,22 @@ export const VAGUE_TERMS: VagueTerm[] = [
     confidence: 'D',
   },
   {
+    key: 'good_volume',
+    pattern: /(?:good|strong|big|high|heavy|decent|nice|real) volume|volume (?:is |looks )?(?:good|strong|high|big|heavy|there|picking up)/i,
+    issue: (t) => `"${t}" — "good" volume has no threshold.`,
+    suggest: (c) => `Volume of the ${tf(c)} signal candle at least 1.5× the average of the previous 20 candles`,
+    section: 'volume',
+    confidence: 'D',
+  },
+  {
+    key: 'trend_undefined',
+    pattern: /\b(?:in an? )?(?:up|down)[- ]?trend\b|\btrending (?:up|down|market)\b/i,
+    issue: (t) => `"${t}" is not defined — which swings or chart decide that the trend is up?`,
+    suggest: (c) => `Uptrend = at least 2 higher highs and 2 higher lows on the ${c.timeframe === '1h' ? '4-hour' : '15-minute'} chart, with the last pullback holding above the prior swing low (mirror for downtrends)`,
+    section: 'bias',
+    confidence: 'D',
+  },
+  {
     key: 'quality',
     pattern: /\b(nice|good|perfect|obvious|solid|beautiful|ideal|decent|proper)\b(?! (?:risk|reward|r:r|momentum))/i,
     issue: (t) => `"${t}" is a judgment call, not a rule.`,
@@ -182,6 +198,7 @@ function isDefinedElsewhere(key: string, text: string): boolean {
   if (key === 'pullback_undefined') return /\b\d+\s*-?\s*(ema|sma|ma)\b|\bvwap\b|fib|\d+(\.\d+)?%/i.test(text) && /\binto\b|\bto the\b/i.test(text);
   if (key === 'undefined_level') return /previous day|prior day|yesterday|overnight|\bPDH\b|\bPDL\b|\bONH\b|\bONL\b|vwap|opening range|\bORB\b|\bPOC\b|value area|swing (high|low)/i.test(text);
   if (key === 'wait_confirmation') return /close[sd]? (above|below|beyond|outside|back)|candle close|engulf/i.test(text);
+  if (key === 'trend_undefined') return /higher highs?|lower lows?|\b\d+\s*-?\s*(ema|sma|ma)\b|moving average|above (?:the )?(?:vwap|\d+)/i.test(text);
   if (key === 'divergence') return /\bRSI\s*\(?\d+|\d+\s*-?\s*period/i.test(text) && /swing|lookback|\d+ (bars|candles)/i.test(text);
   return false;
 }
@@ -198,7 +215,8 @@ export function findVagueTerms(fragment: string, fullText: string): VagueHit[] {
     const m = term.pattern.exec(fragment);
     if (!m) continue;
     if (term.key === 'momentum_strong' && seen.has('momentum_weakening')) continue;
-    if (term.key === 'quality' && seen.has('clean_breakout')) continue;
+    if (term.key === 'quality' && (seen.has('clean_breakout') || seen.has('good_volume'))) continue;
+    if (term.key === 'trend_undefined' && seen.has('strong_trend')) continue;
     if (term.key === 'feel' && seen.has('looks_directional')) continue;
     if (term.key === 'breakout_undefined' && seen.has('clean_breakout')) continue;
     if (isDefinedElsewhere(term.key, fullText)) continue;

@@ -25,7 +25,7 @@ import type {
  * without verified historical data.
  */
 
-type Base = Pick<StructuredStrategy, 'originalText' | 'instrument' | 'timeframes' | 'session' | 'tradingWindow' | 'direction' | 'directionSource' | 'stopPoints' | 'minRR' | 'maxTrades' | 'detectedStyle'>;
+type Base = Pick<StructuredStrategy, 'originalText' | 'instrument' | 'timeframes' | 'session' | 'tradingWindow' | 'direction' | 'directionSource' | 'stopPoints' | 'minRR' | 'maxTrades' | 'detectedStyle'> & Partial<Pick<StructuredStrategy, 'resolutions'>>;
 
 const ins = (text: string, confidence: ConfidenceLabel, basis?: string): Insight => ({ text, confidence, ...(basis ? { basis } : {}) });
 const uniqBy = (xs: Insight[]) => xs.filter((x, i) => xs.findIndex((y) => y.text === x.text) === i);
@@ -56,34 +56,46 @@ const DNA_LABELS: Record<DnaKey, string> = {
 
 const ORDER_FLOW_WORDS = /volume|delta|footprint|absorb|imbalance|order ?flow|tape|\bDOM\b|aggressive (buyers|sellers)/i;
 
+type DnaValue = DnaComponent['values'][number];
+
 export function buildDna(b: Base, rules: StrategyRule[]): DnaComponent[] {
-  const of = (...secs: RuleSection[]) => rules.filter((r) => secs.includes(r.section)).map((r) => ({ text: r.text, provenance: r.provenance }));
+  const val = (r: StrategyRule): DnaValue => ({ text: r.text, provenance: r.provenance, ...(r.origin ? { origin: r.origin } : {}), ...(r.definedBy ? { definedBy: r.definedBy } : {}) });
+  const of = (...secs: RuleSection[]) => rules.filter((r) => secs.includes(r.section)).map(val);
   const inText = (s: string) => new RegExp(`\\b${s}\\b`, 'i').test(b.originalText);
-  const comp = (key: DnaKey, values: { text: string; provenance: RuleProvenance }[]): DnaComponent => ({ key, label: DNA_LABELS[key], values: values.filter((v, i) => values.findIndex((w) => w.text === v.text) === i) });
-  const session: { text: string; provenance: RuleProvenance }[] = [];
+  // Structured fields set in Resolve Missing Rules carry their origin.
+  const resOrigin = (...cats: string[]) => {
+    const r = (b.resolutions ?? []).find((x) => cats.includes(x.category));
+    return r ? { provenance: (r.source === 'custom' ? 'trader' : 'suggested') as RuleProvenance, origin: r.source } : null;
+  };
+  const comp = (key: DnaKey, values: DnaValue[]): DnaComponent => ({ key, label: DNA_LABELS[key], values: values.filter((v, i) => values.findIndex((w) => w.text === v.text) === i) });
+  const session: DnaValue[] = [];
   if (b.session) session.push({ text: b.session, provenance: /new york|london|asia|overnight|\bNY\b|RTH/i.test(b.originalText) ? 'trader' : 'inferred' });
   if (b.tradingWindow.start || b.tradingWindow.end) {
-    session.push({ text: `${b.tradingWindow.start ? `from ${b.tradingWindow.start}` : ''}${b.tradingWindow.end ? ` until ${b.tradingWindow.end}` : ''} ET`.trim(), provenance: b.tradingWindow.provenance ?? 'trader' });
+    const win = resOrigin('timeWindow', 'timeCutoff');
+    session.push({ text: `${b.tradingWindow.start ? `from ${b.tradingWindow.start}` : ''}${b.tradingWindow.end ? ` until ${b.tradingWindow.end}` : ''} ET`.trim(), provenance: win?.provenance ?? b.tradingWindow.provenance ?? 'trader', ...(win ? { origin: win.origin } : {}) });
   }
   const bias = of('bias');
-  if (b.direction && !bias.some((x) => /^Direction:/.test(x.text))) bias.unshift({ text: b.direction === 'both' ? 'Both directions' : `${b.direction === 'long' ? 'Long' : 'Short'} only`, provenance: b.directionSource ?? 'inferred' });
-  const volume = [...of('volume'), ...rules.filter((r) => r.section !== 'volume' && ORDER_FLOW_WORDS.test(r.text)).map((r) => ({ text: r.text, provenance: r.provenance }))];
+  const dirRes = resOrigin('direction');
+  if (b.direction && !bias.some((x) => /^Direction:/.test(x.text))) bias.unshift({ text: b.direction === 'both' ? 'Both directions' : `${b.direction === 'long' ? 'Long' : 'Short'} only`, provenance: dirRes?.provenance ?? b.directionSource ?? 'inferred', ...(dirRes ? { origin: dirRes.origin } : {}) });
+  const volume = [...of('volume'), ...rules.filter((r) => r.section !== 'volume' && ORDER_FLOW_WORDS.test(r.text)).map(val)];
+  const instRes = resOrigin('instrument');
+  const tfRes = resOrigin('timeframe');
   return [
-    comp('market', b.instrument.map((i) => ({ text: i, provenance: inText(i) ? 'trader' : 'inferred' }))),
-    comp('timeframe', b.timeframes.map((t) => ({ text: t, provenance: 'trader' as const }))),
+    comp('market', b.instrument.map((i) => (inText(i) ? { text: i, provenance: 'trader' as const } : instRes ? { text: i, ...instRes } : { text: i, provenance: 'inferred' as const }))),
+    comp('timeframe', b.timeframes.map((t) => (tfRes && !new RegExp(`\\b${t.replace(/m$/, '')}`).test(b.originalText) ? { text: t, ...tfRes } : { text: t, provenance: 'trader' as const }))),
     comp('setup', of('setup')),
     comp('context', of('context', 'filter')),
     comp('bias', bias),
     comp('entry', of('entry')),
     comp('confirmation', of('confirmation')),
     comp('invalidation', of('invalidation')),
-    comp('stop', [...of('stop'), ...(b.stopPoints != null && !of('stop').length ? [{ text: `${b.stopPoints} points`, provenance: 'trader' as const }] : [])]),
+    comp('stop', [...of('stop'), ...(b.stopPoints != null && !of('stop').length ? [{ text: `${b.stopPoints} points`, provenance: 'trader' as const }] : []), ...of('risk')]),
     comp('target', of('target')),
     comp('management', of('management')),
     comp('session', session),
     comp('volatility', of('volatility')),
     comp('volume', volume),
-    comp('noTrade', of('noTrade')),
+    comp('noTrade', [...of('noTrade'), ...of('maxTrades'), ...(b.maxTrades != null && !of('maxTrades').length ? [{ text: `Maximum ${b.maxTrades} trade${b.maxTrades === 1 ? '' : 's'} per day`, provenance: 'trader' as const }] : [])]),
   ];
 }
 

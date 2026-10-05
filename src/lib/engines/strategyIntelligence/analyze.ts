@@ -467,7 +467,8 @@ function nameFor(i: Interpretation, concepts: Concept[]): string {
   const parts: string[] = [];
   const ids = concepts.map((c) => c.id);
   const c = i.context;
-  if (ids.includes('orb')) parts.push(`${c.orbMinutes ? `${c.orbMinutes}M ` : ''}ORB${ids.includes('retest') ? ' Retest' : ' Breakout'}`);
+  if (ids.includes('morning_range')) parts.push(conceptById('morning_range')!.name!(c));
+  else if (ids.includes('orb')) parts.push(`${c.orbMinutes ? `${c.orbMinutes}M ` : ''}ORB${ids.includes('retest') ? ' Retest' : ' Breakout'}`);
   else if (ids.includes('liquidity_sweep')) parts.push(`${c.level ? `${abbreviateLevel(c.level)} ` : ''}Sweep${ids.includes('reversal') ? ' Reversal' : ''}`);
   else if (ids.includes('order_flow') || ids.includes('absorption')) parts.push(ids.includes('absorption') ? `Absorption${/support/i.test(i.originalText) ? ' at Support' : /resistance/i.test(i.originalText) ? ' at Resistance' : ''}` : 'Order Flow');
   else if (ids.includes('range') && ids.includes('mean_reversion') && !ids.includes('vwap')) parts.push('Range Fade');
@@ -479,6 +480,8 @@ function nameFor(i: Interpretation, concepts: Concept[]): string {
     parts.push(res && !sup ? 'Resistance Breakout' : sup && !res ? 'Support Breakdown' : 'S/R Breakout');
   }
   else if (ids.includes('scalping')) parts.push(ids.includes('momentum') ? 'Momentum Scalp' : 'Scalp');
+  else if (ids.includes('pullback') && /\b(up|down)[- ]?trend/i.test(i.originalText) && !ids.includes('moving_average')) parts.push(/down[- ]?trend/i.test(i.originalText) ? 'Downtrend Pullback' : 'Uptrend Pullback');
+  else if (ids.includes('vwap') && ids.includes('reversal') && /\breject/i.test(i.originalText)) parts.push('VWAP Rejection');
   else if (ids.includes('moving_average') && (ids.includes('pullback') || ids.includes('trend_continuation'))) parts.push(`${c.emaPeriod ? `${c.emaPeriod} ${c.emaType ?? 'EMA'}` : 'MA'} ${ids.includes('pullback') ? 'Pullback' : 'Trend'}`);
   else {
     const named = concepts.filter((x) => x.name).slice(0, 2);

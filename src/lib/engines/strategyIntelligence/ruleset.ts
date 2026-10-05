@@ -45,6 +45,10 @@ export type Primitive =
   | { type: 'directional_candles'; count: number }
   /** The signal candle closes in the trade direction (green for longs, red for shorts). */
   | { type: 'candle_dir' }
+  /** Chase protection: entry no further than `points` (or `atrMult` × ATR) beyond the level in the trade direction. */
+  | { type: 'max_extension'; level: LevelRef; points?: number; atrMult?: number }
+  /** Price merely trades beyond the level (no close required). */
+  | { type: 'trades_beyond'; level: LevelRef }
   /** Price gave back more than pct% of the move of the last N candles. */
   | { type: 'retrace_pct'; pct: number; bars: number }
   /** Price pulled back against the trade within the last few candles and the current candle resumes the move. */
@@ -69,7 +73,8 @@ export interface RuleCondition {
 
 export interface StopSpec {
   text: string;
-  kind: 'fixed_points' | 'beyond_level' | 'beyond_swing' | 'beyond_signal_bar' | 'unspecified';
+  kind: 'fixed_points' | 'beyond_level' | 'beyond_swing' | 'beyond_signal_bar' | 'atr' | 'unspecified';
+  atrMult?: number;
   points?: number;
   level?: LevelRef;
   source: RuleProvenance | 'practice_default';
@@ -143,6 +148,10 @@ function primaryLevelOf(r: RuleSetInput): LevelRef | null {
   const ids = new Set(r.conceptIds);
   const fade = r.conceptIds.some((id) => FADE_IDS.includes(id)) && !ids.has('orb') && !ids.has('breakout');
   if (ids.has('orb')) return { kind: 'edge', of: 'or', mode: 'breakout', minutes: r.orbMinutes ?? 15 };
+  if (ids.has('morning_range')) {
+    const low = /morning low/i.test(r.originalText) && !/morning high/i.test(r.originalText);
+    return low ? { kind: 'orl', minutes: r.orbMinutes ?? 60 } : { kind: 'orh', minutes: r.orbMinutes ?? 60 };
+  }
   const lvl = r.level?.toLowerCase() ?? '';
   if (/previous day's low/.test(lvl)) return { kind: 'pdl' };
   if (/previous day's high/.test(lvl)) return { kind: 'pdh' };
@@ -156,6 +165,8 @@ function primaryLevelOf(r: RuleSetInput): LevelRef | null {
 function levelIn(text: string, r: RuleSetInput, primary: LevelRef | null): LevelRef | null {
   if (/previous day'?s? high|prior day'?s? high|yesterday'?s? high|\bPDH\b/i.test(text)) return { kind: 'pdh' };
   if (/previous day'?s? low|prior day'?s? low|yesterday'?s? low|\bPDL\b/i.test(text)) return { kind: 'pdl' };
+  if (/morning high|morning range high|high of the morning/i.test(text)) return { kind: 'orh', minutes: r.orbMinutes ?? 60 };
+  if (/morning low|morning range low|low of the morning/i.test(text)) return { kind: 'orl', minutes: r.orbMinutes ?? 60 };
   if (/opening range high|\bORH\b/i.test(text)) return { kind: 'orh', minutes: r.orbMinutes ?? 15 };
   if (/opening range low|\bORL\b/i.test(text)) return { kind: 'orl', minutes: r.orbMinutes ?? 15 };
   if (/opening range|\bORB\b/i.test(text)) return { kind: 'edge', of: 'or', mode: 'breakout', minutes: r.orbMinutes ?? 15 };
@@ -248,6 +259,8 @@ function stopSpecOf(r: RuleSetInput, primary: LevelRef | null): StopSpec {
     const t = stop.text;
     const pts = /(\d+(?:\.\d+)?)\s*(?:points?|pts?|handles?)/i.exec(t);
     if (pts) return { text: t, kind: 'fixed_points', points: Number(pts[1]), source: stop.provenance };
+    const atr = /(\d+(?:\.\d+)?)\s*[×x]\s*(?:the\s+)?(?:\d+-period\s+)?ATR/i.exec(t);
+    if (atr) return { text: t, kind: 'atr', atrMult: Number(atr[1]), source: stop.provenance };
     const lvl = levelIn(t, r, primary);
     if (/sweep|reversal|retest|signal|absorption|stretch|divergence|swing|pullback|higher low|lower high/i.test(t)) return { text: t, kind: 'beyond_swing', source: stop.provenance };
     if (lvl || /level|range|zone/i.test(t)) return { text: t, kind: 'beyond_level', level: lvl ?? primary ?? undefined, source: stop.provenance };
@@ -286,14 +299,20 @@ const fmt = (hhmm: string) => {
 
 export function buildRuleSet(r: RuleSetInput): TestableRuleSet {
   const primary = primaryLevelOf(r);
-  const isDefinition = (x: StrategyRule) => (x.provenance === 'inferred' && / = |^Signals are read/.test(x.text)) || /^Direction:|^Enter after:/.test(x.text);
+  // Trader wording that a resolution defined is represented by that resolution's condition.
+  const isDefinition = (x: StrategyRule) => !!x.definedBy || (x.provenance === 'inferred' && / = |^Signals are read/.test(x.text)) || /^Direction:|^Enter after:/.test(x.text) || (!!x.ruleItemId && /^[A-Z][\w\s'’/-]{2,40} = /.test(x.text));
   // "Trade a 15-minute ORB on ES", "Watch footprint charts" describe the plan; they are not conditions.
-  const isDescription = (x: StrategyRule) => x.provenance === 'trader' && (x.section === 'context' || x.section === 'setup') && /^(?:trade|trades|scalp|watch|use|mark|look at)\b/i.test(x.text) && !/\b(?:when|if|only|after|wait|trend)\b/i.test(x.text);
+  const isDescription = (x: StrategyRule) =>
+    x.provenance === 'trader' &&
+    (((x.section === 'context' || x.section === 'setup') && /^(?:trade|trades|scalp|watch|use|mark|look at)\b/i.test(x.text) && !/\b(?:when|if|only|after|wait|trend)\b/i.test(x.text)) ||
+      // "Buy ES" / "Short NQ" state direction and market, not a condition.
+      /^(?:buy|sell|short|long|go long|go short)\s+[A-Z0-9]{1,4}$/i.test(x.text));
   const definitions = r.rules.filter((x) => ROLE_OF[x.section] && (isDefinition(x) || isDescription(x)) && !/^Direction:|^Enter after:/.test(x.text)).map((x) => x.text);
   const conditions: RuleCondition[] = r.rules
     .filter((x) => ROLE_OF[x.section] && !isDefinition(x) && !isDescription(x))
     .map((x) => {
-      const primitive = parsePrimitive(x.text, r, primary);
+      // A resolved rule carries its structured condition; otherwise parse the wording.
+      const primitive = x.primitive ?? parsePrimitive(x.text, r, primary);
       const appliesTo = sideOf(x.text);
       return { id: x.id, role: ROLE_OF[x.section]!, text: x.text, source: x.provenance, confidence: confidenceOf(x), primitive, evaluable: !!primitive, ...(appliesTo ? { appliesTo } : {}) };
     });
@@ -555,6 +574,19 @@ export function evaluatePrimitive(p: Primitive, s: EvalState): boolean | null {
       if (hi - lo <= 0) return null;
       return long ? (hi - b.close) / (hi - lo) > p.pct / 100 : (b.close - lo) / (hi - lo) > p.pct / 100;
     }
+    case 'max_extension': {
+      const L = levelValue(p.level, s);
+      if (L == null) return null;
+      const limit = p.points ?? (p.atrMult != null ? (s.input.context.atr ?? s.avgRange) * p.atrMult : null);
+      if (limit == null) return null;
+      const ext = long ? b.close - L : L - b.close;
+      return ext >= 0 && ext <= limit;
+    }
+    case 'trades_beyond': {
+      const L = levelValue(p.level, s);
+      if (L == null) return null;
+      return long ? b.high > L : b.low < L;
+    }
     case 'candle_dir':
       return long ? b.close > b.open : b.close < b.open;
     case 'pullback_resume': {
@@ -629,6 +661,9 @@ export function compileRuleSet(rs: TestableRuleSet, strategyId: string): Compile
       } else if (rs.stop.kind === 'beyond_swing') {
         const last = bars.slice(Math.max(0, i - 4), i + 1);
         stop = dir === 'long' ? Math.min(...last.map((x) => x.low)) - tick : Math.max(...last.map((x) => x.high)) + tick;
+      } else if (rs.stop.kind === 'atr' && rs.stop.atrMult) {
+        const atr = input.context.atr ?? avgRange;
+        stop = entry - sgn * atr * rs.stop.atrMult;
       } else stop = dir === 'long' ? b.low - tick : b.high + tick;
       stop = roundToTick(input.instrument, stop);
       const risk = (entry - stop) * sgn;

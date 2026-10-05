@@ -150,7 +150,7 @@ function detectStyles(text: string): DetectedStyle[] {
 
 // ───────────────────────────── Fragments → rules ─────────────────────────────
 
-const AND_SPLIT = /\s+(?=and\s+(?:then\s+|I\s+|it\s+|price\s+|wait|enter|buy|sell|short|go\s|take|place|put|use|exit|move|quickly|look|only|never|don'?t|no\s|confirm|retest|close|closes|stop|target|max|risk|momentum|volume|aggressive|the\s+(?:candle|market|price|level)))/i;
+const AND_SPLIT = /\s+(?=and\s+(?:then\s+|I\s+|it\s+|price\s+|wait|enter|buy|sell|short|go\s|take|place|put|use|exit|move|quickly|look|only|never|don'?t|no\s|confirm|retest|close|closes|stop|target|max|risk|momentum|volume|aggressive|breaks?\b|rejects?\b|holds?\b|the\s+(?:candle|market|price|level))|and\s+(?:a\s+)?\d+(?:\.\d+)?\s*-?\s*(?:point|pt|tick|handle)s?\s+(?:target|profit|stop))/i;
 const CONNECTOR_SPLIT = /\s+(?=(?:then|but|when|whenever|once|after|if|unless|until|as soon as)\b)|\s+(?=with an? \d+(?:\.\d+)?\s*-?\s*(?:point|pt|tick|handle)s?\s+stop)/i;
 
 export function fragmentsOf(text: string): string[] {
@@ -175,7 +175,7 @@ const TIME_ONLY = new RegExp(String.raw`^(?:and |then )?(?:only )?(?:after|from|
 
 const SECTION_CUES: [RuleSection, RegExp][] = [
   ['maxTrades', /\b(max(?:imum)?|at most|only|up to|no more than)\s+(?:of\s+)?(\d+|one|two|three|four|five)\s+trades?\b|\b(\d+|one|two|three)\s+trades?\s+(?:per|a|each)\s+(?:day|session)\b|one and done/i],
-  ['noTrade', /\b(?:don'?t|do not|never|no|avoid|skip|stay (?:out|flat)|sit out|not)\b[^.]*\b(?:trade|trades|trading|enter|entries|take|chop|news|fomc|cpi)\b|\bavoid\b|\bskip\b/i],
+  ['noTrade', /\b(?:don'?t|do not|never|no|avoid|skip|stay (?:out|flat)|sit out|not)\b[^.]*\b(?:trade|trades|trading|enter|entries|take|chop|chase|chasing|news|fomc|cpi)\b|\bavoid\b|\bskip\b|\bno chasing\b/i],
   ['management', /break ?even|\bBE\b|\btrail(?:ing)?\b|\bpartials?\b|scale (?:out|in)|move (?:my |the )?stop|take (?:some|half) off|\brunner\b/i],
   ['stop', /\bstop(?:s|\s*loss|-loss)?\b(?!\s*(?:hunt|run|trading))|\bSL\b/i],
   ['target', /\btarget|\bprofit\b|take[- ]profit|\bTP\b|profit target|\bexit\b|\d+(?:\.\d+)?\s*R\b|1\s*:\s*\d|\d\s*:\s*1|\bR:R\b|risk.?(?:to.?)?reward/i],
@@ -247,6 +247,8 @@ export function makeRule(section: RuleSection, text: string, provenance: RulePro
 }
 
 function levelIn(text: string): string | null {
+  const morning = /morning (high|low|range)/i.exec(text);
+  if (morning) return `morning ${morning[1].toLowerCase()}`;
   const m = /(previous|prior|yesterday'?s?)\s*day'?s?\s*(high|low)|yesterday'?s?\s*(high|low)|\b(PDH|PDL|ONH|ONL)\b|overnight (high|low)|opening range (high|low)|\bvwap\b/i.exec(text);
   if (!m) return null;
   if (m[4]) return m[4].toUpperCase() === 'PDH' ? "previous day's high" : m[4].toUpperCase() === 'PDL' ? "previous day's low" : m[4].toUpperCase() === 'ONH' ? 'overnight high' : 'overnight low';
@@ -295,7 +297,9 @@ export function interpretStrategy(input: string): Interpretation {
     }
     // Pure instrument / style statements ("I trade ES") carry no rule.
     if (section === 'context' && /^(?:trade|trades)\s+(?:on\s+)?[A-Z0-9]{1,4}$/i.test(cleaned)) continue;
-    rules.push(makeRule(section, cleaned, 'trader', f, text));
+    // "It looks strong" → "ES looks strong": quote the trader's subject, not a pronoun.
+    const subject = inst.list[0] && /^It\b/.test(cleaned) ? cleaned.replace(/^It\b/, inst.list[0]) : cleaned;
+    rules.push(makeRule(section, subject, 'trader', f, text));
   }
 
   const maxM = /\b(?:max(?:imum)?|at most|up to|no more than|only)\s+(?:of\s+)?(\d+|one|two|three|four|five)\s+trades?\b/i.exec(text) ?? /\b(\d+|one|two|three)\s+trades?\s+(?:per|a|each)\s+(?:day|session)\b/i.exec(text);

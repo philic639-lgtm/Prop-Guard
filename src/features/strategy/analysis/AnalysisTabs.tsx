@@ -9,11 +9,13 @@ import {
   type Insight,
   type RegimeAssessment,
   type RiskLevel,
+  type StrategyRuleItem,
   type StructuredStrategy,
   type TestableRuleSet,
 } from '@/lib/engines/strategyIntelligence';
 
 import { BehaviorCard, ConfidenceBadge, NeedsWorkCard, SectionTitle, StrongCard } from './AnalysisCards';
+import { originBadge, ResolveList } from './ResolveRules';
 
 export type AnalyzerTab = 'dna' | 'weaknesses' | 'improved' | 'why' | 'rules' | 'best' | 'avoid' | 'practice';
 
@@ -76,37 +78,78 @@ function InsightList({ title, icon, items, tone = 'accent', empty }: { title: st
 
 // ───────────────────────────── Strategy DNA ─────────────────────────────
 
-export function DnaTab({ a }: { a: StructuredStrategy }) {
+function ResolveChip({ label, tone, onPress }: { label: string; tone: 'warning' | 'danger'; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={6} style={[styles.resolveChip, { borderColor: tone === 'danger' ? colors.danger : colors.warning }]}>
+      <Ionicons name="construct-outline" size={12} color={tone === 'danger' ? colors.danger : colors.warning} />
+      <AppText variant="caption" style={{ color: tone === 'danger' ? colors.danger : colors.warning, fontWeight: '600' }}>
+        Resolve
+      </AppText>
+    </Pressable>
+  );
+}
+
+/**
+ * Strategy DNA. `a` is the RESOLVED view (trader rules + approved resolutions);
+ * `items` are the rule items still to define — every "Not stated" or subjective
+ * row with an open item gets a [Resolve] action.
+ */
+export function DnaTab({ a, items = [], onResolve }: { a: StructuredStrategy; items?: StrategyRuleItem[]; onResolve?: (item: StrategyRuleItem) => void }) {
   const r = a.reasoning;
+  const open = items.filter((i) => !i.resolved);
   return (
     <>
       <Card>
         <SectionTitle icon="git-branch-outline">Strategy DNA</SectionTitle>
         <AppText variant="caption" style={{ marginTop: 2 }}>
-          Your plan broken into its parts, in your own words. “Not stated” parts are gaps, not things Prop Guard filled in.
+          Your plan broken into its parts, in your own words. “Not stated” parts are gaps, not things Prop Guard filled in — tap Resolve to define one yourself.
         </AppText>
-        {a.dna.map((d, i) => (
-          <View key={d.key} style={[styles.dnaRow, i > 0 && styles.border]}>
-            <AppText variant="label" style={styles.dnaLabel}>
-              {d.label}
-            </AppText>
-            <View style={styles.flex}>
-              {d.values.length ? (
-                d.values.map((v) => (
-                  <View key={v.text} style={styles.dnaValue}>
-                    <AppText variant="body">{v.text}</AppText>
-                    <StatusBadge label={provenanceLabel(v.provenance)} tone={PROV_TONE[v.provenance]} size="sm" />
+        {a.dna.map((d, i) => {
+          const rowItems = open.filter((x) => x.dnaKey === d.key);
+          const gap = rowItems.find((x) => !x.subjective) ?? rowItems[0];
+          return (
+            <View key={d.key} style={[styles.dnaRow, i > 0 && styles.border]}>
+              <AppText variant="label" style={styles.dnaLabel}>
+                {d.label}
+              </AppText>
+              <View style={styles.flex}>
+                {d.values.map((v) => {
+                  const subjective = open.find((x) => x.subjective && x.originalText && v.provenance === 'trader' && v.text.toLowerCase().includes(x.originalText.toLowerCase()));
+                  const badge = originBadge(v.provenance, v.origin);
+                  return (
+                    <View key={v.text} style={styles.dnaValue}>
+                      <AppText variant="body">{v.text}</AppText>
+                      <View style={styles.wrap}>
+                        <StatusBadge label={v.origin ? badge.label : provenanceLabel(v.provenance)} tone={v.origin ? badge.tone : PROV_TONE[v.provenance]} size="sm" />
+                        {v.definedBy ? <StatusBadge label="Resolved ✓" tone="positive" size="sm" /> : null}
+                        {subjective ? <StatusBadge label="Subjective" tone="warning" size="sm" /> : null}
+                        {subjective && onResolve ? <ResolveChip label="Resolve" tone="warning" onPress={() => onResolve(subjective)} /> : null}
+                      </View>
+                      {v.definedBy ? <AppText variant="caption">Defined as: {v.definedBy}</AppText> : null}
+                    </View>
+                  );
+                })}
+                {!d.values.length ? (
+                  <View style={styles.wrap}>
+                    <AppText variant="body" tone={gap?.critical ? 'danger' : 'tertiary'}>
+                      Not stated
+                    </AppText>
+                    {gap && onResolve ? <ResolveChip label="Resolve" tone={gap.critical ? 'danger' : 'warning'} onPress={() => onResolve(gap)} /> : null}
                   </View>
-                ))
-              ) : (
-                <AppText variant="body" tone="tertiary">
-                  Not stated
-                </AppText>
-              )}
+                ) : gap && !gap.subjective && onResolve && gap.required ? (
+                  <View style={styles.wrap}>
+                    <AppText variant="caption" tone="warning">
+                      {gap.title} not defined
+                    </AppText>
+                    <ResolveChip label="Resolve" tone={gap.critical ? 'danger' : 'warning'} onPress={() => onResolve(gap)} />
+                  </View>
+                ) : null}
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
       </Card>
+      {items.length && onResolve ? <ResolveList items={items} onOpen={onResolve} /> : null}
       <Card>
         <SectionTitle icon="bulb-outline">The idea behind it</SectionTitle>
         <AppText variant="caption" style={{ marginTop: 2 }}>
@@ -437,6 +480,7 @@ const styles = StyleSheet.create({
   dnaRow: { flexDirection: 'row', gap: spacing.md, paddingVertical: spacing.sm },
   dnaLabel: { width: 96, fontSize: 10 },
   dnaValue: { gap: 2, alignItems: 'flex-start', marginBottom: spacing.sm },
+  resolveChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill, borderWidth: 1 },
   cmpHead: { flexDirection: 'row', gap: spacing.md },
   cmpRow: { flexDirection: 'row', gap: spacing.md, marginTop: 4 },
   ifLine: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', marginTop: 4 },
