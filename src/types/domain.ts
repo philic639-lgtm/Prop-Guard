@@ -291,6 +291,8 @@ export interface Trade {
   externalId?: string | null;
   /** Strategy name at the time of the trade (kept if the strategy is later renamed or deleted). */
   strategyName?: string | null;
+  /** AI Setup Check this trade was taken from (QUALIFIED / WAIT / STAND DOWN analytics). */
+  setupCheckId?: string | null;
 }
 
 export type PendingOrigin = 'analyze' | 'calculator';
@@ -340,6 +342,8 @@ export interface PendingTrade {
   origin: PendingOrigin;
   status: PendingStatus;
   tradeId: string | null;
+  /** AI Setup Check the trade was planned from. */
+  setupCheckId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -494,4 +498,50 @@ export interface UserPreferences {
   notifications: NotificationPrefs;
   tradingProfile: TradingProfile;
   onboarded: boolean;
+}
+
+// ───────────────────────────── AI Setup Check ─────────────────────────────
+
+
+/**
+ * A saved Setup Check: what a chart screenshot showed against the trader's
+ * SAVED rules at that moment. The decision is computed by the app
+ * (`setupValidation`), never by the model.
+ */
+export interface SetupCheck {
+  id: string;
+  version: number;
+  createdAt: string;
+  accountId: string | null;
+  strategyId: string;
+  strategyName: string;
+  instrument: string;
+  timeframe: string | null;
+  direction: 'long' | 'short' | 'unsure';
+  decision: import('@/lib/engines/setupValidation/types').SetupDecision;
+  score: number | null;
+  grade: import('@/lib/engines/setupValidation/types').Grade | null;
+  gradeLabel: string;
+  why: string;
+  next: string[];
+  requiredTotal: number;
+  requiredPassed: number;
+  /** Rule-by-rule results (AI evidence for visual rules, app evidence for the rest). */
+  criteria: import('@/lib/engines/setupValidation/types').CriterionResult[];
+  chart: import('@/lib/engines/setupValidation/types').VisionOutput['chart'];
+  risk: import('@/lib/engines/setupValidation/types').RiskNumbers;
+  imageQuality: { score: number; issues: string[] };
+  /** Overall evidence confidence 0–100. */
+  evidenceConfidence: number;
+  summary: string;
+  notes: string;
+  /** Local image uri (this device) and private storage path (cloud). */
+  screenshotUri: string | null;
+  screenshotPath: string | null;
+  /** 'mock' = development / demo analysis, never shown as a real chart reading. */
+  provider: 'ai' | 'mock';
+  model: string | null;
+  /** Trade taken from this check (linked when the trade is opened or journaled). */
+  tradeId: string | null;
+  saved: boolean;
 }

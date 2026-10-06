@@ -24,6 +24,7 @@ import {
   VerdictBanner,
 } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
+import { DECISION_UI } from '@/features/setupCheck/SetupCheckResult';
 import { useStrategy, useTrade } from '@/hooks/useAppData';
 import { OUTCOME_LABEL, strategySourceLabel, tradeConditions, tradeOutcome } from '@/lib/engines';
 import { pickScreenshot } from '@/services/screenshotService';
@@ -56,6 +57,7 @@ const RULE_LABELS: Record<string, string> = {
 export default function TradeDetail() {
   const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
   const trade = useTrade(id);
+  const setupCheck = useAppStore((s) => (trade?.setupCheckId ? (s.setupChecks.find((c) => c.id === trade.setupCheckId) ?? null) : null));
   const strategy = useStrategy(trade?.strategyId);
   const events = useAppStore((s) => s.events);
   const journalTrade = useAppStore((s) => s.journalTrade);
@@ -262,6 +264,19 @@ export default function TradeDetail() {
         </Card>
       ) : null}
 
+      {setupCheck ? (
+        <>
+          <SectionHeader title="Setup check" />
+          <Card onPress={() => router.push({ pathname: '/setup-check/[id]', params: { id: setupCheck.id } })}>
+            <AppText variant="bodyStrong">
+              {DECISION_UI[setupCheck.decision].emoji} {DECISION_UI[setupCheck.decision].title} · {setupCheck.score == null ? 'score —' : `${setupCheck.score}/100`}
+            </AppText>
+            <AppText variant="caption">
+              {setupCheck.decision === 'QUALIFIED' ? 'Taken from a setup that met your saved rules.' : 'Taken although the setup check said ' + DECISION_UI[setupCheck.decision].title + '.'} Tap to review the rule check.
+            </AppText>
+          </Card>
+        </>
+      ) : null}
       <SectionHeader title="Screenshot" />
       {trade.screenshotUri ? (
         <Image source={{ uri: trade.screenshotUri }} style={styles.shot} contentFit="contain" accessibilityLabel="Trade screenshot" />

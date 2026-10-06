@@ -13,6 +13,7 @@ import type {
   AppAlert,
   PendingTrade,
   PracticeRun,
+  SetupCheck,
   TradePlan,
   DisciplineEvent,
   Emotion,
@@ -88,6 +89,11 @@ export interface AppState extends AppData {
   addPracticeAttempt: (attempt: PracticeAttempt) => void;
   savePracticeLesson: (lesson: PracticeLesson) => void;
   deletePracticeLesson: (id: string) => void;
+  /** Save (or update) an AI Setup Check. */
+  saveSetupCheck: (check: SetupCheck) => void;
+  /** Connect a Setup Check to the trade taken from it (both directions). */
+  linkSetupCheck: (checkId: string, tradeId: string) => void;
+  deleteSetupCheck: (id: string) => void;
   pushAlert: (alert: Omit<AppAlert, 'id' | 'at' | 'read'> & { at?: string }) => void;
   markAlertsRead: () => void;
   /** Record an already-closed trade (manual or screenshot journaling). Updates balance. */
@@ -378,6 +384,30 @@ export const useAppStore = create<AppState>()(
         syncService.remove('practice_lessons', id);
       },
 
+      saveSetupCheck: (check) => {
+        const saved = { ...check, saved: true };
+        set((s) => ({ setupChecks: [saved, ...s.setupChecks.filter((c) => c.id !== check.id)].slice(0, 500) }));
+        syncService.upsertSetupCheck(saved);
+      },
+
+      linkSetupCheck: (checkId, tradeId) => {
+        const check = get().setupChecks.find((c) => c.id === checkId);
+        const trade = get().trades.find((t) => t.id === tradeId);
+        if (!check) return;
+        const linked = { ...check, tradeId };
+        set((s) => ({
+          setupChecks: s.setupChecks.map((c) => (c.id === checkId ? linked : c)),
+          trades: s.trades.map((t) => (t.id === tradeId ? { ...t, setupCheckId: checkId } : t)),
+        }));
+        syncService.upsertSetupCheck(linked);
+        if (trade) syncService.upsertTrade({ ...trade, setupCheckId: checkId });
+      },
+
+      deleteSetupCheck: (id) => {
+        set((s) => ({ setupChecks: s.setupChecks.filter((c) => c.id !== id), trades: s.trades.map((t) => (t.setupCheckId === id ? { ...t, setupCheckId: null } : t)) }));
+        syncService.remove('setup_checks', id);
+      },
+
       addPracticeRun: (run) => {
         set((s) => ({ practiceRuns: [run, ...s.practiceRuns].slice(0, 100) }));
         syncService.insertPracticeRun(run);
@@ -428,7 +458,8 @@ export const useAppStore = create<AppState>()(
       completePending: (pendingId, trade) => {
         const pending = get().pendingTrades.find((p) => p.id === pendingId);
         if (!pending || pending.status === 'completed') return;
-        get().addJournalTrade(trade);
+        get().addJournalTrade(pending.setupCheckId ? { ...trade, setupCheckId: pending.setupCheckId } : trade);
+        if (pending.setupCheckId) get().linkSetupCheck(pending.setupCheckId, trade.id);
         const base = { accountId: trade.accountId, tradeId: trade.id, sessionId: trade.sessionId, at: trade.openedAt };
         if (pending.ruleEvents.length === 0 && pending.setupGrade) {
           get().recordEvent({ ...base, type: 'RULE_FOLLOWED', category: 'strategy', detail: 'Trade taken as checked — all rules followed.' });
@@ -461,7 +492,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'prop-guard-store',
-      version: 4,
+      version: 5,
       migrate: (persisted, version) => {
         const st = (persisted ?? {}) as Partial<AppState>;
         if (version < 3) {
@@ -472,6 +503,7 @@ export const useAppStore = create<AppState>()(
             practiceRuns: st.practiceRuns ?? [],
             practiceAttempts: st.practiceAttempts ?? [],
             practiceLessons: st.practiceLessons ?? [],
+            setupChecks: st.setupChecks ?? [],
             alerts: st.alerts ?? [],
             preferences: {
               ...DEFAULT_PREFERENCES,
@@ -482,7 +514,8 @@ export const useAppStore = create<AppState>()(
             },
           } as AppState;
         }
-        if (version < 4) return { ...st, pendingTrades: st.pendingTrades ?? [] } as AppState;
+        if (version < 4) return { ...st, pendingTrades: st.pendingTrades ?? [], setupChecks: st.setupChecks ?? [] } as AppState;
+        if (version < 5) return { ...st, setupChecks: st.setupChecks ?? [] } as AppState;
         return st as AppState;
       },
       storage: createJSONStorage(() => AsyncStorage),
@@ -501,6 +534,7 @@ export const useAppStore = create<AppState>()(
         practiceRuns: s.practiceRuns,
         practiceAttempts: s.practiceAttempts,
         practiceLessons: s.practiceLessons,
+        setupChecks: s.setupChecks,
         alerts: s.alerts,
         recentTemplateIds: s.recentTemplateIds,
         mode: s.mode,

@@ -2,6 +2,7 @@ import type {
   Account,
   PendingTrade,
   PracticeRun,
+  SetupCheck,
   TradePlan,
   ChecklistItem,
   DisciplineEvent,
@@ -210,6 +211,7 @@ export function tradeToRows(t: Trade, userId: string) {
       pending_id: t.pendingId ?? null,
       external_id: t.externalId ?? null,
       strategy_name: t.strategyName ?? null,
+      setup_check_id: t.setupCheckId ?? null,
     },
     checklist: t.checklist.map((c) => ({ trade_id: t.id, item_key: c.itemId, user_id: userId, label: c.label, value: c.value })),
     journal: {
@@ -268,6 +270,7 @@ export function rowsToTrade(r: Row, checklist: Row[], journal: Row | undefined):
     ...(r.pending_id != null ? { pendingId: str(r.pending_id) } : {}),
     ...(r.external_id != null ? { externalId: str(r.external_id) } : {}),
     ...(r.strategy_name != null ? { strategyName: str(r.strategy_name) } : {}),
+    ...(r.setup_check_id != null ? { setupCheckId: str(r.setup_check_id) } : {}),
   };
 }
 
@@ -302,6 +305,7 @@ export function pendingToRow(p: PendingTrade, userId: string) {
     origin: p.origin,
     status: p.status,
     trade_id: p.tradeId,
+    setup_check_id: p.setupCheckId ?? null,
     created_at: p.createdAt,
     updated_at: p.updatedAt,
   };
@@ -334,6 +338,7 @@ export function rowToPending(r: Row): PendingTrade {
     origin: r.origin === 'calculator' ? 'calculator' : 'analyze',
     status: (r.status as PendingTrade['status']) ?? 'pending',
     tradeId: (r.trade_id as string | null) ?? null,
+    ...(r.setup_check_id != null ? { setupCheckId: str(r.setup_check_id) } : {}),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
   };
@@ -585,5 +590,77 @@ export function rowToPracticeLesson(r: Row): PracticeLesson {
     grade: (r.grade as PracticeLesson['grade']) ?? 'D',
     lesson: str(r.lesson),
     createdAt: str(r.created_at),
+  };
+}
+
+// ───────────────────────────── Setup checks ─────────────────────────────
+
+export function setupCheckToRow(c: SetupCheck, userId: string) {
+  return {
+    id: c.id,
+    user_id: userId,
+    created_at: c.createdAt,
+    version: c.version,
+    account_id: c.accountId,
+    strategy_id: c.strategyId,
+    strategy_name: c.strategyName,
+    instrument: c.instrument,
+    timeframe: c.timeframe,
+    direction: c.direction,
+    decision: c.decision,
+    score: c.score,
+    grade: c.grade,
+    grade_label: c.gradeLabel,
+    why: c.why,
+    next_steps: c.next,
+    required_total: c.requiredTotal,
+    required_passed: c.requiredPassed,
+    criteria: c.criteria,
+    chart: c.chart,
+    risk: c.risk,
+    image_quality: c.imageQuality,
+    evidence_confidence: c.evidenceConfidence,
+    summary: c.summary,
+    notes: c.notes,
+    screenshot_path: c.screenshotPath,
+    provider: c.provider,
+    model: c.model,
+    trade_id: c.tradeId,
+  };
+}
+
+export function rowToSetupCheck(r: Row): SetupCheck {
+  const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  return {
+    id: str(r.id),
+    version: num(r.version) || 1,
+    createdAt: str(r.created_at),
+    accountId: (r.account_id as string | null) ?? null,
+    strategyId: str(r.strategy_id),
+    strategyName: str(r.strategy_name),
+    instrument: str(r.instrument),
+    timeframe: (r.timeframe as string | null) ?? null,
+    direction: r.direction === 'long' || r.direction === 'short' ? r.direction : 'unsure',
+    decision: r.decision === 'QUALIFIED' || r.decision === 'STAND_DOWN' ? r.decision : 'WAIT',
+    score: numOrNull(r.score),
+    grade: (r.grade as SetupCheck['grade']) ?? null,
+    gradeLabel: str(r.grade_label),
+    why: str(r.why),
+    next: arr<string>(r.next_steps),
+    requiredTotal: num(r.required_total),
+    requiredPassed: num(r.required_passed),
+    criteria: arr(r.criteria),
+    chart: (r.chart as SetupCheck['chart']) ?? { instrument: null, timeframe: null, directionObserved: null, marketCondition: null },
+    risk: r.risk as SetupCheck['risk'],
+    imageQuality: (r.image_quality as SetupCheck['imageQuality']) ?? { score: 0, issues: [] },
+    evidenceConfidence: num(r.evidence_confidence),
+    summary: str(r.summary),
+    notes: str(r.notes),
+    screenshotUri: null,
+    screenshotPath: (r.screenshot_path as string | null) ?? null,
+    provider: r.provider === 'ai' ? 'ai' : 'mock',
+    model: (r.model as string | null) ?? null,
+    tradeId: (r.trade_id as string | null) ?? null,
+    saved: true,
   };
 }

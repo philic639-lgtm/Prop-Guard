@@ -97,6 +97,19 @@ npx supabase secrets set AI_PROVIDER=openai OPENAI_API_KEY=sk-...
 
 Then set `EXPO_PUBLIC_AI_MODE=remote`.
 
+### AI Setup Check (chart vs your saved rules)
+
+`Analyze Setup` (Home) / `AI Setup Check` (Check Trade) sends a chart screenshot plus the selected strategy's rules to the `setup-validation` Edge Function, which calls the OpenAI Responses API with image input and a strict JSON schema. The model only reports evidence and PASS / FAIL / UNVERIFIED / NOT_APPLICABLE per rule; the app decides QUALIFIED / WAIT / STAND DOWN deterministically (`src/lib/engines/setupValidation`).
+
+```bash
+npx supabase db push                                   # setup_checks + setup_validation_requests tables
+npx supabase functions deploy setup-validation
+npx supabase secrets set OPENAI_API_KEY=sk-...           # server-side only
+# optional: OPENAI_VISION_MODEL (default gpt-6-sol), SETUP_CHECK_RATE_PER_HOUR (default 30)
+```
+
+Without AI configured, development / demo builds use a clearly-labelled simulated analysis (`MockVisionProvider`); production builds show "not configured" instead of fake analysis.
+
 Safety design:
 - **Provider-independent.** Screens call `aiService` (`src/services/ai`), which implements `AIProvider`: `analyzeTradeSetup`, `analyzeScreenshot`, `generateSessionReview`, `recommendStrategies` and `generateDailyCoach`.
 - **The grade is never AI-generated.** `strategyEngine.evaluateSetup` decides A+ / Valid / Caution / Rule Violation / No Trade deterministically. The model only explains the result.
@@ -150,6 +163,7 @@ src/
 supabase/
   migrations/          Schema + RLS + storage policies
   functions/ai-gateway Provider-switchable AI proxy (Deno)
+  functions/setup-validation  Chart vs saved rules (OpenAI Responses API, strict schema, rate limit)
 ```
 
 ### Core engines (`src/lib/engines`)

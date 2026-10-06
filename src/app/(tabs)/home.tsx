@@ -198,7 +198,7 @@ export default function HomeScreen() {
       <Button label="Check Trade" icon="shield-checkmark" variant="success" onPress={() => router.push('/analyze')} />
       {strategy ? <Button label="Today's Plan" icon="list-outline" variant="secondary" onPress={() => router.push('/session/today')} /> : null}
       <View style={styles.row}>
-        <Button label="Analyze Setup" icon="scan-outline" variant="secondary" size="md" style={styles.flex} onPress={() => router.push({ pathname: '/analyze', params: { mode: 'chart' } })} />
+        <Button label="Analyze Setup" icon="scan-outline" variant="secondary" size="md" style={styles.flex} onPress={() => router.push('/setup-check')} />
         <Button label="Risk Calc" icon="calculator-outline" variant="secondary" size="md" style={styles.flex} onPress={() => router.push('/calculator')} />
       </View>
 

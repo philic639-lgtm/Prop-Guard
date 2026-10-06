@@ -146,8 +146,8 @@ export default function SetupCheckScreen() {
       createdAt: reuse?.createdAt,
       now: new Date(),
     });
-    if (!snap || (reuse && samePendingPlan(reuse, snap))) return;
-    st.upsertPendingTrade(snap);
+    if (!snap || (reuse && samePendingPlan(reuse, snap) && reuse.setupCheckId === (draft.setupCheckId ?? null))) return;
+    st.upsertPendingTrade({ ...snap, setupCheckId: draft.setupCheckId ?? null });
     if (snap.id !== draft.pendingId) st.patchDraft({ pendingId: snap.id });
   }, [draft, account, risk, evaluation, strategy, violationEvents]);
 
@@ -224,8 +224,11 @@ export default function SetupCheckScreen() {
       mfe: null,
       accountBalance: account.balance,
       pendingId: draft.pendingId ?? null,
+      setupCheckId: draft.setupCheckId ?? null,
     };
     store().openTrade(trade);
+    // Connect the AI Setup Check this plan came from (QUALIFIED vs WAIT / STAND DOWN analytics).
+    if (draft.setupCheckId) store().linkSetupCheck(draft.setupCheckId, id);
     // The live monitor owns this trade now; closing it completes the journal entry.
     if (draft.pendingId) store().setPendingStatus(draft.pendingId, 'entered', id);
     const base = { accountId: account.id, tradeId: id, sessionId: session?.id ?? null };

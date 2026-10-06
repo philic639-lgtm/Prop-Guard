@@ -18,6 +18,8 @@ export interface PreTradeDraft {
   planId?: string | null;
   /** Pending journal entry created when this draft was checked. */
   pendingId?: string | null;
+  /** AI Setup Check this draft came from. */
+  setupCheckId?: string | null;
 }
 
 export type AppMode = 'demo' | 'local' | 'cloud';

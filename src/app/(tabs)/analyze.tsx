@@ -118,6 +118,24 @@ export default function AnalyzeScreen() {
         </Card>
       ) : null}
 
+      <Card onPress={() => router.push('/setup-check')} accessibilityLabel="AI Setup Check: compare a chart screenshot with your saved rules">
+        <View style={styles.row}>
+          <Ionicons name="scan-outline" size={18} color={colors.accentBright} />
+          <AppText variant="bodyStrong" style={{ flex: 1 }}>
+            AI Setup Check
+          </AppText>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </View>
+        <AppText variant="caption" style={{ marginTop: 2 }}>
+          Upload a chart — see if it meets YOUR saved rules right now: QUALIFIED, WAIT or STAND DOWN.
+        </AppText>
+        {draft.setupCheckId ? (
+          <View style={{ marginTop: spacing.xs, alignItems: 'flex-start' }}>
+            <StatusBadge label="This trade plan is linked to a Setup Check" tone="accent" icon="link-outline" size="sm" />
+          </View>
+        ) : null}
+      </Card>
+
       {guard.status === 'STOP' || guard.cooldown.active ? (
         <DailyGuardCard guard={guard} detailed />
       ) : (

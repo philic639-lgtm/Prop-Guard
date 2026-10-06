@@ -5,6 +5,7 @@ import type {
   AppAlert,
   PendingTrade,
   PracticeRun,
+  SetupCheck,
   TradePlan,
   DisciplineEvent,
   Emotion,
@@ -44,6 +45,8 @@ export interface AppData {
   practiceAttempts: PracticeAttempt[];
   /** Lessons the trader saved from practice — shown in Journal → Practice lessons. */
   practiceLessons: PracticeLesson[];
+  /** AI Setup Checks the trader saved (chart vs saved rules). */
+  setupChecks: SetupCheck[];
   alerts: AppAlert[];
 }
 
@@ -97,6 +100,7 @@ export const EMPTY_DATA: AppData = {
   practiceRuns: [],
   practiceAttempts: [],
   practiceLessons: [],
+  setupChecks: [],
   alerts: [],
 };
 
@@ -523,6 +527,7 @@ export function createDemoData(now = new Date()): AppData {
     // Practice analytics are only ever computed from the trader's own attempts.
     practiceAttempts: [],
     practiceLessons: [],
+    setupChecks: [],
     alerts,
     accounts: [account25k, account50k],
     strategies: [orb, vwap],

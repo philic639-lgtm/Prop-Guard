@@ -22,3 +22,4 @@ export * from './historicalScenarioGenerator';
 export * from './historicalSimilarityEngine';
 export { evaluateLatest, scanForSignals, buildSessionContext, getEvaluator, hasEvaluator, STRATEGY_EVALUATORS } from './strategyEvaluators';
 export * from './firmRulesEngine';
+export * as setupValidation from './setupValidation';
