@@ -68,4 +68,5 @@ create policy "verified prop firm rules readable" on public.prop_firm_rule_versi
 -- Accounts remember which firm / program / rule version their rules came from,
 -- what was imported and which values the trader overrode.
 alter table public.accounts add column if not exists firm_link jsonb;
-alter table public.account_rules add column if not exists firm_terms jsonb;
+-- (account rules live in public.prop_rules — fixed from an earlier draft that named account_rules)
+alter table public.prop_rules add column if not exists firm_terms jsonb;

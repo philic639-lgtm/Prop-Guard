@@ -492,7 +492,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'prop-guard-store',
-      version: 5,
+      version: 6,
       migrate: (persisted, version) => {
         const st = (persisted ?? {}) as Partial<AppState>;
         if (version < 3) {
@@ -516,6 +516,8 @@ export const useAppStore = create<AppState>()(
         }
         if (version < 4) return { ...st, pendingTrades: st.pendingTrades ?? [], setupChecks: st.setupChecks ?? [] } as AppState;
         if (version < 5) return { ...st, setupChecks: st.setupChecks ?? [] } as AppState;
+        // v6: Setup Check engine replaced — earlier (v1) checks used a different scoring model and are dropped.
+        if (version < 6) return { ...st, setupChecks: (st.setupChecks ?? []).filter((c) => (c as { version?: number }).version === 2) } as AppState;
         return st as AppState;
       },
       storage: createJSONStorage(() => AsyncStorage),

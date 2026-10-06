@@ -5,7 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { AppHeader, AppText, Card, EmptyState, Screen, StatusBadge } from '@/components/ui';
 import { spacing } from '@/constants/theme';
 import { DECISION_UI } from '@/features/setupCheck/SetupCheckResult';
-import { setupCheckOutcomes } from '@/lib/engines/setupValidation';
+import { setupCheckOutcomes } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import { money } from '@/utils/format';
 
@@ -49,12 +49,12 @@ export default function SetupCheckHistory() {
               <AppText variant="bodyStrong" style={styles.flex}>
                 {d.emoji} {d.title}
               </AppText>
-              <StatusBadge label={c.score == null ? 'Score —' : `${c.score}/100`} tone={d.tone} size="sm" />
+              <StatusBadge label={`Rules ${c.ruleAlignmentScore}%`} tone={d.tone} size="sm" />
             </View>
             <AppText variant="caption">
               {c.strategyName} · {c.instrument} · {new Date(c.createdAt).toLocaleString()}
               {c.tradeId ? ' · trade linked' : ''}
-              {c.provider === 'mock' ? ' · DEMO' : ''}
+              {c.analysisMode === 'DEMO' ? ' · DEMO' : ''}
             </AppText>
           </Card>
         );

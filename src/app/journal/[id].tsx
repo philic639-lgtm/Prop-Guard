@@ -269,10 +269,10 @@ export default function TradeDetail() {
           <SectionHeader title="Setup check" />
           <Card onPress={() => router.push({ pathname: '/setup-check/[id]', params: { id: setupCheck.id } })}>
             <AppText variant="bodyStrong">
-              {DECISION_UI[setupCheck.decision].emoji} {DECISION_UI[setupCheck.decision].title} · {setupCheck.score == null ? 'score —' : `${setupCheck.score}/100`}
+              {DECISION_UI[setupCheck.decision].emoji} {DECISION_UI[setupCheck.decision].title} · rule alignment {setupCheck.ruleAlignmentScore}%
             </AppText>
             <AppText variant="caption">
-              {setupCheck.decision === 'QUALIFIED' ? 'Taken from a setup that met your saved rules.' : 'Taken although the setup check said ' + DECISION_UI[setupCheck.decision].title + '.'} Tap to review the rule check.
+              {setupCheck.decision === 'TAKE TRADE' ? 'Taken from a setup that met your saved rules.' : 'Taken although the setup check said ' + DECISION_UI[setupCheck.decision].title + '.'} Tap to review the rule check.
             </AppText>
           </Card>
         </>

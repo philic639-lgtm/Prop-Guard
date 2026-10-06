@@ -1,0 +1,236 @@
+// SHARED, dependency-free (synced to supabase/functions/_shared/setupCheck).
+// Builds the engine Input from TRUSTED data (saved strategy, computed facts,
+// server-side vision evidence, account buffers) plus the few things a client
+// may supply (prices, size, costs, explicit manual confirmations). Anything a
+// client claims beyond that — vision evidence, verified prop rules, computed
+// results — is ignored here.
+import type { AnalysisMode, Evidence, Input, Prop, Status } from './engine';
+import { sanitizeText, type SetupRule } from './rules';
+
+// ───────────────────────────── Client payload (untrusted) ─────────────────────────────
+
+export type ManualStatus = Status;
+
+/** What the trader typed / confirmed. Everything else is computed. */
+export interface ClientSetupInput {
+  strategyId: string;
+  accountId: string | null;
+  instrument: string;
+  side: 'LONG' | 'SHORT' | null;
+  entry: number | null;
+  stop: number | null;
+  target: number | null;
+  quantity: number | null;
+  /** Estimated fees for the whole position, in dollars. */
+  costs: number | null;
+  /** Estimated slippage for the whole position, in dollars. */
+  slippage: number | null;
+  /** Dollars kept in reserve above the account's limits. */
+  reserve: number | null;
+  /** Trader explicitly confirms the account has no daily loss limit. */
+  noDailyLimitConfirmed: boolean;
+  timeframe: string | null;
+  notes: string;
+  /** Explicit per-rule confirmations (nothing pre-ticked). */
+  manual: { ruleId: string; status: ManualStatus; reason?: string }[];
+  /** Explicit confirmations of other firm restrictions (incl. "none applicable"). */
+  firmConfirmations: { ruleId: string; status: ManualStatus; reason?: string }[];
+}
+
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const statusOf = (v: unknown): Status | null => (v === 'PASS' || v === 'FAIL' || v === 'UNVERIFIED' ? v : null);
+
+/** Parse an untrusted payload — unknown fields dropped, types enforced, text sanitized. */
+export function parseClientInput(raw: unknown): ClientSetupInput | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const strategyId = sanitizeText(o.strategyId, 80);
+  const instrument = sanitizeText(o.instrument, 12).toUpperCase();
+  if (!strategyId || !instrument) return null;
+  const confirmations = (v: unknown) =>
+    (Array.isArray(v) ? v : [])
+      .slice(0, 80)
+      .map((x) => (x && typeof x === 'object' ? (x as Record<string, unknown>) : {}))
+      .map((x) => ({ ruleId: sanitizeText(x.ruleId, 120), status: statusOf(x.status), reason: sanitizeText(x.reason, 240) }))
+      .filter((x): x is { ruleId: string; status: Status; reason: string } => !!x.ruleId && !!x.status);
+  return {
+    strategyId,
+    accountId: sanitizeText(o.accountId, 80) || null,
+    instrument,
+    side: o.side === 'LONG' || o.side === 'SHORT' ? o.side : null,
+    entry: num(o.entry),
+    stop: num(o.stop),
+    target: num(o.target),
+    quantity: num(o.quantity),
+    costs: num(o.costs),
+    slippage: num(o.slippage),
+    reserve: num(o.reserve),
+    noDailyLimitConfirmed: o.noDailyLimitConfirmed === true,
+    timeframe: sanitizeText(o.timeframe, 20) || null,
+    notes: sanitizeText(o.notes, 240),
+    manual: confirmations(o.manual),
+    firmConfirmations: confirmations(o.firmConfirmations),
+  };
+}
+
+// ───────────────────────────── Prop buffers + freshness (computed) ─────────────────────────────
+
+/** Firm rules older than this are not "current" — they must be re-verified. */
+export const FIRM_RULES_MAX_AGE_DAYS = 30;
+
+export function rulesAreCurrent(lastVerifiedAt: string | null | undefined, now: Date): boolean {
+  if (!lastVerifiedAt) return false;
+  const t = Date.parse(lastVerifiedAt);
+  return Number.isFinite(t) && now.getTime() - t <= FIRM_RULES_MAX_AGE_DAYS * 86_400_000 && t <= now.getTime() + 86_400_000;
+}
+
+/**
+ * Documented NON-BINDING daily cap: used only when the trader explicitly
+ * confirms their account has no daily loss limit. Finite so the engine's
+ * arithmetic stays well-defined; far above any real account.
+ */
+export const NONBINDING_DAILY_LIMIT = 1_000_000_000;
+
+export interface AccountRiskState {
+  kind: 'prop' | 'personal';
+  balance: number;
+  startingBalance: number;
+  highWaterMark: number;
+  maxDrawdown: number | null;
+  drawdownType: 'static' | 'trailing' | 'eod_trailing';
+  trailingLocksAtStart: boolean;
+  dailyLossLimit: number | null;
+  /** Net realized P&L of today's closed trades (ET trading day). */
+  realizedPnlToday: number;
+  /** Dollars at risk on open positions (to their stops) — worst case. */
+  openRisk: number;
+  /** Max contracts in standard (mini) contracts. */
+  maxContracts: number | null;
+  /** Verified firm rules for this exact program / size / stage, not overridden. */
+  verified: boolean;
+  lastVerifiedAt: string | null;
+}
+
+/**
+ * Current distance to the liquidation threshold and daily loss remaining,
+ * AFTER today's realized P&L and open exposure. Open positions are counted at
+ * their stops (worst case); live unrealized P&L is not available here.
+ */
+export function propBuffers(a: AccountRiskState, noDailyLimitConfirmed: boolean): { drawdownBuffer?: number; dailyLossRemaining?: number } {
+  let drawdownBuffer: number | undefined;
+  if (a.maxDrawdown != null && a.maxDrawdown > 0) {
+    const floor =
+      a.drawdownType === 'static'
+        ? a.startingBalance - a.maxDrawdown
+        : (() => {
+            const trailing = Math.max(a.highWaterMark, a.startingBalance) - a.maxDrawdown;
+            return a.trailingLocksAtStart ? Math.min(trailing, a.startingBalance) : trailing;
+          })();
+    drawdownBuffer = a.balance - floor - a.openRisk;
+  }
+  let dailyLossRemaining: number | undefined;
+  if (a.dailyLossLimit != null && a.dailyLossLimit > 0) dailyLossRemaining = a.dailyLossLimit + Math.min(0, a.realizedPnlToday) - a.openRisk;
+  else if (noDailyLimitConfirmed) dailyLossRemaining = NONBINDING_DAILY_LIMIT;
+  return { drawdownBuffer, dailyLossRemaining };
+}
+
+/** Account limits are in standard contracts; a micro counts 1/ratio (e.g. 5 ES = 50 MES). */
+export const normalizedMaxContracts = (maxMinis: number | null, miniEquivalentRatio: number) =>
+  maxMinis != null && maxMinis > 0 ? Math.floor(maxMinis * Math.max(1, miniEquivalentRatio)) : undefined;
+
+// ───────────────────────────── Engine input ─────────────────────────────
+
+export interface TrustedContext {
+  rules: SetupRule[];
+  /** Computed by Prop Guard (instrument in plan, entry window). */
+  systemEvidence: Evidence[];
+  /** From the server's vision call (or labelled demo observations). */
+  visionEvidence: Evidence[];
+  analysisMode: AnalysisMode;
+  /** From the instrument catalog — never from the client. */
+  instrument: { pointValue: number; tickSize: number; miniEquivalentRatio: number } | null;
+  minimumRR: number | null;
+  maxRisk: number | null;
+  account: AccountRiskState | null;
+  now: Date;
+}
+
+/**
+ * One evidence item per rule: system rules use computed evidence only; visual
+ * rules use the trader's explicit confirmation when given, else the
+ * server's chart evidence. Client-claimed sources are discarded.
+ */
+export function mergeEvidence(rules: SetupRule[], system: Evidence[], vision: Evidence[], manual: ClientSetupInput['manual']): Evidence[] {
+  const out: Evidence[] = [];
+  for (const r of rules) {
+    if (r.kind === 'system') {
+      const e = system.find((x) => x.ruleId === r.id && x.source === 'system');
+      if (e) out.push(e);
+      continue;
+    }
+    const m = manual.filter((x) => x.ruleId === r.id);
+    if (m.length === 1) {
+      out.push({ ruleId: r.id, status: m[0].status, source: 'manual', confidence: m[0].status === 'UNVERIFIED' ? 0 : 1, reason: m[0].reason || (m[0].status === 'PASS' ? 'Trader confirmed this rule.' : m[0].status === 'FAIL' ? 'Trader marked this rule as not met.' : 'Trader could not confirm this rule.') });
+      continue;
+    }
+    const v = vision.filter((x) => x.ruleId === r.id && (x.source === 'vision' || x.source === 'demo'));
+    if (v.length === 1) out.push(v[0]);
+  }
+  return out;
+}
+
+export function buildEngineInput(client: ClientSetupInput, t: TrustedContext): Input {
+  const pos = (v: number | null) => (v != null && v > 0 ? v : undefined);
+  const nonNeg = (v: number | null) => (v != null && v >= 0 ? v : undefined);
+  const a = t.account;
+  let prop: Prop = { mode: 'none' };
+  if (a && a.kind === 'prop') {
+    const buffers = propBuffers(a, client.noDailyLimitConfirmed);
+    prop = {
+      mode: 'prop',
+      verified: a.verified,
+      rulesCurrent: rulesAreCurrent(a.lastVerifiedAt, t.now),
+      ...buffers,
+      maxContracts: t.instrument ? normalizedMaxContracts(a.maxContracts, t.instrument.miniEquivalentRatio) : undefined,
+      reserve: nonNeg(client.reserve),
+      otherChecks: client.firmConfirmations.map((c) => ({ ruleId: c.ruleId, status: c.status, source: 'manual' as const, confidence: c.status === 'UNVERIFIED' ? 0 : 1, reason: c.reason || `Trader ${c.status === 'PASS' ? 'confirmed' : c.status === 'FAIL' ? 'flagged' : 'could not confirm'}: ${c.ruleId}` })),
+    };
+  }
+  return {
+    rules: t.rules.map(({ id, label, required, critical }) => ({ id, label, required, critical })),
+    evidence: mergeEvidence(t.rules, t.systemEvidence, t.visionEvidence, client.manual),
+    trade: {
+      ...(client.side ? { side: client.side } : {}),
+      entry: pos(client.entry),
+      stop: pos(client.stop),
+      target: pos(client.target),
+      quantity: pos(client.quantity),
+      pointValue: t.instrument?.pointValue,
+      tickSize: t.instrument?.tickSize,
+      costs: nonNeg(client.costs),
+      slippage: nonNeg(client.slippage),
+      minimumRR: pos(t.minimumRR),
+      maxRisk: pos(t.maxRisk),
+    },
+    prop,
+    analysisMode: t.analysisMode,
+  };
+}
+
+// ───────────────────────────── Staleness ─────────────────────────────
+
+/**
+ * Evidence is tied to the exact screenshot, saved-strategy version and
+ * input revision. Any change to these produces a new key — the old analysis
+ * is then stale and must not be shown or reused.
+ */
+export function analysisKey(p: { imageHash: string | null; strategyId: string; strategyVersion: string; instrument: string; accountId: string | null; side: string | null; entry: number | null; stop: number | null; target: number | null; quantity: number | null }): string {
+  return JSON.stringify([p.imageHash, p.strategyId, p.strategyVersion, p.instrument.toUpperCase(), p.accountId, p.side, p.entry, p.stop, p.target, p.quantity]);
+}
+
+/** Non-cryptographic content hash for keying (FNV-1a over the whole string). */
+export function contentHash(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return `${(h >>> 0).toString(16)}:${s.length}`;
+}

@@ -4,24 +4,32 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, CircularScore, StatusBadge, VerdictBanner } from '@/components/ui';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
-import type { CriterionResult, CriterionStatus, SetupDecision } from '@/lib/engines/setupValidation';
-import type { SetupCheck } from '@/types/domain';
+import type { AnalysisMode, Check, Decision, SetupEvaluation, Status } from '@/lib/engines/setupCheck';
 import { money } from '@/utils/format';
 
-export const DECISION_UI: Record<SetupDecision, { title: string; emoji: string; tone: 'positive' | 'warning' | 'danger'; icon: keyof typeof Ionicons.glyphMap }> = {
-  QUALIFIED: { title: 'QUALIFIED', emoji: '🟢', tone: 'positive', icon: 'shield-checkmark' },
+/**
+ * Decision display. The engine's 'TAKE TRADE' is shown with Prop Guard's
+ * established wording "QUALIFIED" — rule compliance, never an instruction to trade.
+ */
+export const DECISION_UI: Record<Decision, { title: string; emoji: string; tone: 'positive' | 'warning' | 'danger'; icon: keyof typeof Ionicons.glyphMap }> = {
+  'TAKE TRADE': { title: 'QUALIFIED', emoji: '🟢', tone: 'positive', icon: 'shield-checkmark' },
   WAIT: { title: 'WAIT', emoji: '🟡', tone: 'warning', icon: 'hourglass-outline' },
-  STAND_DOWN: { title: 'STAND DOWN', emoji: '🔴', tone: 'danger', icon: 'hand-left-outline' },
+  'STAND DOWN': { title: 'STAND DOWN', emoji: '🔴', tone: 'danger', icon: 'hand-left-outline' },
 };
 
-const STATUS_UI: Record<CriterionStatus, { mark: string; label: string; tone: Tone; color: string }> = {
+const STATUS_UI: Record<Status | 'NOT_APPLICABLE', { mark: string; label: string; tone: Tone; color: string }> = {
   PASS: { mark: '✓', label: 'PASS', tone: 'positive', color: colors.positive },
   FAIL: { mark: '✕', label: 'FAIL', tone: 'danger', color: colors.danger },
   UNVERIFIED: { mark: '?', label: 'UNVERIFIED', tone: 'warning', color: colors.warning },
   NOT_APPLICABLE: { mark: '—', label: 'N/A', tone: 'neutral', color: colors.textTertiary },
 };
 
-const scoreTone = (s: number | null): Tone => (s == null ? 'neutral' : s >= 80 ? 'positive' : s >= 70 ? 'accent' : 'warning');
+const SOURCE_LABEL: Record<string, string> = { manual: 'You confirmed', vision: 'Chart analysis', broker: 'Broker', demo: 'DEMO (ignored)', system: 'Prop Guard' };
+
+export type ResultData = Pick<
+  SetupEvaluation,
+  'decision' | 'ruleAlignmentScore' | 'evidenceConfidence' | 'riskCheck' | 'propFirmCompliance' | 'passedRequired' | 'totalRequired' | 'evaluatedRules' | 'riskChecks' | 'propChecks' | 'blockers' | 'dollarRisk' | 'reward' | 'rr' | 'analysisMode'
+>;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -32,40 +40,39 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function RuleRow({ r }: { r: CriterionResult }) {
-  const ui = STATUS_UI[r.status];
+function StatusMark({ status }: { status: Status | 'NOT_APPLICABLE' }) {
+  const ui = STATUS_UI[status];
   return (
-    <View style={styles.rule} accessible accessibilityLabel={`${r.ruleName}: ${ui.label}. ${r.evidence}`}>
-      <View style={[styles.mark, { borderColor: ui.color }]}>
-        <AppText style={{ color: ui.color, fontWeight: '800', fontSize: 14 }}>{ui.mark}</AppText>
-      </View>
+    <View style={[styles.mark, { borderColor: ui.color }]}>
+      <AppText style={{ color: ui.color, fontWeight: '800', fontSize: 14 }}>{ui.mark}</AppText>
+    </View>
+  );
+}
+
+function CheckRow({ c }: { c: Check }) {
+  const ui = STATUS_UI[c.status];
+  return (
+    <View style={styles.rule} accessible accessibilityLabel={`${c.label}: ${ui.label}. ${c.reason}`}>
+      <StatusMark status={c.status} />
       <View style={styles.flex}>
         <View style={styles.wrap}>
           <AppText variant="bodyStrong" style={styles.flexShrink}>
-            {r.ruleName}
+            {c.label}
           </AppText>
           <StatusBadge label={ui.label} tone={ui.tone} size="sm" />
-          {r.required ? <StatusBadge label="Required" tone="neutral" size="sm" /> : <StatusBadge label="Optional" tone="neutral" size="sm" />}
-          {r.propVerification && r.propVerification !== 'verified' ? <StatusBadge label="PROP RULE UNVERIFIED" tone="warning" size="sm" /> : null}
-          {r.propVerification === 'verified' ? <StatusBadge label="Verified firm rule" tone="positive" size="sm" /> : null}
         </View>
         <AppText variant="caption" style={{ marginTop: 2 }}>
-          “{r.evidence}”
+          {c.reason}
         </AppText>
-        {r.kind === 'visual' && r.status !== 'NOT_APPLICABLE' ? (
-          <AppText variant="caption" tone="tertiary">
-            Evidence confidence {Math.round(r.confidence * 100)}%
-          </AppText>
-        ) : null}
       </View>
     </View>
   );
 }
 
-function RiskRow({ label, value, tone }: { label: string; value: string; tone?: React.ComponentProps<typeof AppText>['tone'] }) {
+function Metric({ label, value, tone }: { label: string; value: string; tone?: React.ComponentProps<typeof AppText>['tone'] }) {
   return (
     <View style={styles.riskRow}>
-      <AppText variant="body" tone="secondary">
+      <AppText variant="body" tone="secondary" style={styles.flexShrink}>
         {label}
       </AppText>
       <AppText variant="bodyStrong" tone={tone ?? 'primary'}>
@@ -75,128 +82,148 @@ function RiskRow({ label, value, tone }: { label: string; value: string; tone?: 
   );
 }
 
-/** SETUP CHECK result card — decision is the app's deterministic verdict on the trader's own rules. */
-export function SetupCheckResult({ check }: { check: SetupCheck }) {
-  const d = DECISION_UI[check.decision];
-  const r = check.risk;
-  const propConflicts = check.criteria.filter((c) => c.kind === 'prop' && c.status === 'FAIL');
-  const order: Record<CriterionStatus, number> = { FAIL: 0, UNVERIFIED: 1, PASS: 2, NOT_APPLICABLE: 3 };
-  const rules = [...check.criteria].sort((a, b) => Number(b.required) - Number(a.required) || order[a.status] - order[b.status]);
-  const hasRisk = r && (r.entry != null || r.stop != null || r.target != null);
+const statusTone = (s: string): React.ComponentProps<typeof AppText>['tone'] => (s === 'PASS' ? 'positive' : s === 'FAIL' ? 'danger' : s === 'NOT_APPLICABLE' ? 'secondary' : 'warning');
+
+export function AnalysisModeBanner({ mode }: { mode: AnalysisMode }) {
+  if (mode === 'REAL') return null;
+  return (
+    <Card tone="warning">
+      <View style={styles.wrap}>
+        <Ionicons name={mode === 'DEMO' ? 'flask-outline' : 'eye-off-outline'} size={18} color={colors.warning} />
+        <AppText variant="bodyStrong" tone="warning">
+          {mode === 'DEMO' ? 'DEMO ANALYSIS — simulated' : 'Chart analysis unavailable'}
+        </AppText>
+      </View>
+      <AppText variant="caption" style={{ marginTop: 4 }}>
+        {mode === 'DEMO'
+          ? 'DEMO ANALYSIS — simulated observations do not count as evidence, and a demo check can never clear a setup.'
+          : 'Chart analysis unavailable — only confirmed manual or broker evidence counts.'}
+      </AppText>
+    </Card>
+  );
+}
+
+/**
+ * SETUP CHECK result — every value comes from the deterministic engine
+ * (`evaluateSetup`). The score measures confirmed rule completion, not the
+ * probability of winning; no grade is shown.
+ */
+export function SetupCheckResult({ result, meta, screenshotUri, pending }: { result: ResultData; meta: { strategyName: string; instrument: string; timeframe: string | null; direction: string; evaluatedBy: 'server' | 'device' | null }; screenshotUri?: string | null; pending?: boolean }) {
+  const d = DECISION_UI[result.decision];
+  const blocked = result.decision !== 'TAKE TRADE';
+  const order: Record<string, number> = { FAIL: 0, UNVERIFIED: 1, PASS: 2 };
+  const rules = [...result.evaluatedRules].sort((a, b) => Number(b.required || b.critical) - Number(a.required || a.critical) || order[a.status] - order[b.status]);
 
   return (
     <View style={{ gap: spacing.md }}>
-      {check.provider === 'mock' ? (
-        <Card tone="warning">
-          <View style={styles.wrap}>
-            <Ionicons name="flask-outline" size={18} color={colors.warning} />
-            <AppText variant="bodyStrong" tone="warning">
-              DEMO ANALYSIS — simulated
-            </AppText>
-          </View>
-          <AppText variant="caption" style={{ marginTop: 4 }}>
-            AI chart reading isn’t configured, so the chart rules below are simulated to show how Setup Check works. Your risk, prop and plan checks are real.
-          </AppText>
-        </Card>
-      ) : null}
+      <AnalysisModeBanner mode={result.analysisMode} />
 
       <Card>
-        <AppText variant="label" tone="accent">
-          Setup check
-        </AppText>
+        <View style={styles.wrap}>
+          <AppText variant="label" tone="accent" style={styles.flex}>
+            Setup check
+          </AppText>
+          {pending ? <StatusBadge label="Updating…" tone="neutral" size="sm" /> : null}
+          {meta.evaluatedBy ? <StatusBadge label={meta.evaluatedBy === 'server' ? 'Checked by Prop Guard server' : 'Checked on this device'} tone="neutral" size="sm" /> : null}
+        </View>
         <View style={[styles.wrap, { marginTop: spacing.sm, gap: spacing.lg }]}>
-          <CircularScore value={check.score ?? 0} tone={scoreTone(check.score)} size={96} label="/ 100" />
+          <CircularScore value={result.ruleAlignmentScore} tone={blocked ? 'warning' : 'positive'} size={96} label="/ 100" />
           <View style={styles.flex}>
-            <AppText variant="heading">{check.score == null ? 'Score —' : `Score: ${check.score}/100`}</AppText>
+            <AppText variant="heading">Rule alignment {result.ruleAlignmentScore}/100</AppText>
             <AppText variant="body" tone="secondary">
-              Grade: {check.gradeLabel}
+              {result.passedRequired}/{result.totalRequired} required rules confirmed
             </AppText>
             <AppText variant="caption" style={{ marginTop: 4 }}>
-              {check.strategyName} · {check.instrument}
-              {check.timeframe ? ` · ${check.timeframe}` : ''} · {check.direction === 'unsure' ? 'Direction unsure' : check.direction === 'long' ? 'Long' : 'Short'}
+              {blocked ? 'Setup incomplete or blocked' : 'Required rules confirmed'} · measures confirmed rule completion, not the chance of winning.
+            </AppText>
+            <AppText variant="caption" tone="tertiary" style={{ marginTop: 2 }}>
+              {meta.strategyName} · {meta.instrument}
+              {meta.timeframe ? ` · ${meta.timeframe}` : ''} · {meta.direction}
             </AppText>
           </View>
         </View>
         <View style={{ marginTop: spacing.md }}>
-          <VerdictBanner tone={d.tone} title={d.title} subtitle={`${d.emoji} ${check.requiredPassed} of ${check.requiredTotal} required rules met · final status computed by Prop Guard from your saved rules`} icon={d.icon} />
+          <VerdictBanner tone={d.tone} title={d.title} subtitle={`${d.emoji} ${blocked ? `${result.blockers.length} item${result.blockers.length === 1 ? '' : 's'} still blocking` : 'Required rules confirmed — rule compliance, not a prediction'}`} icon={d.icon} />
         </View>
       </Card>
 
       <Card>
-        <Section title="Why">
-          <AppText variant="body">{check.why}</AppText>
-          {check.summary ? (
-            <AppText variant="caption" style={{ marginTop: 4 }}>
-              Chart reading: {check.summary}
-            </AppText>
-          ) : null}
+        <Section title="Checks">
+          <Metric label="Rule alignment" value={`${result.ruleAlignmentScore}/100 — ${result.passedRequired}/${result.totalRequired} required`} />
+          <Metric label="Evidence confidence" value={`${result.evidenceConfidence}/100`} tone={result.evidenceConfidence >= 80 ? 'positive' : 'warning'} />
+          <AppText variant="caption" tone="tertiary">
+            Evidence quality, not likelihood of winning.
+          </AppText>
+          <Metric label="Risk check" value={result.riskCheck} tone={statusTone(result.riskCheck)} />
+          <Metric label="Prop firm compliance" value={result.propFirmCompliance === 'NOT_APPLICABLE' ? 'N/A' : result.propFirmCompliance} tone={statusTone(result.propFirmCompliance)} />
+          <Metric label="Estimated dollar risk" value={result.dollarRisk === null ? 'UNVERIFIED' : money(result.dollarRisk, { cents: true })} tone={result.dollarRisk === null ? 'warning' : 'primary'} />
+          <Metric label="Net reward / risk" value={result.rr === null ? 'UNVERIFIED' : `1:${result.rr.toFixed(2)}`} tone={result.rr === null ? 'warning' : 'primary'} />
         </Section>
       </Card>
 
       <Card>
-        <Section title="Rule check">
-          <AppText variant="caption">✓ PASS · ✕ FAIL · ? UNVERIFIED · — N/A — missing evidence never counts as a pass.</AppText>
-          {rules.map((x) => (
-            <RuleRow key={x.ruleId} r={x} />
-          ))}
+        <Section title="Rule evidence">
+          <AppText variant="caption">Missing, ambiguous, low-confidence or demo evidence never counts as a pass.</AppText>
+          {rules.map((r, i) => {
+            const ui = STATUS_UI[r.status];
+            return (
+              <View key={`${r.id}:${i}`} style={styles.rule} accessible accessibilityLabel={`${r.label}: ${ui.label}. ${r.reason}`}>
+                <StatusMark status={r.status} />
+                <View style={styles.flex}>
+                  <View style={styles.wrap}>
+                    <AppText variant="bodyStrong" style={styles.flexShrink}>
+                      {r.label}
+                    </AppText>
+                    <StatusBadge label={ui.label} tone={ui.tone} size="sm" />
+                    <StatusBadge label={r.critical ? 'Critical' : r.required ? 'Required' : 'Optional'} tone={r.critical ? 'danger' : 'neutral'} size="sm" />
+                    {r.source ? <StatusBadge label={SOURCE_LABEL[r.source] ?? r.source} tone={r.source === 'demo' ? 'warning' : 'neutral'} size="sm" /> : null}
+                  </View>
+                  <AppText variant="caption" style={{ marginTop: 2 }}>
+                    {r.reason}
+                  </AppText>
+                </View>
+              </View>
+            );
+          })}
         </Section>
       </Card>
 
       <Card>
         <Section title="Risk check">
-          {hasRisk ? (
-            <>
-              <RiskRow label="Entry" value={r.entry != null ? String(r.entry) : '—'} />
-              <RiskRow label="Stop" value={r.stop != null ? String(r.stop) : '—'} />
-              <RiskRow label="Target" value={r.target != null ? String(r.target) : '—'} />
-              <RiskRow label={`Risk${r.contracts ? ` (${r.contracts} ct)` : ' (1 ct)'}`} value={r.riskDollars != null ? `${money(r.riskDollars)}${r.pointsRisk != null ? ` · ${r.pointsRisk} pts` : ''}` : '—'} />
-              <RiskRow label="Reward" value={r.rewardDollars != null ? `${money(r.rewardDollars)}${r.pointsReward != null ? ` · ${r.pointsReward} pts` : ''}` : '—'} />
-              <RiskRow label="R:R" value={r.rr != null ? `1:${r.rr}` : '—'} />
-              {r.maxContractsForBudget != null ? <RiskRow label="Max size within your risk budget" value={`${r.maxContractsForBudget} contract${r.maxContractsForBudget === 1 ? '' : 's'}`} /> : null}
-              {r.pricesFrom === 'chart' || r.pricesFrom === 'mixed' ? (
-                <AppText variant="caption" tone="warning">
-                  Some prices were read from the chart — confirm them before relying on this.
-                </AppText>
-              ) : null}
-            </>
-          ) : (
-            <AppText variant="caption">Entry / stop / target prices are required to verify R:R and size the risk.</AppText>
-          )}
-          {propConflicts.map((c) => (
-            <AppText key={c.ruleId} variant="caption" tone={c.required ? 'danger' : 'warning'}>
-              Prop-firm risk conflict: {c.ruleName} — {c.evidence}
-            </AppText>
+          {result.riskChecks.map((c) => (
+            <CheckRow key={c.id} c={c} />
           ))}
         </Section>
       </Card>
 
-      <Card>
-        <Section title="Evidence quality">
-          <RiskRow label="Evidence confidence" value={`${check.evidenceConfidence}/100`} tone={check.evidenceConfidence >= 60 ? 'positive' : 'warning'} />
-          <RiskRow label="Screenshot quality" value={`${Math.round(check.imageQuality.score)}/100`} tone={check.imageQuality.score >= 40 ? 'primary' : 'warning'} />
-          {check.chart.timeframe ? <RiskRow label="Timeframe seen" value={check.chart.timeframe} /> : <AppText variant="caption">Timeframe cannot be verified from the screenshot.</AppText>}
-          {check.imageQuality.issues.map((i) => (
-            <AppText key={i} variant="caption" tone="warning">
-              • {i}
-            </AppText>
-          ))}
-        </Section>
-      </Card>
+      {result.propChecks.length ? (
+        <Card>
+          <Section title="Prop firm compliance">
+            {result.propChecks.map((c) => (
+              <CheckRow key={c.id} c={c} />
+            ))}
+          </Section>
+        </Card>
+      ) : null}
 
       <Card tone={d.tone}>
         <Section title="What needs to happen next">
-          {check.next.map((n) => (
-            <AppText key={n} variant="body">
-              • {n}
-            </AppText>
-          ))}
+          {result.blockers.length ? (
+            result.blockers.map((b, i) => (
+              <AppText key={`${b.id}:${i}`} variant="body">
+                • {b.label}: {b.reason}
+              </AppText>
+            ))
+          ) : (
+            <AppText variant="body">No remaining blockers in the supplied checks.</AppText>
+          )}
         </Section>
       </Card>
 
-      {check.screenshotUri ? <Image source={{ uri: check.screenshotUri }} style={styles.shot} contentFit="contain" accessibilityLabel="Analyzed chart screenshot" /> : null}
+      {screenshotUri ? <Image source={{ uri: screenshotUri }} style={styles.shot} contentFit="contain" accessibilityLabel="Checked chart screenshot" /> : null}
 
       <AppText variant="caption" tone="tertiary" align="center">
-        Prop Guard checks whether this setup satisfies YOUR saved rules and risk limits. It does not predict price or results.
+        Rules confirmed does not guarantee profit. This checks the supplied setup; it does not place an order. A stop does not guarantee a capped loss.
       </AppText>
     </View>
   );

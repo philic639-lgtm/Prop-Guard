@@ -4,7 +4,7 @@
  */
 export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export type AllowedImageType = (typeof ALLOWED_IMAGE_TYPES)[number];
-export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 

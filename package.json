@@ -65,7 +65,8 @@
     "data:coverage": "tsx --env-file-if-exists=.env.server scripts/market-data.ts coverage",
     "firm-rules:export": "tsx scripts/firm-rules.ts export",
     "firm-rules:validate": "tsx scripts/firm-rules.ts validate",
-    "firm-rules:publish": "tsx --env-file-if-exists=.env.server scripts/firm-rules.ts publish"
+    "firm-rules:publish": "tsx --env-file-if-exists=.env.server scripts/firm-rules.ts publish",
+    "shared:sync": "tsx scripts/sync-setup-check-shared.ts"
   },
   "private": true
 }

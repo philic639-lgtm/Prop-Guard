@@ -500,47 +500,52 @@ export interface UserPreferences {
   onboarded: boolean;
 }
 
-// ───────────────────────────── AI Setup Check ─────────────────────────────
+// ───────────────────────────── Setup Check ─────────────────────────────
 
+type SC = typeof import('@/lib/engines/setupCheck');
 
 /**
- * A saved Setup Check: what a chart screenshot showed against the trader's
- * SAVED rules at that moment. The decision is computed by the app
- * (`setupValidation`), never by the model.
+ * A saved Setup Check: the trader's SAVED rules checked against chart / manual
+ * evidence and risk limits at one moment. Every value comes from the
+ * deterministic engine (`evaluateSetup`) — on the server in cloud mode, on
+ * the device in demo / manual-only mode (`evaluatedBy`).
  */
 export interface SetupCheck {
   id: string;
-  version: number;
+  version: 2;
   createdAt: string;
   accountId: string | null;
   strategyId: string;
   strategyName: string;
+  /** Saved-strategy version the evidence belongs to. */
+  strategyVersion: string;
   instrument: string;
   timeframe: string | null;
   direction: 'long' | 'short' | 'unsure';
-  decision: import('@/lib/engines/setupValidation/types').SetupDecision;
-  score: number | null;
-  grade: import('@/lib/engines/setupValidation/types').Grade | null;
-  gradeLabel: string;
-  why: string;
-  next: string[];
-  requiredTotal: number;
-  requiredPassed: number;
-  /** Rule-by-rule results (AI evidence for visual rules, app evidence for the rest). */
-  criteria: import('@/lib/engines/setupValidation/types').CriterionResult[];
-  chart: import('@/lib/engines/setupValidation/types').VisionOutput['chart'];
-  risk: import('@/lib/engines/setupValidation/types').RiskNumbers;
-  imageQuality: { score: number; issues: string[] };
-  /** Overall evidence confidence 0–100. */
+  decision: import('@/lib/engines/setupCheck').Decision;
+  /** Confirmed required rules / all required rules × 100 (not a win probability). */
+  ruleAlignmentScore: number;
   evidenceConfidence: number;
-  summary: string;
+  riskCheck: 'PASS' | 'FAIL' | 'UNVERIFIED';
+  propFirmCompliance: 'PASS' | 'FAIL' | 'UNVERIFIED' | 'NOT_APPLICABLE';
+  passedRequired: number;
+  totalRequired: number;
+  evaluatedRules: ReturnType<SC['evaluateSetup']>['evaluatedRules'];
+  riskChecks: import('@/lib/engines/setupCheck').Check[];
+  propChecks: import('@/lib/engines/setupCheck').Check[];
+  blockers: import('@/lib/engines/setupCheck').Check[];
+  dollarRisk: number | null;
+  reward: number | null;
+  rr: number | null;
+  analysisMode: import('@/lib/engines/setupCheck').AnalysisMode;
+  evaluatedBy: 'server' | 'device';
+  analysisId: number | null;
+  analysisKey: string | null;
+  inputs: { entry: number | null; stop: number | null; target: number | null; quantity: number | null; costs: number | null; slippage: number | null; reserve: number | null };
   notes: string;
-  /** Local image uri (this device) and private storage path (cloud). */
+  /** Local image uri (this device) and private storage path (cloud, when uploaded). */
   screenshotUri: string | null;
   screenshotPath: string | null;
-  /** 'mock' = development / demo analysis, never shown as a real chart reading. */
-  provider: 'ai' | 'mock';
-  model: string | null;
   /** Trade taken from this check (linked when the trade is opened or journaled). */
   tradeId: string | null;
   saved: boolean;

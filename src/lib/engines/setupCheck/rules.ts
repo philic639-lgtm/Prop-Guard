@@ -1,0 +1,140 @@
+// SHARED, dependency-free (synced to supabase/functions/_shared/setupCheck).
+// Turns the trader's SAVED strategy into the engine's rule list. The same code
+// runs on the device and on the server, so rule IDs always match.
+import type { Evidence, Rule } from './engine';
+
+/** The saved-strategy fields Setup Check reads (from the store, or from the DB on the server). */
+export interface StrategyRecord {
+  id: string;
+  name: string;
+  /** Saved-strategy version: evidence is only valid for this exact version. */
+  updatedAt: string;
+  markets: string[];
+  timeframe: string;
+  entryWindowStart: string | null;
+  entryWindowEnd: string | null;
+  biasRequirement: string;
+  requiresBiasAlignment: boolean;
+  entryTrigger: string;
+  confirmationRules: string;
+  retestRules: string;
+  invalidationRules: string;
+  minRR: number;
+  checklist: { id: string; label: string; required: boolean }[];
+  /** Saved Strategy-Intelligence conditions (structured.testableRules.conditions). */
+  conditions?: { id: string; role: string; text: string }[];
+}
+
+/**
+ * - visual: needs evidence from the chart (vision) or the trader (manual)
+ * - system: computed by Prop Guard (instrument in plan, entry window)
+ */
+export type SetupRule = Rule & { description: string; kind: 'visual' | 'system' };
+
+const MAX_TEXT = 240;
+const CONTROL = /[\u0000-\u001f\u007f]+/g;
+export const sanitizeText = (s: unknown, max = MAX_TEXT) =>
+  (typeof s === 'string' ? s : '').replace(CONTROL, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 48) || 'rule';
+
+const STOP = new Set(['the', 'a', 'an', 'of', 'to', 'and', 'or', 'is', 'on', 'in', 'at', 'with', 'for', 'back', 'be', 'must', 'has', 'have']);
+const tokens = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(' ').filter((w) => w.length > 1 && !STOP.has(w)));
+/** Two rules say the same thing (e.g. a checklist item repeating a confirmation rule). */
+function overlaps(a: string, b: string): boolean {
+  const ta = tokens(a);
+  const tb = tokens(b);
+  if (!ta.size || !tb.size) return false;
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter++;
+  return inter / Math.min(ta.size, tb.size) >= 0.6;
+}
+
+const splitRules = (s: string | null | undefined) =>
+  (s ?? '')
+    .split(/;|\n|\.\s+(?=[A-Z])/)
+    .map((x) => sanitizeText(x))
+    .filter((x) => x.length >= 4);
+
+const shortName = (text: string) => {
+  const t = text.replace(/\.$/, '');
+  return t.length <= 60 ? t : `${t.slice(0, 57)}…`;
+};
+
+/**
+ * Rule list from the saved strategy — nothing generic is added.
+ * Critical (a FAIL means STAND DOWN): invalidation / no-trade rules, the
+ * required bias alignment, and the system rules (instrument, entry window).
+ * Other required rules that fail mean WAIT (e.g. confirmation not there yet).
+ * Optional checklist items never block.
+ */
+export function rulesFromStrategy(s: StrategyRecord): SetupRule[] {
+  const out: SetupRule[] = [];
+  const used = new Set<string>();
+  const add = (r: { id: string; label: string; description: string; required: boolean; critical: boolean; kind?: 'visual' | 'system' }) => {
+    const description = sanitizeText(r.description);
+    if (!description) return;
+    const inverted = r.id.startsWith('invalid_');
+    if (r.kind !== 'system' && out.some((x) => x.kind === 'visual' && x.id.startsWith('invalid_') === inverted && overlaps(x.description, description))) return;
+    let id = r.id;
+    for (let n = 2; used.has(id); n++) id = `${r.id}_${n}`;
+    used.add(id);
+    out.push({ id, label: sanitizeText(r.label, 80), description, required: r.required, critical: r.critical, kind: r.kind ?? 'visual' });
+  };
+
+  for (const item of s.checklist) add({ id: `checklist_${slug(item.id || item.label)}`, label: item.label, description: item.label, required: item.required, critical: false });
+  for (const c of s.conditions ?? []) {
+    const inverted = c.role === 'invalidation' || c.role === 'noTrade';
+    add({ id: `${inverted ? 'invalid' : 'rule'}_${slug(c.id || c.text)}`, label: inverted ? `Not present: ${shortName(c.text)}` : shortName(c.text), description: inverted ? `MUST NOT be present: ${c.text}` : c.text, required: true, critical: inverted || c.role === 'bias' });
+  }
+  if (s.requiresBiasAlignment && s.biasRequirement.trim()) {
+    const bias = sanitizeText(s.biasRequirement, 60);
+    add({ id: 'bias_alignment', label: `${bias} bias aligned`, description: `Trade direction aligns with the ${bias} bias`, required: true, critical: true });
+  }
+  for (const t of splitRules(s.entryTrigger)) add({ id: `trigger_${slug(t)}`, label: 'Entry trigger', description: t, required: true, critical: false });
+  for (const t of splitRules(s.confirmationRules)) add({ id: `confirm_${slug(t)}`, label: shortName(t), description: t, required: true, critical: false });
+  for (const t of splitRules(s.retestRules)) add({ id: `retest_${slug(t)}`, label: 'Retest', description: t, required: true, critical: false });
+  for (const t of splitRules(s.invalidationRules)) add({ id: `invalid_${slug(t)}`, label: `Not invalidated: ${shortName(t)}`, description: `MUST NOT be present: ${t}`, required: true, critical: true });
+
+  if (s.markets.length) add({ id: 'system_instrument', label: 'Instrument in plan', description: `Instrument is one of: ${s.markets.join(', ')}`, required: true, critical: true, kind: 'system' });
+  if (s.entryWindowStart || s.entryWindowEnd) add({ id: 'system_entry_window', label: 'Entry window', description: `Inside the entry window ${s.entryWindowStart ?? 'open'}–${s.entryWindowEnd ?? 'close'} ET`, required: true, critical: true, kind: 'system' });
+  return out;
+}
+
+export const visualRules = (rules: SetupRule[]) => rules.filter((r) => r.kind === 'visual');
+
+// ───────────────────────────── System evidence (computed, never from a client) ─────────────────────────────
+
+/** Wall-clock minutes in America/New_York. */
+export function easternMinutes(now: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(now);
+  const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 0) % 24;
+  const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+  return h * 60 + m;
+}
+
+const clock = (v: string | null) => {
+  const m = v ? /^(\d{1,2}):(\d{2})$/.exec(v.trim()) : null;
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+
+export function systemEvidence(s: StrategyRecord, rules: SetupRule[], instrument: string, now: Date): Evidence[] {
+  const out: Evidence[] = [];
+  if (rules.some((r) => r.id === 'system_instrument')) {
+    const ok = s.markets.some((m) => m.toUpperCase() === instrument.toUpperCase());
+    out.push({ ruleId: 'system_instrument', status: ok ? 'PASS' : 'FAIL', source: 'system', confidence: 1, reason: ok ? `${instrument} is one of this strategy’s markets.` : `${instrument} is not in this strategy’s markets (${s.markets.join(', ')}).` });
+  }
+  if (rules.some((r) => r.id === 'system_entry_window')) {
+    const start = clock(s.entryWindowStart);
+    const end = clock(s.entryWindowEnd);
+    const m = easternMinutes(now);
+    const inside = (start == null || m >= start) && (end == null || m <= end);
+    out.push({ ruleId: 'system_entry_window', status: inside ? 'PASS' : 'FAIL', source: 'system', confidence: 1, reason: inside ? 'Now is inside the strategy’s entry window.' : `Now is outside the strategy’s entry window (${s.entryWindowStart ?? 'open'}–${s.entryWindowEnd ?? 'close'} ET).` });
+  }
+  return out;
+}

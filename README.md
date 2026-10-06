@@ -97,18 +97,29 @@ npx supabase secrets set AI_PROVIDER=openai OPENAI_API_KEY=sk-...
 
 Then set `EXPO_PUBLIC_AI_MODE=remote`.
 
-### AI Setup Check (chart vs your saved rules)
+### Setup Check (chart vs your saved rules)
 
-`Analyze Setup` (Home) / `AI Setup Check` (Check Trade) sends a chart screenshot plus the selected strategy's rules to the `setup-validation` Edge Function, which calls the OpenAI Responses API with image input and a strict JSON schema. The model only reports evidence and PASS / FAIL / UNVERIFIED / NOT_APPLICABLE per rule; the app decides QUALIFIED / WAIT / STAND DOWN deterministically (`src/lib/engines/setupValidation`).
+`Analyze Setup` (Home) / `AI Setup Check` (Check Trade) checks a setup against the selected strategy's **own** saved rules with one deterministic engine, `evaluateSetup` (`src/lib/engines/setupCheck`). The same code runs on the server: `npm run shared:sync` copies it (plus the instrument catalog) to `supabase/functions/_shared/setupCheck` — run it after editing the engine; a test fails if the copies drift.
+
+- Rule alignment = confirmed required rules ÷ required rules. Missing, low-confidence, unverified or demo evidence adds zero. It measures rule completion, not win probability; there is no grade.
+- 🟢 QUALIFIED (engine `TAKE TRADE`) only when every required rule, risk check and prop check passes; a critical failure or a known risk / firm violation → 🔴 STAND DOWN; anything else → 🟡 WAIT.
+- Changing the screenshot, strategy, instrument, account, direction, entry, stop, target or size invalidates the previous analysis; late responses never overwrite newer ones.
+
+Modes:
+
+| Mode | When | Who decides | Chart analysis |
+| --- | --- | --- | --- |
+| REMOTE | signed in (cloud), `EXPO_PUBLIC_AI_MODE=remote`, function deployed | `setup-validation` Edge Function (loads strategy, account, prop rules, trades for the user) | OpenAI Responses API, image bytes + strict JSON schema |
+| MANUAL | no provider configured | device | none — every rule is confirmed by the trader |
+| DEMO | "Explore the demo" | device | simulated, labelled, zero weight — can never clear |
 
 ```bash
-npx supabase db push                                   # setup_checks + setup_validation_requests tables
+npm run shared:sync                                    # after engine edits
+npx supabase db push                                   # setup_checks + setup_validation_requests columns
 npx supabase functions deploy setup-validation
 npx supabase secrets set OPENAI_API_KEY=sk-...           # server-side only
-# optional: OPENAI_VISION_MODEL (default gpt-6-sol), SETUP_CHECK_RATE_PER_HOUR (default 30)
+# optional: OPENAI_VISION_MODEL (default gpt-6-sol), SETUP_CHECK_RATE_PER_HOUR (30), SETUP_CHECK_TIMEOUT_MS (30000)
 ```
-
-Without AI configured, development / demo builds use a clearly-labelled simulated analysis (`MockVisionProvider`); production builds show "not configured" instead of fake analysis.
 
 Safety design:
 - **Provider-independent.** Screens call `aiService` (`src/services/ai`), which implements `AIProvider`: `analyzeTradeSetup`, `analyzeScreenshot`, `generateSessionReview`, `recommendStrategies` and `generateDailyCoach`.

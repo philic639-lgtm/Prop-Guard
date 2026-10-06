@@ -36,7 +36,11 @@ export default function SavedSetupCheck() {
 
   return (
     <Screen header={<AppHeader title="Setup check" subtitle={new Date(check.createdAt).toLocaleString()} back />}>
-      <SetupCheckResult check={check} />
+      <SetupCheckResult
+        result={check}
+        meta={{ strategyName: check.strategyName, instrument: check.instrument, timeframe: check.timeframe, direction: check.direction, evaluatedBy: check.evaluatedBy }}
+        screenshotUri={check.screenshotUri}
+      />
       <Card>
         <AppText variant="label">Journal link</AppText>
         {linked ? (
