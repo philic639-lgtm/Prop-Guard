@@ -46,7 +46,7 @@ export function RuleConfirmations({ rules, manual, chartEvidence, evaluation, on
       </AppText>
       {rules.map((r) => {
         const ev = chartEvidence[r.id];
-        const computed = r.kind === 'system' ? evaluation?.evaluatedRules.find((x) => x.id === r.id) : undefined;
+        const computed = r.kind !== 'visual' ? evaluation?.evaluatedRules.find((x) => x.id === r.id) : undefined;
         return (
           <View key={r.id} style={styles.rule}>
             <View style={styles.row}>
@@ -60,9 +60,9 @@ export function RuleConfirmations({ rules, manual, chartEvidence, evaluation, on
                 {r.description}
               </AppText>
             ) : null}
-            {r.kind === 'system' ? (
+            {r.kind !== 'visual' ? (
               <AppText variant="caption" tone={computed?.status === 'PASS' ? 'positive' : computed?.status === 'FAIL' ? 'danger' : 'warning'} style={{ marginTop: 4 }}>
-                Checked by Prop Guard: {computed ? `${computed.status} — ${computed.reason}` : 'pending'}
+                {r.kind === 'icc' ? 'From the ICC stages' : 'Checked by Prop Guard'}: {computed ? `${computed.status} — ${computed.reason}` : 'pending'}
               </AppText>
             ) : (
               <>

@@ -18,6 +18,7 @@ export function strategyRecordOf(s: Strategy): StrategyRecord {
     retestRules: s.retestRules,
     invalidationRules: s.invalidationRules,
     minRR: s.minRR,
+    libraryId: s.libraryId ?? null,
     checklist: s.checklist.map((c) => ({ id: c.id, label: c.label, required: c.required })),
     conditions: s.structured?.testableRules?.conditions.map((c) => ({ id: c.id, role: c.role, text: c.text })),
   };

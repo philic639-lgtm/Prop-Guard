@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 
 import { AppHeader, AppText, Button, Card, ConfirmationSheet, EmptyState, Screen, SelectField } from '@/components/ui';
+import { IccSetupCard } from '@/features/setupCheck/IccPanels';
 import { SetupCheckResult } from '@/features/setupCheck/SetupCheckResult';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -36,6 +37,7 @@ export default function SavedSetupCheck() {
 
   return (
     <Screen header={<AppHeader title="Setup check" subtitle={new Date(check.createdAt).toLocaleString()} back />}>
+      {check.icc ? <IccSetupCard icc={check.icc} decision={check.decision} riskCheck={check.riskCheck} propCompliance={check.propFirmCompliance} screenshotUri={check.screenshotUri} /> : null}
       <SetupCheckResult
         result={check}
         meta={{ strategyName: check.strategyName, instrument: check.instrument, timeframe: check.timeframe, direction: check.direction, evaluatedBy: check.evaluatedBy }}

@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs';
 
 import { createDemoData } from '@/data/demo';
+import { BUILT_IN_TEMPLATES } from '@/data/strategies/catalog';
+import { strategyFromTemplate } from '@/features/strategy/fromTemplate';
 import { SetupCheckController, type ControllerDeps, type ProviderMode, type SetupForm } from '@/features/setupCheck/controller';
 import { toSetupCheck } from '@/features/setupCheck/toSetupCheck';
 import { evaluateSetup, type SetupEvaluation } from '@/lib/engines/setupCheck';
-import { demoObservations } from '@/services/setupCheck/demoVision';
+import { demoIccObservation, demoObservations } from '@/services/setupCheck/demoVision';
 import { SetupCheckError } from '@/services/setupCheck/errors';
 import { validateImage } from '@/services/setupCheck/imageValidation';
 import { localTrustedContext } from '@/services/setupCheck/localContext';
@@ -28,6 +30,7 @@ const FORM: SetupForm = {
   entry: 5000,
   stop: 4996,
   target: 5010,
+  target2: null,
   quantity: 2,
   costs: 2,
   slippage: 2.5,
@@ -48,13 +51,16 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+const ICC = strategyFromTemplate(BUILT_IN_TEMPLATES.find((t) => t.id === 'icc')!);
+
 function deps(mode: ProviderMode, remote: RemoteSetupClient | null = null): ControllerDeps {
-  const records = new Map(demo.strategies.map((s) => [s.id, strategyRecordOf(s)]));
+  const records = new Map([...demo.strategies, ICC].map((s) => [s.id, strategyRecordOf(s)]));
   return {
     mode,
     strategy: (id) => (id ? (records.get(id) ?? null) : null),
     trusted: (form, record, now) => localTrustedContext({ record, instrument: form.instrument, account: demo.accounts.find((a) => a.id === form.accountId) ?? null, trades: [], tradingRules: demo.tradingRules, now }),
     demoVision: demoObservations,
+    demoIcc: demoIccObservation,
     remote,
     now: () => NOW,
   };
@@ -316,11 +322,62 @@ describe('Setup Check — remote client (server trust boundary)', () => {
     expect(src).toMatch(/parseClientInput\(/);
     expect(src).toMatch(/auth\.getUser/);
     expect(src).toMatch(/from\('strategies'\)/);
-    expect(src).toMatch(/evaluateSetup\(/);
+    expect(src).toMatch(/runSetupCheck\(/);
     // Keys come from function secrets and are never logged; no chart contents in logs.
     expect(src).toMatch(/Deno\.env\.get\('OPENAI_API_KEY'\)/);
     expect(src).not.toMatch(/console\.(log|info|debug)\([^)]*(image|base64|OPENAI_API_KEY|key)/i);
     // Nothing under src/ may reference the OpenAI key or the server-only vision module.
     expect(readFileSync('src/features/setupCheck/useSetupCheck.ts', 'utf8')).not.toMatch(/OPENAI|setupCheck\/vision/);
+  });
+});
+
+describe('Setup Check controller — ICC strategy', () => {
+  const ICC_FORM: SetupForm = { ...FORM, strategyId: ICC.id, timeframe: '5m', target2: 5020 };
+  const FULL = { htfBias: 'BULLISH', indication: 'CONFIRMED', displacement: 'STRONG', correction: 'CONFIRMED', continuation: 'CONFIRMED', momentum: 'STRONG', room: 'CLEAR' } as const;
+  const confirmIcc = (c: SetupCheckController) => {
+    for (const [k, v] of Object.entries(FULL)) c.setIcc(k as keyof typeof FULL, v);
+    c.setManual('icc_stop_structural', 'PASS');
+  };
+
+  it('MANUAL: explicit stage confirmations produce the ICC card and can qualify; nothing is pre-selected', () => {
+    const c = new SetupCheckController(deps('MANUAL'), ICC_FORM);
+    expect(c.getState().icc).toEqual({});
+    expect(c.view().icc!.entryStatus).toBe('NO CLEAR ICC SETUP');
+    expect(c.view().evaluation!.decision).toBe('WAIT');
+    confirmIcc(c);
+    expect(c.view().icc).toMatchObject({ entryStatus: 'VALID ICC LONG', scoreLabel: 'A+ ICC setup' });
+    expect(c.view().evaluation!.decision).toBe('TAKE TRADE');
+    expect(c.clientInput().icc).toEqual(FULL);
+  });
+
+  it('a new screenshot or strategy clears the stage confirmations', () => {
+    const c = new SetupCheckController(deps('MANUAL'), ICC_FORM);
+    c.setScreenshot(shot('a'));
+    confirmIcc(c);
+    c.setScreenshot(shot('b'));
+    expect(c.getState().icc).toEqual({});
+    confirmIcc(c);
+    c.setForm({ strategyId: ORB.id });
+    expect(c.getState().icc).toEqual({});
+  });
+
+  it('DEMO: the simulated ICC reading is shown (with overlay) but never counted', async () => {
+    const c = new SetupCheckController(deps('DEMO'), ICC_FORM);
+    c.setScreenshot(shot('demo-icc'));
+    await c.analyze();
+    const v = c.view();
+    expect(v.icc!.observation).toMatchObject({ source: 'demo', counted: false });
+    expect(Object.keys(v.icc!.observation!.data.overlay).length).toBeGreaterThan(0);
+    expect(v.icc!.entryStatus).toBe('NO CLEAR ICC SETUP');
+    confirmIcc(c);
+    expect(c.view().evaluation!.decision).not.toBe('TAKE TRADE'); // demo mode can never clear
+  });
+
+  it('REMOTE: shows the server’s ICC card', async () => {
+    const icc = { entryStatus: 'WAIT — CORRECTION DEVELOPING' } as never;
+    const c = new SetupCheckController(deps('REMOTE', { analyze: jest.fn(async () => ({ ...serverResult(), icc })), evaluate: jest.fn() }), ICC_FORM);
+    c.setScreenshot(shot('r'));
+    await c.analyze();
+    expect(c.view().icc).toBe(icc);
   });
 });

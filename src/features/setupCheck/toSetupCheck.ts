@@ -1,4 +1,4 @@
-import type { SetupEvaluation } from '@/lib/engines/setupCheck';
+import type { IccSummary, SetupEvaluation } from '@/lib/engines/setupCheck';
 import type { SetupCheck } from '@/types/domain';
 
 import type { SetupForm } from './controller';
@@ -15,6 +15,7 @@ export function toSetupCheck(a: {
   analysisId: number | null;
   analysisKey: string | null;
   screenshotUri: string | null;
+  icc?: IccSummary | null;
 }): SetupCheck {
   const e = a.evaluation;
   const f = a.form;
@@ -47,7 +48,8 @@ export function toSetupCheck(a: {
     evaluatedBy: a.evaluatedBy,
     analysisId: a.analysisId,
     analysisKey: a.analysisKey,
-    inputs: { entry: f.entry, stop: f.stop, target: f.target, quantity: f.quantity, costs: f.costs, slippage: f.slippage, reserve: f.reserve },
+    inputs: { entry: f.entry, stop: f.stop, target: f.target, target2: f.target2, quantity: f.quantity, costs: f.costs, slippage: f.slippage, reserve: f.reserve },
+    icc: a.icc ?? null,
     notes: f.notes,
     screenshotUri: a.screenshotUri,
     screenshotPath: null,

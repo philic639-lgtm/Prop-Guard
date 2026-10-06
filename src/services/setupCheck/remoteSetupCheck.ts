@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { AnalysisMode, ClientSetupInput, SetupEvaluation } from '@/lib/engines/setupCheck';
+import type { AnalysisMode, ClientSetupInput, IccSummary, SetupEvaluation } from '@/lib/engines/setupCheck';
 
 import { isErrorCode, SetupCheckError } from './errors';
 
@@ -11,8 +11,10 @@ export interface RemoteSetupResult {
   key: string;
   strategyVersion: string;
   evaluatedAt: string;
-  rules: { id: string; label: string; description: string; kind: 'visual' | 'system'; required: boolean; critical: boolean }[];
+  rules: { id: string; label: string; description: string; kind: 'visual' | 'system' | 'icc'; required: boolean; critical: boolean }[];
   evaluation: SetupEvaluation;
+  /** ICC strategies: the ICC SETUP card, computed on the server. */
+  icc?: IccSummary | null;
 }
 
 export interface RemoteSetupClient {

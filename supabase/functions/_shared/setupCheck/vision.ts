@@ -6,7 +6,8 @@
 import type { Evidence, Rule } from './engine.ts';
 export type ImageInput = { bytes: Uint8Array; mime: 'image/png' | 'image/jpeg' | 'image/webp' };
 export type VisionProvider = {
-  analyze(request: { image: ImageInput; instructions: string; ruleIds: string[] }): Promise<unknown>;
+  /** `schema`: optional strict JSON schema for the response (default: per-rule observations). */
+  analyze(request: { image: ImageInput; instructions: string; ruleIds: string[]; schema?: { name: string; schema: unknown } }): Promise<unknown>;
 };
 type Observation = { ruleId?: unknown; status?: unknown; confidence?: unknown; reason?: unknown };
 export async function analyzeScreenshot(image: ImageInput, rules: Rule[], provider?: VisionProvider, timeoutMs = 30000) {

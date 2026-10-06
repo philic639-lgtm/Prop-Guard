@@ -7,6 +7,7 @@ import { StyleSheet, View } from 'react-native';
 import { AppHeader, AppText, Button, Card, EmptyState, ErrorState, HeaderIconButton, Input, LoadingState, NumericInput, Screen, SegmentedControl, SelectField, StatusBadge, ToggleRow } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import { newDraft } from '@/features/session/draft';
+import { IccSetupCard, IccStagePanel } from '@/features/setupCheck/IccPanels';
 import { ConfirmChips, RuleConfirmations } from '@/features/setupCheck/RuleConfirmations';
 import { SAMPLE_CHART_JPEG_BASE64 } from '@/features/setupCheck/sampleChart';
 import { SetupCheckResult } from '@/features/setupCheck/SetupCheckResult';
@@ -50,6 +51,7 @@ export default function SetupCheckScreen() {
     entry: null,
     stop: null,
     target: null,
+    target2: null,
     quantity: null,
     costs: null,
     slippage: null,
@@ -64,10 +66,19 @@ export default function SetupCheckScreen() {
   const restrictions = useMemo(() => firmRestrictions(account), [account]);
 
   // Text fields keep what the trader typed; the controller gets parsed numbers.
-  const [text, setText] = useState({ entry: '', stop: '', target: '', quantity: '', costs: '', slippage: '', reserve: '' });
+  const [text, setText] = useState({ entry: '', stop: '', target: '', target2: '', quantity: '', costs: '', slippage: '', reserve: '' });
   const setNum = (k: keyof typeof text) => (t: string) => {
     setText((cur) => ({ ...cur, [k]: t }));
     controller.setForm({ [k]: parseNum(t) } as Partial<typeof form>);
+  };
+  const isIcc = view.rules.some((r) => r.kind === 'icc');
+  // ICC: chart-read levels are only applied when the trader taps "Use these levels".
+  const useChartLevels = () => {
+    const lv = view.icc?.chartLevels;
+    if (!lv) return;
+    const patch = { entry: lv.entry, stop: lv.stop, target: lv.tp1, target2: lv.tp2 };
+    setText((cur) => ({ ...cur, entry: numToInput(patch.entry), stop: numToInput(patch.stop), target: numToInput(patch.target), target2: numToInput(patch.target2) }));
+    controller.setForm(patch);
   };
   const [pickError, setPickError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -109,6 +120,7 @@ export default function SetupCheckScreen() {
       analysisId: view.analysis?.analysisId ?? null,
       analysisKey: view.key,
       screenshotUri: state.screenshot?.uri ?? null,
+      icc: view.icc,
     });
     saveSetupCheck(check);
     setSaved(check.id);
@@ -238,12 +250,19 @@ export default function SetupCheckScreen() {
       </View>
       <View style={styles.row}>
         <View style={styles.flex}>
-          <NumericInput label="Target" value={text.target} onChangeText={setNum('target')} placeholder="—" />
+          <NumericInput label={isIcc ? 'TP1' : 'Target'} value={text.target} onChangeText={setNum('target')} placeholder="—" />
         </View>
-        <View style={styles.flex}>
-          <NumericInput label="Contracts" value={text.quantity} onChangeText={setNum('quantity')} placeholder="Whole number" />
-        </View>
+        {isIcc ? (
+          <View style={styles.flex}>
+            <NumericInput label="TP2 (optional)" value={text.target2} onChangeText={setNum('target2')} placeholder="—" hint="R:R only" />
+          </View>
+        ) : (
+          <View style={styles.flex}>
+            <NumericInput label="Contracts" value={text.quantity} onChangeText={setNum('quantity')} placeholder="Whole number" />
+          </View>
+        )}
       </View>
+      {isIcc ? <NumericInput label="Contracts" value={text.quantity} onChangeText={setNum('quantity')} placeholder="Whole number" /> : null}
       <View style={styles.row}>
         <View style={styles.flex}>
           <NumericInput label="Fees ($)" value={text.costs} onChangeText={setNum('costs')} placeholder="0 allowed" hint="Whole position" />
@@ -253,6 +272,8 @@ export default function SetupCheckScreen() {
         </View>
       </View>
       <Input label="Notes" value={form.notes} onChangeText={(t) => controller.setForm({ notes: t })} placeholder="e.g. 1H trend is up" multiline maxLength={240} />
+
+      {isIcc ? <IccStagePanel manual={state.icc} onChange={(k, v) => controller.setIcc(k, v)} icc={view.icc} onUseLevels={useChartLevels} /> : null}
 
       {view.rules.length ? <RuleConfirmations rules={view.rules} manual={state.manual} chartEvidence={view.chartEvidence} evaluation={evaluation} onChange={(id, s) => controller.setManual(id, s)} /> : null}
 
@@ -289,6 +310,7 @@ export default function SetupCheckScreen() {
       ) : null}
 
       {state.evaluationError ? <ErrorState message={state.evaluationError.message} onRetry={state.evaluationError.retry ? () => void controller.refresh() : undefined} /> : null}
+      {evaluation && strategy && view.icc ? <IccSetupCard icc={view.icc} decision={evaluation.decision} riskCheck={evaluation.riskCheck} propCompliance={evaluation.propFirmCompliance} screenshotUri={state.screenshot?.uri ?? (state.screenshot ? `data:${state.screenshot.mimeType};base64,${state.screenshot.base64}` : null)} /> : null}
       {evaluation && strategy ? (
         <SetupCheckResult
           result={evaluation}

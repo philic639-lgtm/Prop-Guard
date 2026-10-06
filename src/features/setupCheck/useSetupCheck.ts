@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import { env } from '@/config/env';
-import { demoObservations } from '@/services/setupCheck/demoVision';
+import { demoIccObservation, demoObservations } from '@/services/setupCheck/demoVision';
 import { localTrustedContext } from '@/services/setupCheck/localContext';
 import { remoteSetupClient } from '@/services/setupCheck/remoteSetupCheck';
 import { strategyRecordOf } from '@/services/setupCheck/strategyRecord';
@@ -36,6 +36,7 @@ export function useSetupCheck(initial: SetupForm) {
       strategy: (id) => (id ? (records.get(id) ?? null) : null),
       trusted: (form, record, now) => localTrustedContext({ record, instrument: form.instrument, account: accounts.find((a) => a.id === form.accountId) ?? null, trades, tradingRules, now }),
       demoVision: demoObservations,
+      demoIcc: demoIccObservation,
       remote: mode === 'REMOTE' && supabase ? remoteSetupClient(supabase) : null,
       now: () => new Date(),
     };

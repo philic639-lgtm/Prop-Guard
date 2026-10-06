@@ -113,6 +113,8 @@ Modes:
 | MANUAL | no provider configured | device | none — every rule is confirmed by the trader |
 | DEMO | "Explore the demo" | device | simulated, labelled, zero weight — can never clear |
 
+**ICC — Indication / Correction / Continuation.** Choose the ICC template in the Strategy Library (Save Strategy), then pick it in Setup Check. Its stage rules come first (higher-timeframe alignment, indication, correction, continuation, structure intact, direction match, structural stop, stage quality ≥ 70 / ≥ 60), on top of your own added rules, risk plan and prop-firm rules. The ICC card shows the entry status (`WAIT — INDICATION ONLY` … `VALID ICC LONG/SHORT`, `ICC SETUP INVALIDATED`, `NO CLEAR ICC SETUP`, or `VALID SETUP — POSITION SIZE TOO LARGE / STOP DISTANCE EXCEEDS RISK LIMIT`), a 0–100 stage-quality score, entry / stop / TP1 / TP2 with R:R, what has happened / is developing / still needs to happen, and an overlay on the screenshot when the chart reading supplies positions. The final decision is still the engine's QUALIFIED / WAIT / STAND DOWN.
+
 ```bash
 npm run shared:sync                                    # after engine edits
 npx supabase db push                                   # setup_checks + setup_validation_requests columns

@@ -1,3 +1,4 @@
+import type { IccSummary } from '@/lib/engines/setupCheck/icc';
 import type { InstrumentSpec } from '@/data/instruments';
 
 /**
@@ -541,7 +542,9 @@ export interface SetupCheck {
   evaluatedBy: 'server' | 'device';
   analysisId: number | null;
   analysisKey: string | null;
-  inputs: { entry: number | null; stop: number | null; target: number | null; quantity: number | null; costs: number | null; slippage: number | null; reserve: number | null };
+  inputs: { entry: number | null; stop: number | null; target: number | null; target2?: number | null; quantity: number | null; costs: number | null; slippage: number | null; reserve: number | null };
+  /** ICC strategies: the ICC SETUP card at save time. */
+  icc?: IccSummary | null;
   notes: string;
   /** Local image uri (this device) and private storage path (cloud, when uploaded). */
   screenshotUri: string | null;

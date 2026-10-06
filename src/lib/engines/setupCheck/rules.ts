@@ -2,6 +2,7 @@
 // Turns the trader's SAVED strategy into the engine's rule list. The same code
 // runs on the device and on the server, so rule IDs always match.
 import type { Evidence, Rule } from './engine';
+import { iccRules, iccTemplateDuplicates, isIccStrategy } from './icc';
 
 /** The saved-strategy fields Setup Check reads (from the store, or from the DB on the server). */
 export interface StrategyRecord {
@@ -21,6 +22,8 @@ export interface StrategyRecord {
   invalidationRules: string;
   minRR: number;
   checklist: { id: string; label: string; required: boolean }[];
+  /** Built-in template the strategy came from (e.g. 'icc'), if any. */
+  libraryId?: string | null;
   /** Saved Strategy-Intelligence conditions (structured.testableRules.conditions). */
   conditions?: { id: string; role: string; text: string }[];
 }
@@ -28,8 +31,10 @@ export interface StrategyRecord {
 /**
  * - visual: needs evidence from the chart (vision) or the trader (manual)
  * - system: computed by Prop Guard (instrument in plan, entry window)
+ * - icc: an ICC stage rule — evidence comes from the ICC stage observations
+ *   (chart analysis or the trader's stage confirmations), see icc.ts
  */
-export type SetupRule = Rule & { description: string; kind: 'visual' | 'system' };
+export type SetupRule = Rule & { description: string; kind: 'visual' | 'system' | 'icc' };
 
 const MAX_TEXT = 240;
 const CONTROL = /[\u0000-\u001f\u007f]+/g;
@@ -76,30 +81,35 @@ const shortName = (text: string) => {
 export function rulesFromStrategy(s: StrategyRecord): SetupRule[] {
   const out: SetupRule[] = [];
   const used = new Set<string>();
-  const add = (r: { id: string; label: string; description: string; required: boolean; critical: boolean; kind?: 'visual' | 'system' }) => {
+  const add = (r: { id: string; label: string; description: string; required: boolean; critical: boolean; kind?: SetupRule['kind'] }) => {
     const description = sanitizeText(r.description);
     if (!description) return;
     const inverted = r.id.startsWith('invalid_');
-    if (r.kind !== 'system' && out.some((x) => x.kind === 'visual' && x.id.startsWith('invalid_') === inverted && overlaps(x.description, description))) return;
+    if (r.kind !== 'system' && out.some((x) => x.kind !== 'system' && x.id.startsWith('invalid_') === inverted && overlaps(x.description, description))) return;
     let id = r.id;
     for (let n = 2; used.has(id); n++) id = `${r.id}_${n}`;
     used.add(id);
     out.push({ id, label: sanitizeText(r.label, 80), description, required: r.required, critical: r.critical, kind: r.kind ?? 'visual' });
   };
 
-  for (const item of s.checklist) add({ id: `checklist_${slug(item.id || item.label)}`, label: item.label, description: item.label, required: item.required, critical: false });
+  // ICC selected: its stage rules come first; template text they already cover is not repeated.
+  const icc = isIccStrategy(s);
+  const dup = icc ? iccTemplateDuplicates(s) : null;
+  if (icc) for (const r of iccRules()) add(r);
+
+  for (const item of s.checklist) if (!dup?.checklistLabel(item.label)) add({ id: `checklist_${slug(item.id || item.label)}`, label: item.label, description: item.label, required: item.required, critical: false });
   for (const c of s.conditions ?? []) {
     const inverted = c.role === 'invalidation' || c.role === 'noTrade';
     add({ id: `${inverted ? 'invalid' : 'rule'}_${slug(c.id || c.text)}`, label: inverted ? `Not present: ${shortName(c.text)}` : shortName(c.text), description: inverted ? `MUST NOT be present: ${c.text}` : c.text, required: true, critical: inverted || c.role === 'bias' });
   }
-  if (s.requiresBiasAlignment && s.biasRequirement.trim()) {
+  if (!dup?.bias && s.requiresBiasAlignment && s.biasRequirement.trim()) {
     const bias = sanitizeText(s.biasRequirement, 60);
     add({ id: 'bias_alignment', label: `${bias} bias aligned`, description: `Trade direction aligns with the ${bias} bias`, required: true, critical: true });
   }
-  for (const t of splitRules(s.entryTrigger)) add({ id: `trigger_${slug(t)}`, label: 'Entry trigger', description: t, required: true, critical: false });
-  for (const t of splitRules(s.confirmationRules)) add({ id: `confirm_${slug(t)}`, label: shortName(t), description: t, required: true, critical: false });
+  if (!dup?.entryTrigger) for (const t of splitRules(s.entryTrigger)) add({ id: `trigger_${slug(t)}`, label: 'Entry trigger', description: t, required: true, critical: false });
+  if (!dup?.confirmationRules) for (const t of splitRules(s.confirmationRules)) add({ id: `confirm_${slug(t)}`, label: shortName(t), description: t, required: true, critical: false });
   for (const t of splitRules(s.retestRules)) add({ id: `retest_${slug(t)}`, label: 'Retest', description: t, required: true, critical: false });
-  for (const t of splitRules(s.invalidationRules)) add({ id: `invalid_${slug(t)}`, label: `Not invalidated: ${shortName(t)}`, description: `MUST NOT be present: ${t}`, required: true, critical: true });
+  if (!dup?.invalidationRules) for (const t of splitRules(s.invalidationRules)) add({ id: `invalid_${slug(t)}`, label: `Not invalidated: ${shortName(t)}`, description: `MUST NOT be present: ${t}`, required: true, critical: true });
 
   if (s.markets.length) add({ id: 'system_instrument', label: 'Instrument in plan', description: `Instrument is one of: ${s.markets.join(', ')}`, required: true, critical: true, kind: 'system' });
   if (s.entryWindowStart || s.entryWindowEnd) add({ id: 'system_entry_window', label: 'Entry window', description: `Inside the entry window ${s.entryWindowStart ?? 'open'}–${s.entryWindowEnd ?? 'close'} ET`, required: true, critical: true, kind: 'system' });

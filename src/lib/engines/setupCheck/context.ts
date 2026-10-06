@@ -4,7 +4,8 @@
 // may supply (prices, size, costs, explicit manual confirmations). Anything a
 // client claims beyond that — vision evidence, verified prop rules, computed
 // results — is ignored here.
-import type { AnalysisMode, Evidence, Input, Prop, Status } from './engine';
+import { evaluateSetup, type AnalysisMode, type Evidence, type Input, type Prop, type SetupEvaluation, type Status } from './engine';
+import { iccEvidence, iccSummary, parseIccManual, resolveIccStages, type IccManual, type IccObservation, type IccSummary } from './icc';
 import { sanitizeText, type SetupRule } from './rules';
 
 // ───────────────────────────── Client payload (untrusted) ─────────────────────────────
@@ -20,6 +21,8 @@ export interface ClientSetupInput {
   entry: number | null;
   stop: number | null;
   target: number | null;
+  /** Optional second target (ICC TP2) — reported as R:R only, never part of the risk math. */
+  target2: number | null;
   quantity: number | null;
   /** Estimated fees for the whole position, in dollars. */
   costs: number | null;
@@ -35,6 +38,8 @@ export interface ClientSetupInput {
   manual: { ruleId: string; status: ManualStatus; reason?: string }[];
   /** Explicit confirmations of other firm restrictions (incl. "none applicable"). */
   firmConfirmations: { ruleId: string; status: ManualStatus; reason?: string }[];
+  /** ICC strategies: the trader's explicit stage confirmations (nothing pre-selected). */
+  icc: IccManual;
 }
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -61,6 +66,7 @@ export function parseClientInput(raw: unknown): ClientSetupInput | null {
     entry: num(o.entry),
     stop: num(o.stop),
     target: num(o.target),
+    target2: num(o.target2),
     quantity: num(o.quantity),
     costs: num(o.costs),
     slippage: num(o.slippage),
@@ -70,6 +76,7 @@ export function parseClientInput(raw: unknown): ClientSetupInput | null {
     notes: sanitizeText(o.notes, 240),
     manual: confirmations(o.manual),
     firmConfirmations: confirmations(o.firmConfirmations),
+    icc: parseIccManual(o.icc),
   };
 }
 
@@ -153,6 +160,10 @@ export interface TrustedContext {
   maxRisk: number | null;
   account: AccountRiskState | null;
   now: Date;
+  /** ICC strategies: the chart's stage observation (server vision, or labelled demo) — never from a client. */
+  iccObservation?: { data: IccObservation; source: 'vision' | 'demo' } | null;
+  /** Saved strategy timeframe (e.g. "1h / 15m / 5m"), for wording. */
+  strategyTimeframe?: string | null;
 }
 
 /**
@@ -160,7 +171,7 @@ export interface TrustedContext {
  * rules use the trader's explicit confirmation when given, else the
  * server's chart evidence. Client-claimed sources are discarded.
  */
-export function mergeEvidence(rules: SetupRule[], system: Evidence[], vision: Evidence[], manual: ClientSetupInput['manual']): Evidence[] {
+export function mergeEvidence(rules: SetupRule[], system: Evidence[], vision: Evidence[], manual: ClientSetupInput['manual'], icc: Evidence[] = []): Evidence[] {
   const out: Evidence[] = [];
   for (const r of rules) {
     if (r.kind === 'system') {
@@ -168,9 +179,20 @@ export function mergeEvidence(rules: SetupRule[], system: Evidence[], vision: Ev
       if (e) out.push(e);
       continue;
     }
+    // ICC stage rules: only from the resolved ICC stages (trader's stage confirmations or REAL chart analysis).
+    if (r.kind === 'icc') {
+      const e = icc.filter((x) => x.ruleId === r.id);
+      if (e.length === 1) out.push(e[0]);
+      continue;
+    }
     const m = manual.filter((x) => x.ruleId === r.id);
     if (m.length === 1) {
       out.push({ ruleId: r.id, status: m[0].status, source: 'manual', confidence: m[0].status === 'UNVERIFIED' ? 0 : 1, reason: m[0].reason || (m[0].status === 'PASS' ? 'Trader confirmed this rule.' : m[0].status === 'FAIL' ? 'Trader marked this rule as not met.' : 'Trader could not confirm this rule.') });
+      continue;
+    }
+    const derived = icc.filter((x) => x.ruleId === r.id);
+    if (derived.length === 1) {
+      out.push(derived[0]);
       continue;
     }
     const v = vision.filter((x) => x.ruleId === r.id && (x.source === 'vision' || x.source === 'demo'));
@@ -178,6 +200,11 @@ export function mergeEvidence(rules: SetupRule[], system: Evidence[], vision: Ev
   }
   return out;
 }
+
+const isIcc = (t: TrustedContext) => t.rules.some((r) => r.kind === 'icc');
+const iccStagesOf = (client: ClientSetupInput, t: TrustedContext) =>
+  resolveIccStages(t.iccObservation?.source === 'vision' ? t.iccObservation.data : null, t.analysisMode, client.icc, client.side);
+const iccTrade = (client: ClientSetupInput) => ({ side: client.side, entry: client.entry, stop: client.stop, target: client.target });
 
 export function buildEngineInput(client: ClientSetupInput, t: TrustedContext): Input {
   const pos = (v: number | null) => (v != null && v > 0 ? v : undefined);
@@ -198,7 +225,7 @@ export function buildEngineInput(client: ClientSetupInput, t: TrustedContext): I
   }
   return {
     rules: t.rules.map(({ id, label, required, critical }) => ({ id, label, required, critical })),
-    evidence: mergeEvidence(t.rules, t.systemEvidence, t.visionEvidence, client.manual),
+    evidence: mergeEvidence(t.rules, t.systemEvidence, t.visionEvidence, client.manual, isIcc(t) ? iccEvidence(iccStagesOf(client, t), iccTrade(client), t.minimumRR) : []),
     trade: {
       ...(client.side ? { side: client.side } : {}),
       entry: pos(client.entry),
@@ -215,6 +242,24 @@ export function buildEngineInput(client: ClientSetupInput, t: TrustedContext): I
     prop,
     analysisMode: t.analysisMode,
   };
+}
+
+/** The one Setup Check run (device and server): engine decision, plus the ICC card for ICC strategies. */
+export function runSetupCheck(client: ClientSetupInput, t: TrustedContext): { input: Input; evaluation: SetupEvaluation; icc: IccSummary | null } {
+  const input = buildEngineInput(client, t);
+  const evaluation = evaluateSetup(input);
+  if (!isIcc(t)) return { input, evaluation, icc: null };
+  const tf = client.timeframe || (t.strategyTimeframe ?? '').split('/').map((x) => x.trim()).filter(Boolean).pop() || null;
+  const icc = iccSummary({
+    stages: iccStagesOf(client, t),
+    observation: t.iccObservation ? { ...t.iccObservation, mode: t.analysisMode } : null,
+    trade: { ...iccTrade(client), target2: client.target2 },
+    minRR: t.minimumRR,
+    timeframe: tf,
+    input,
+    evaluation,
+  });
+  return { input, evaluation, icc };
 }
 
 // ───────────────────────────── Staleness ─────────────────────────────

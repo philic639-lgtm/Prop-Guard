@@ -53,6 +53,7 @@ const client = (over: Partial<ClientSetupInput> = {}): ClientSetupInput => ({
   entry: 5000,
   stop: 4996,
   target: 5010,
+  target2: null,
   quantity: 2,
   costs: 2,
   slippage: 2.5,
@@ -62,6 +63,7 @@ const client = (over: Partial<ClientSetupInput> = {}): ClientSetupInput => ({
   notes: '',
   manual: visualRules(rules).map((r) => ({ ruleId: r.id, status: 'PASS' as const })),
   firmConfirmations: [],
+  icc: {},
   ...over,
 });
 

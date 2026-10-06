@@ -32,7 +32,7 @@ export function accountRiskState(account: Account, trades: Trade[], now: Date): 
   };
 }
 
-export function localTrustedContext(args: { record: StrategyRecord; instrument: string; account: Account | null; trades: Trade[]; tradingRules: TradingRules; now: Date }): Omit<TrustedContext, 'visionEvidence' | 'analysisMode'> {
+export function localTrustedContext(args: { record: StrategyRecord; instrument: string; account: Account | null; trades: Trade[]; tradingRules: TradingRules; now: Date }): Omit<TrustedContext, 'visionEvidence' | 'analysisMode' | 'iccObservation'> {
   const rules = rulesFromStrategy(args.record);
   const spec = findInstrument(args.instrument);
   return {
@@ -43,6 +43,7 @@ export function localTrustedContext(args: { record: StrategyRecord; instrument: 
     maxRisk: args.tradingRules.maxRiskPerTrade,
     account: args.account ? accountRiskState(args.account, args.trades, args.now) : null,
     now: args.now,
+    strategyTimeframe: args.record.timeframe,
   };
 }
 
