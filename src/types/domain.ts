@@ -1,3 +1,4 @@
+import type { SetupDecision } from '@/lib/engines/setupCheck/decision';
 import type { IccSummary } from '@/lib/engines/setupCheck/icc';
 import type { InstrumentSpec } from '@/data/instruments';
 
@@ -296,7 +297,7 @@ export interface Trade {
   setupCheckId?: string | null;
 }
 
-export type PendingOrigin = 'analyze' | 'calculator';
+export type PendingOrigin = 'analyze' | 'calculator' | 'setup_check';
 /**
  * pending   — checked, waiting for a result
  * entered   — opened in the live monitor (the live trade owns it now)
@@ -545,6 +546,12 @@ export interface SetupCheck {
   inputs: { entry: number | null; stop: number | null; target: number | null; target2?: number | null; quantity: number | null; costs: number | null; slippage: number | null; reserve: number | null };
   /** ICC strategies: the ICC SETUP card at save time. */
   icc?: IccSummary | null;
+  /** Unified decision at save time (status, match score, conditions, prop rows, risk). */
+  setupDecision?: SetupDecision | null;
+  /** 'trade_plan' = QUALIFIED and saved as a pending journal trade; 'setup_review' = analysis only (WAIT / STAND DOWN / BLOCKED), never an executed trade. */
+  kind?: 'trade_plan' | 'setup_review';
+  /** e.g. "ICC — Awaiting confirmation". */
+  setupType?: string | null;
   notes: string;
   /** Local image uri (this device) and private storage path (cloud, when uploaded). */
   screenshotUri: string | null;

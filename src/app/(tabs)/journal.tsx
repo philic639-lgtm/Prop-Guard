@@ -25,6 +25,8 @@ export default function JournalScreen() {
   const trades = useAccountTrades();
   const pending = usePendingTrades();
   const lessons = useAppStore((s) => s.practiceLessons);
+  const setupChecks = useAppStore((s) => s.setupChecks);
+  const reviews = useMemo(() => setupChecks.filter((c) => c.kind === 'setup_review'), [setupChecks]);
   const [showAllPending, setShowAllPending] = useState(false);
   const strategies = useAppStore((s) => s.strategies);
   const plan = useSubscriptionStore((s) => s.plan);
@@ -90,6 +92,19 @@ export default function JournalScreen() {
             />
           ))}
         </View>
+      ) : null}
+      {reviews.length > 0 ? (
+        <Card onPress={() => router.push('/setup-check/history')} accessibilityLabel={`Setup reviews, ${reviews.length} saved`}>
+          <View style={styles.lessonHead}>
+            <AppText variant="label" tone="accent" style={{ flex: 1 }}>
+              Setup reviews · {reviews.length}
+            </AppText>
+            <AppText variant="caption">Not executed trades</AppText>
+          </View>
+          <AppText variant="caption" style={{ marginTop: spacing.xs }}>
+            {reviews.filter((r) => r.setupDecision?.displayStatus === 'WAIT').length} wait · {reviews.filter((r) => r.setupDecision?.displayStatus === 'STAND_DOWN').length} stand down · {reviews.filter((r) => r.setupDecision?.displayStatus === 'BLOCKED').length} blocked — setups you analysed and did not take.
+          </AppText>
+        </Card>
       ) : null}
       {lessons.length > 0 ? (
         <Card onPress={() => router.push('/journal/lessons')} accessibilityLabel={`Practice lessons, ${lessons.length} saved`}>

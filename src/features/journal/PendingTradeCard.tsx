@@ -30,7 +30,7 @@ function PendingTradeCardBase({ pending: p, strategyName, onPress }: PendingTrad
             </View>
           </View>
           <AppText variant="caption" tone="tertiary">
-            {shortDate(p.createdAt)} · {time(p.createdAt)} · {p.contracts} ct · {p.origin === 'calculator' ? 'Risk Calculator' : 'Trade check'}
+            {shortDate(p.createdAt)} · {time(p.createdAt)} · {p.contracts} ct · {p.origin === 'calculator' ? 'Risk Calculator' : p.origin === 'setup_check' ? 'AI Setup Check · QUALIFIED' : 'Trade check'}
           </AppText>
         </View>
         <StatusBadge label="Pending" tone="warning" icon="time-outline" size="sm" />

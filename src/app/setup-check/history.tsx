@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { AppHeader, AppText, Card, EmptyState, Screen, StatusBadge } from '@/components/ui';
 import { spacing } from '@/constants/theme';
 import { DECISION_UI } from '@/features/setupCheck/SetupCheckResult';
+import { STATUS_UI } from '@/features/setupCheck/SetupDecisionCard';
 import { setupCheckOutcomes } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import { money } from '@/utils/format';
@@ -42,18 +43,19 @@ export default function SetupCheckHistory() {
         </AppText>
       </Card>
       {checks.map((c) => {
-        const d = DECISION_UI[c.decision];
+        // Newer checks carry the unified status (incl. BLOCKED); older ones the engine decision.
+        const d = c.setupDecision ? { ...STATUS_UI[c.setupDecision.displayStatus], emoji: '' } : DECISION_UI[c.decision];
         return (
           <Card key={c.id} onPress={() => router.push({ pathname: '/setup-check/[id]', params: { id: c.id } })}>
             <View style={styles.row}>
               <AppText variant="bodyStrong" style={styles.flex}>
-                {d.emoji} {d.title}
+                {d.emoji ? `${d.emoji} ` : ''}{d.title}
               </AppText>
-              <StatusBadge label={`Rules ${c.ruleAlignmentScore}%`} tone={d.tone} size="sm" />
+              <StatusBadge label={c.setupDecision ? `Match ${c.setupDecision.match.score}%` : `Rules ${c.ruleAlignmentScore}%`} tone={d.tone} size="sm" />
             </View>
             <AppText variant="caption">
               {c.strategyName} · {c.instrument} · {new Date(c.createdAt).toLocaleString()}
-              {c.tradeId ? ' · trade linked' : ''}
+              {c.tradeId ? ' · trade linked' : c.kind === 'setup_review' ? ' · setup review' : ''}
               {c.analysisMode === 'DEMO' ? ' · DEMO' : ''}
             </AppText>
           </Card>

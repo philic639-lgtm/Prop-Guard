@@ -44,6 +44,7 @@ const client = (over: Partial<ClientSetupInput> = {}): ClientSetupInput => ({
   slippage: 2.5,
   reserve: 0,
   noDailyLimitConfirmed: false,
+  liveAccountConfirmed: false,
   timeframe: '5m',
   notes: '',
   manual: [{ ruleId: 'icc_stop_structural', status: 'PASS' }],

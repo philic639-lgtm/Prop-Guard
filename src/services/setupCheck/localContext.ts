@@ -29,6 +29,9 @@ export function accountRiskState(account: Account, trades: Trade[], now: Date): 
     maxContracts: account.rules.maxContracts,
     verified: link?.status === 'verified' && !RISK_FIELDS.some((f) => link.overrides.includes(f)),
     lastVerifiedAt: link?.lastVerifiedAt ?? null,
+    consistencyPct: account.rules.consistencyPct,
+    // Balance and P&L come from the journal — no live broker feed is connected.
+    liveData: false,
   };
 }
 
@@ -44,6 +47,7 @@ export function localTrustedContext(args: { record: StrategyRecord; instrument: 
     account: args.account ? accountRiskState(args.account, args.trades, args.now) : null,
     now: args.now,
     strategyTimeframe: args.record.timeframe,
+    strategyName: args.record.name,
   };
 }
 
@@ -53,6 +57,10 @@ const RESTRICTION_KEYS = ['tradingHours', 'overnight', 'weekend', 'news', 'produ
 export function firmRestrictions(account: Account | null): { id: string; label: string; detail: string; status: string }[] {
   if (!account || account.kind !== 'prop') return [];
   const rules = account.firmLink?.snapshot?.rules.filter((r) => RESTRICTION_KEYS.includes(r.key)) ?? [];
-  if (!rules.length) return [{ id: 'none_applicable', label: 'No other firm restrictions apply', detail: 'Confirm that no other firm rule (session, news, instruments, scaling, consistency…) applies to this setup.', status: 'manual' }];
-  return rules.map((r) => ({ id: r.key, label: r.label, detail: r.value, status: r.status }));
+  const out: { id: string; label: string; detail: string; status: string }[] = rules.map((r) => ({ id: r.key, label: r.label, detail: r.value, status: r.status }));
+  // The account's own consistency rule must be confirmed too (Setup Check never assumes it passes).
+  if (account.rules.consistencyPct && !out.some((r) => r.id === 'consistency'))
+    out.push({ id: 'consistency', label: 'Consistency rule', detail: `Largest day may not exceed ${account.rules.consistencyPct}% of total profit — confirm this trade keeps today within it.`, status: 'manual' });
+  if (!out.length) return [{ id: 'none_applicable', label: 'No other firm restrictions apply', detail: 'Confirm that no other firm rule (session, news, instruments, scaling, consistency…) applies to this setup.', status: 'manual' }];
+  return out;
 }

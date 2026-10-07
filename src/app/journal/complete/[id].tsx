@@ -174,7 +174,7 @@ function CompleteForm({ pending: p }: { pending: PendingTrade }) {
           <StatusBadge label="Pending result" tone="warning" icon="time-outline" size="sm" />
         </View>
         <AppText variant="caption">
-          Checked {longDate(p.createdAt)} · {time(p.createdAt)} · {p.origin === 'calculator' ? 'Risk Calculator' : 'Trade check'}
+          Checked {longDate(p.createdAt)} · {time(p.createdAt)} · {p.origin === 'calculator' ? 'Risk Calculator' : p.origin === 'setup_check' ? 'AI Setup Check · QUALIFIED' : 'Trade check'}
         </AppText>
       </View>
 

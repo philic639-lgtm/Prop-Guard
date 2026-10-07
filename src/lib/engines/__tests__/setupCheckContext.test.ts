@@ -59,6 +59,7 @@ const client = (over: Partial<ClientSetupInput> = {}): ClientSetupInput => ({
   slippage: 2.5,
   reserve: 0,
   noDailyLimitConfirmed: false,
+  liveAccountConfirmed: false,
   timeframe: '5m',
   notes: '',
   manual: visualRules(rules).map((r) => ({ ruleId: r.id, status: 'PASS' as const })),
@@ -203,8 +204,12 @@ describe('Setup Check — prop accounts', () => {
 
   it('a verified, current account with confirmed restrictions can clear; missing or stale firm data blocks it', () => {
     const firm = [{ ruleId: 'other_firm_rules', status: 'PASS' as const }];
-    const ok = evaluateSetup(buildEngineInput(client({ firmConfirmations: firm }), trusted({ account: account() })));
+    const ok = evaluateSetup(buildEngineInput(client({ firmConfirmations: firm, liveAccountConfirmed: true }), trusted({ account: account() })));
     expect(ok.decision).toBe('TAKE TRADE');
+    // Journal-derived buffers are not live data: without the trader's live-state confirmation it cannot clear.
+    const notLive = evaluateSetup(buildEngineInput(client({ firmConfirmations: firm }), trusted({ account: account() })));
+    expect(notLive.decision).toBe('WAIT');
+    expect(notLive.propChecks.find((c) => c.id === 'live')!.status).toBe('UNVERIFIED');
     expect(evaluateSetup(buildEngineInput(client(), trusted({ account: account() }))).decision).toBe('WAIT'); // other firm rules not confirmed
     expect(evaluateSetup(buildEngineInput(client({ firmConfirmations: firm }), trusted({ account: account({ verified: false }) }))).decision).toBe('WAIT');
     expect(evaluateSetup(buildEngineInput(client({ firmConfirmations: firm }), trusted({ account: account({ lastVerifiedAt: '2026-01-01T00:00:00Z' }) }))).decision).toBe('WAIT');

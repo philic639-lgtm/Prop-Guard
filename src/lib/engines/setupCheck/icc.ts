@@ -13,6 +13,7 @@
 //    trader's risk plan and prop-firm rules. A high ICC score never raises
 //    risk and never overrides a risk / prop failure.
 import type { AnalysisMode, Evidence, Input, SetupEvaluation } from './engine';
+import { riskSummary } from './risk';
 import type { SetupRule } from './rules';
 
 export const ICC_LIBRARY_ID = 'icc';
@@ -400,23 +401,12 @@ const fmt = (n: number | null | undefined) => (n == null ? null : Number(n.toFix
 
 /** Risk statuses for a VALID pattern whose stop / size breaks the trader's risk plan or the account limits. */
 function riskStatus(input: Input, evaluation: SetupEvaluation): { status: IccRiskStatus; detail: string } | null {
-  const t = input.trade;
-  const failed = (id: string, list: { id: string; status: string }[]) => list.some((c) => c.id === id && c.status === 'FAIL');
-  const budget = failed('budget', evaluation.riskChecks);
-  const buffers = failed('buffers', evaluation.propChecks);
-  const contracts = failed('contracts', evaluation.propChecks);
-  if (!budget && !buffers && !contracts) return null;
-  if (!t.entry || !t.stop || !t.pointValue || !t.quantity) return { status: 'VALID SETUP — POSITION SIZE TOO LARGE', detail: 'The position breaks a risk or account limit.' };
-  const perContract = Math.abs(t.entry - t.stop) * t.pointValue;
-  const costs = (t.costs ?? 0) + (t.slippage ?? 0);
-  const p = input.prop;
-  const limits = [t.maxRisk, p.mode === 'prop' && p.drawdownBuffer != null ? p.drawdownBuffer - (p.reserve ?? 0) : undefined, p.mode === 'prop' && p.dailyLossRemaining != null ? p.dailyLossRemaining - (p.reserve ?? 0) : undefined].filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
-  const limit = limits.length ? Math.min(...limits) : null;
-  if (limit != null && perContract + costs > limit)
-    return { status: 'VALID SETUP — STOP DISTANCE EXCEEDS RISK LIMIT', detail: `Even 1 contract risks about $${(perContract + costs).toFixed(2)} to the structural stop — over your $${limit.toFixed(2)} limit. Wait for a tighter structural entry or pass.` };
-  const fit = limit != null ? Math.floor((limit - costs) / perContract) : null;
-  const cap = p.mode === 'prop' && p.maxContracts ? p.maxContracts : null;
-  const max = fit != null && cap != null ? Math.min(fit, cap) : (fit ?? cap);
+  const r = riskSummary(input, evaluation);
+  if (!r.riskCapExceeded && !r.contractsExceeded) return null;
+  if (r.riskPerContract == null || r.contracts == null) return { status: 'VALID SETUP — POSITION SIZE TOO LARGE', detail: 'The position breaks a risk or account limit.' };
+  if (r.stopTooWide)
+    return { status: 'VALID SETUP — STOP DISTANCE EXCEEDS RISK LIMIT', detail: `Even 1 contract risks about $${(r.riskPerContract + (r.costs ?? 0)).toFixed(2)} to the structural stop — over your $${r.riskLimit!.toFixed(2)} limit. Wait for a tighter structural entry or pass.` };
+  const max = r.maxAllowedContracts;
   return { status: 'VALID SETUP — POSITION SIZE TOO LARGE', detail: max != null && max >= 1 ? `Reduce to at most ${max} contract${max === 1 ? '' : 's'} — never widen risk because the setup looks good.` : 'Reduce the position size to fit your limits.' };
 }
 

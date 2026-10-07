@@ -3,3 +3,6 @@ export * from './engine';
 export * from './rules';
 export * from './context';
 export * from './icc';
+export * from './risk';
+export * from './decision';
+export * from './events';

@@ -1,0 +1,75 @@
+// SHARED, dependency-free (synced to supabase/functions/_shared/setupCheck).
+// Setup lifecycle events — the contract future setup alerts are built on.
+//
+// The SAME decision engine produces every SetupDecision, whatever fed it:
+// a screenshot, manual confirmations, delayed bars, a websocket feed or a
+// broker. A watcher only has to call `setupTransition(previous, next)` on each
+// new decision and deliver the event it returns (if any). Nothing here sends
+// notifications or talks to a broker.
+
+export type SetupEventType = 'SETUP_DETECTED' | 'SETUP_PROGRESS' | 'SETUP_CONFIRMATION_PENDING' | 'SETUP_CONFIRMED' | 'SETUP_INVALIDATED' | 'RISK_BLOCKED';
+export type SetupSignalSource = 'screenshot' | 'manual' | 'delayed_data' | 'live_data' | 'broker';
+
+/** The part of a decision that defines the setup's lifecycle state. */
+export interface SetupSnapshot {
+  strategyId: string;
+  status: 'QUALIFIED' | 'WAIT' | 'STAND_DOWN' | 'BLOCKED' | 'NEEDS_INPUT';
+  stage: string;
+  matchScore: number;
+  /** True once any strategy condition has been assessed (not everything pending). */
+  assessed: boolean;
+}
+
+export interface SetupEvent {
+  type: SetupEventType;
+  strategyId: string;
+  strategyName: string;
+  instrument: string;
+  source: SetupSignalSource;
+  at: string;
+  matchScore: number;
+  title: string;
+  message: string;
+}
+
+/** Lifecycle state of one decision (null = nothing worth an alert). */
+export function setupStateOf(s: SetupSnapshot): SetupEventType | null {
+  switch (s.status) {
+    case 'QUALIFIED':
+      return 'SETUP_CONFIRMED';
+    case 'BLOCKED':
+      return 'RISK_BLOCKED';
+    case 'STAND_DOWN':
+      return s.stage === 'INVALIDATED' ? 'SETUP_INVALIDATED' : null;
+    default:
+      if (!s.assessed) return null;
+      if (s.stage === 'AWAITING_CONFIRMATION') return 'SETUP_CONFIRMATION_PENDING';
+      if (s.stage === 'INDICATION_ONLY') return 'SETUP_DETECTED';
+      return 'SETUP_PROGRESS';
+  }
+}
+
+const COPY: Record<SetupEventType, (name: string, stage: string) => { title: string; message: string }> = {
+  SETUP_DETECTED: (n) => ({ title: 'Setup detected', message: `Your ${n} setup may be starting — watch for the next stage.` }),
+  SETUP_PROGRESS: (n, stage) => ({ title: 'Setup forming', message: stage === 'CORRECTION_IN_PROGRESS' ? `Your ${n} setup is forming — correction detected.` : `Your ${n} setup is forming.` }),
+  SETUP_CONFIRMATION_PENDING: () => ({ title: 'Setup close', message: 'Your setup is close — waiting for confirmation.' }),
+  SETUP_CONFIRMED: () => ({ title: 'Setup confirmed', message: 'Your saved setup is now confirmed. Review risk before entry.' }),
+  SETUP_INVALIDATED: (n) => ({ title: 'Setup invalidated', message: `Your ${n} setup was invalidated — stand aside.` }),
+  RISK_BLOCKED: () => ({ title: 'Risk rule blocks this trade', message: 'Your setup lines up, but the trade breaks a risk or prop-firm rule. Review size before entry.' }),
+};
+
+/**
+ * The event to deliver when a setup moves from `previous` to `next`, or null
+ * when nothing changed. Repeated decisions in the same state never re-alert;
+ * a different strategy starts a fresh lifecycle.
+ */
+export function setupTransition(previous: SetupSnapshot | null, next: SetupSnapshot, meta: { strategyName: string; instrument: string; source: SetupSignalSource; at: Date }): SetupEvent | null {
+  const type = setupStateOf(next);
+  if (!type) return null;
+  const sameSetup = previous && previous.strategyId === next.strategyId;
+  if (sameSetup && setupStateOf(previous) === type && previous.stage === next.stage) return null;
+  // An invalidation only matters for a setup that was actually developing.
+  if (type === 'SETUP_INVALIDATED' && !(sameSetup && setupStateOf(previous))) return null;
+  const name = meta.strategyName.startsWith('ICC') ? 'ICC' : meta.strategyName;
+  return { type, strategyId: next.strategyId, strategyName: meta.strategyName, instrument: meta.instrument, source: meta.source, at: meta.at.toISOString(), matchScore: next.matchScore, ...COPY[type](name, next.stage) };
+}

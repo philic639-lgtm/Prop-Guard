@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,9 +15,11 @@ interface ScreenProps {
   refreshing?: boolean;
   onRefresh?: () => void;
   keyboard?: boolean;
+  /** Lets a screen scroll programmatically (e.g. to a result or a form section). */
+  scrollRef?: RefObject<ScrollView | null>;
 }
 
-export function Screen({ children, header, footer, scroll = true, tabBar, contentStyle, refreshing, onRefresh }: ScreenProps) {
+export function Screen({ children, header, footer, scroll = true, tabBar, contentStyle, refreshing, onRefresh, scrollRef }: ScreenProps) {
   const insets = useSafeAreaInsets();
   const bottom = (tabBar ? TAB_BAR_HEIGHT + insets.bottom : insets.bottom) + spacing.xxl;
 
@@ -26,6 +28,7 @@ export function Screen({ children, header, footer, scroll = true, tabBar, conten
       {header}
       {scroll ? (
         <ScrollView
+          ref={scrollRef}
           style={styles.flex}
           contentContainerStyle={[styles.content, { paddingBottom: footer ? spacing.lg : bottom }, contentStyle]}
           keyboardShouldPersistTaps="handled"

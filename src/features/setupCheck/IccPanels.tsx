@@ -4,9 +4,10 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, StatusBadge } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
-import type { Decision, IccManual, IccObservation, IccOverlayKey, IccSummary } from '@/lib/engines/setupCheck';
+import type { Decision, IccManual, IccObservation, IccOverlayKey, IccSummary, SetupDisplayStatus } from '@/lib/engines/setupCheck';
 
 import { DECISION_UI } from './SetupCheckResult';
+import { STATUS_UI } from './SetupDecisionCard';
 
 /**
  * ICC (Indication → Correction → Continuation) panels for Setup Check.
@@ -196,8 +197,8 @@ const SOURCE = { vision: 'chart analysis', manual: 'you confirmed' } as const;
 const checkTone = (v: string) => (v === 'PASS' ? 'positive' : v === 'FAIL' ? 'danger' : v === 'NOT_APPLICABLE' ? undefined : 'warning');
 
 /** The ICC SETUP card — deterministic summary in the ICC report format. */
-export function IccSetupCard({ icc, decision, riskCheck, propCompliance, screenshotUri }: { icc: IccSummary; decision: Decision; riskCheck: string; propCompliance: string; screenshotUri?: string | null }) {
-  const ui = DECISION_UI[decision];
+export function IccSetupCard({ icc, decision, riskCheck, propCompliance, screenshotUri, status }: { icc: IccSummary; decision: Decision; riskCheck: string; propCompliance: string; screenshotUri?: string | null; /** Unified decision status — shown as the final decision when given. */ status?: SetupDisplayStatus }) {
+  const ui = status ? { ...STATUS_UI[status], emoji: '' } : DECISION_UI[decision];
   const valid = icc.patternStatus === 'VALID ICC LONG' || icc.patternStatus === 'VALID ICC SHORT';
   const stage = (n: string, s: IccSummary['indication'] | IccSummary['correction'] | IccSummary['continuation'] | IccSummary['htf']) => (
     <View style={styles.stage}>
@@ -259,7 +260,7 @@ export function IccSetupCard({ icc, decision, riskCheck, propCompliance, screens
       <View style={[styles.verdict, { borderColor: TONE[ui.tone] }]}>
         <AppText variant="caption">FINAL DECISION</AppText>
         <AppText variant="heading" style={{ color: TONE[ui.tone] }}>
-          {ui.emoji} {ui.title}
+          {ui.emoji ? `${ui.emoji} ` : ''}{ui.title}
         </AppText>
       </View>
 

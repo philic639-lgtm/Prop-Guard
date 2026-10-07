@@ -36,6 +36,7 @@ const FORM: SetupForm = {
   slippage: 2.5,
   reserve: 0,
   noDailyLimitConfirmed: false,
+  liveAccountConfirmed: false,
   timeframe: '5m',
   notes: '',
 };
@@ -71,7 +72,7 @@ const confirmAll = (c: SetupCheckController) => {
 };
 
 /** A server response; the evaluation is a real engine result so its shape is exact. */
-function serverResult(over: Partial<RemoteSetupResult> & { decision?: SetupEvaluation['decision'] } = {}): RemoteSetupResult {
+function serverResult({ verdict, ...over }: Partial<RemoteSetupResult> & { verdict?: SetupEvaluation['decision'] } = {}): RemoteSetupResult {
   const evaluation = evaluateSetup({ rules: [], evidence: [], trade: { entry: 1, stop: 0, target: 2, quantity: 1, pointValue: 1, minimumRR: 1, maxRisk: 100 }, prop: { mode: 'none' }, analysisMode: 'REAL' } as never);
   return {
     analysisId: 7,
@@ -82,7 +83,7 @@ function serverResult(over: Partial<RemoteSetupResult> & { decision?: SetupEvalu
     evaluatedAt: NOW.toISOString(),
     rules: [{ id: 'checklist_a', label: 'A', description: 'A', kind: 'visual', required: true, critical: false }],
     ...over,
-    evaluation: { ...evaluation, decision: over.decision ?? evaluation.decision },
+    evaluation: { ...evaluation, decision: verdict ?? evaluation.decision },
   };
 }
 
@@ -215,7 +216,7 @@ describe('Setup Check controller — DEMO', () => {
 
 describe('Setup Check controller — REMOTE (configured provider)', () => {
   it('shows the server decision only; the device never computes one', async () => {
-    const remote: RemoteSetupClient = { analyze: jest.fn(async () => serverResult({ decision: 'WAIT' })), evaluate: jest.fn(async () => serverResult({ decision: 'TAKE TRADE' })) };
+    const remote: RemoteSetupClient = { analyze: jest.fn(async () => serverResult({ verdict: 'WAIT' })), evaluate: jest.fn(async () => serverResult({ verdict: 'TAKE TRADE' })) };
     const c = new SetupCheckController(deps('REMOTE', remote), FORM);
     expect(c.view().evaluation).toBeNull();
     expect(c.view().evaluatedBy).toBeNull();
@@ -276,9 +277,9 @@ describe('Setup Check controller — REMOTE (configured provider)', () => {
     const p1 = c.refresh();
     c.setForm({ target: 5020 });
     const p2 = c.refresh();
-    b.resolve(serverResult({ decision: 'STAND DOWN' }));
+    b.resolve(serverResult({ verdict: 'STAND DOWN' }));
     await p2;
-    a.resolve(serverResult({ decision: 'TAKE TRADE' }));
+    a.resolve(serverResult({ verdict: 'TAKE TRADE' }));
     await p1;
     expect(c.view().evaluation!.decision).toBe('STAND DOWN');
     expect(c.view().pending).toBe(false);

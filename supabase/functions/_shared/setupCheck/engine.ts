@@ -11,6 +11,11 @@
 //    UNVERIFIED instead of being assumed.
 //  - Trade.tickSize (from the instrument catalog): prices that are not on a
 //    valid tick increment stay UNVERIFIED.
+//  - Trade.maxContracts: the trader's own contract cap (personal accounts);
+//    a larger size is a risk FAIL. Prop caps stay in Prop.maxContracts.
+//  - Prop.liveStateConfirmed: buffers are computed from the journal, not a
+//    live broker feed. When set (false/true), the trader must confirm their
+//    live balance / today's P&L before the prop check can PASS.
 export type Status = 'PASS' | 'FAIL' | 'UNVERIFIED';
 export type Source = 'manual' | 'vision' | 'broker' | 'demo' | 'system';
 export type Rule = { id: string; label: string; required: boolean; critical: boolean };
@@ -18,14 +23,14 @@ export type Evidence = { ruleId: string; status: Status; source: Source; confide
 export type Trade = {
   side?: 'LONG' | 'SHORT'; entry?: number; stop?: number; target?: number;
   quantity?: number; pointValue?: number; tickSize?: number; costs?: number; slippage?: number;
-  minimumRR?: number; maxRisk?: number;
+  minimumRR?: number; maxRisk?: number; maxContracts?: number;
 };
 // Buffer means CURRENT distance to liquidation threshold, not starting account size.
 // The caller must compute it using the firm's current trailing/static rules.
 export type Prop = {
   mode: 'none' | 'prop'; verified?: boolean; rulesCurrent?: boolean;
   drawdownBuffer?: number; dailyLossRemaining?: number; maxContracts?: number;
-  reserve?: number; otherChecks?: Evidence[];
+  reserve?: number; otherChecks?: Evidence[]; liveStateConfirmed?: boolean;
 };
 export type AnalysisMode = 'REAL' | 'DEMO' | 'UNAVAILABLE';
 export type Input = { rules: Rule[]; evidence: Evidence[]; trade: Trade; prop: Prop; analysisMode: AnalysisMode };
@@ -75,6 +80,8 @@ export function evaluateSetup(input: Input) {
   let dollarRisk: number | null = null;
   let reward: number | null = null;
   let rr: number | null = null;
+  if (sizingPresent && positive(t.maxContracts))
+    addRisk('contracts_plan','Max contracts (your plan)',t.quantity! <= t.maxContracts ? 'PASS' : 'FAIL',`Maximum ${t.maxContracts}; current size ${t.quantity}.`);
   if (pricesPresent && positive(t.tickSize) && ![t.entry!, t.stop!, t.target!].every(p => onTick(p, t.tickSize!)))
     addRisk('ticks','Tick increments','UNVERIFIED',`Prices must be whole ticks of ${t.tickSize} for this instrument.`);
   if (pricesPresent) {
@@ -108,6 +115,8 @@ export function evaluateSetup(input: Input) {
     else addProp('buffers','Account buffers', dollarRisk < p.drawdownBuffer! - p.reserve! && dollarRisk < p.dailyLossRemaining! - p.reserve! ? 'PASS' : 'FAIL','Trade risk must stay strictly below both remaining buffers after reserve.');
     addProp('contracts','Contract limit',positive(p.maxContracts) && Number.isInteger(p.maxContracts) && sizingPresent
       ? t.quantity! <= p.maxContracts! ? 'PASS' : 'FAIL' : 'UNVERIFIED','Confirm position fits the account contract limit; normalize micro/mini limits upstream.');
+    if (typeof p.liveStateConfirmed === 'boolean') addProp('live','Live account state',p.liveStateConfirmed ? 'PASS' : 'UNVERIFIED',
+      p.liveStateConfirmed ? 'You confirmed your live balance and today’s P&L.' : 'Live balance / P&L is not connected — confirm them in your trading platform.');
     if (!p.otherChecks?.length) addProp('other','Other applicable firm rules','UNVERIFIED','Confirm other applicable restrictions (session, news, instruments, scaling, consistency, etc.), or explicitly record that none apply.');
     else {
       const otherIds = p.otherChecks.map(e => e.ruleId);

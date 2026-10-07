@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 
 import { AppHeader, AppText, Button, Card, ConfirmationSheet, EmptyState, Screen, SelectField } from '@/components/ui';
 import { IccSetupCard } from '@/features/setupCheck/IccPanels';
+import { Collapsible, SetupDecisionCard } from '@/features/setupCheck/SetupDecisionCard';
 import { SetupCheckResult } from '@/features/setupCheck/SetupCheckResult';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -37,12 +38,39 @@ export default function SavedSetupCheck() {
 
   return (
     <Screen header={<AppHeader title="Setup check" subtitle={new Date(check.createdAt).toLocaleString()} back />}>
-      {check.icc ? <IccSetupCard icc={check.icc} decision={check.decision} riskCheck={check.riskCheck} propCompliance={check.propFirmCompliance} screenshotUri={check.screenshotUri} /> : null}
-      <SetupCheckResult
-        result={check}
-        meta={{ strategyName: check.strategyName, instrument: check.instrument, timeframe: check.timeframe, direction: check.direction, evaluatedBy: check.evaluatedBy }}
-        screenshotUri={check.screenshotUri}
-      />
+      {check.setupDecision ? (
+        <>
+          <Card>
+            <AppText variant="label">{check.kind === 'trade_plan' ? 'Saved trade plan' : 'Setup review'}</AppText>
+            <AppText variant="caption" style={{ marginTop: 2 }}>
+              {check.setupType ?? check.strategyName} · {check.instrument}
+              {check.kind === 'setup_review' ? ' · analysis only — not an executed trade' : ''}
+            </AppText>
+          </Card>
+          <SetupDecisionCard
+            decision={check.setupDecision}
+            instrument={check.instrument}
+            direction={check.direction === 'long' ? 'LONG' : check.direction === 'short' ? 'SHORT' : null}
+            demo={check.analysisMode === 'DEMO'}
+            details={
+              check.icc ? (
+                <Collapsible title="ICC breakdown — stages, score & chart map">
+                  <IccSetupCard icc={check.icc} decision={check.decision} status={check.setupDecision.displayStatus} riskCheck={check.riskCheck} propCompliance={check.propFirmCompliance} screenshotUri={check.screenshotUri} />
+                </Collapsible>
+              ) : null
+            }
+          />
+        </>
+      ) : (
+        <>
+          {check.icc ? <IccSetupCard icc={check.icc} decision={check.decision} riskCheck={check.riskCheck} propCompliance={check.propFirmCompliance} screenshotUri={check.screenshotUri} /> : null}
+          <SetupCheckResult
+            result={check}
+            meta={{ strategyName: check.strategyName, instrument: check.instrument, timeframe: check.timeframe, direction: check.direction, evaluatedBy: check.evaluatedBy }}
+            screenshotUri={check.screenshotUri}
+          />
+        </>
+      )}
       <Card>
         <AppText variant="label">Journal link</AppText>
         {linked ? (

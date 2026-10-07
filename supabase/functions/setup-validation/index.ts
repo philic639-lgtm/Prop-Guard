@@ -258,6 +258,9 @@ Deno.serve(async (req) => {
       maxContracts: n(prow?.max_contracts),
       verified: link?.status === 'verified' && !riskFields.some((f) => link.overrides?.includes(f)),
       lastVerifiedAt: link?.lastVerifiedAt ?? null,
+      consistencyPct: n(prow?.consistency_pct),
+      // Balance / P&L come from the user's journal rows — no live broker feed yet.
+      liveData: false,
     };
   }
 
@@ -317,7 +320,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  const { evaluation, icc: iccCard } = runSetupCheck(client, {
+  const { evaluation, icc: iccCard, decision } = runSetupCheck(client, {
     rules,
     systemEvidence: systemEvidence(record, rules, client.instrument, now),
     visionEvidence,
@@ -329,6 +332,7 @@ Deno.serve(async (req) => {
     now,
     iccObservation: iccObservation ? { data: iccObservation, source: 'vision' } : null,
     strategyTimeframe: record.timeframe,
+    strategyName: record.name,
   });
   return json({
     analysisId,
@@ -341,5 +345,6 @@ Deno.serve(async (req) => {
     rules: rules.map(({ id, label, description, kind, required, critical }) => ({ id, label, description, kind, required, critical })),
     evaluation,
     icc: iccCard,
+    decision,
   });
 });

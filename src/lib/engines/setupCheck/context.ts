@@ -5,7 +5,9 @@
 // client claims beyond that — vision evidence, verified prop rules, computed
 // results — is ignored here.
 import { evaluateSetup, type AnalysisMode, type Evidence, type Input, type Prop, type SetupEvaluation, type Status } from './engine';
+import { decideSetup, type SetupDecision } from './decision';
 import { iccEvidence, iccSummary, parseIccManual, resolveIccStages, type IccManual, type IccObservation, type IccSummary } from './icc';
+import { NONBINDING_DAILY_LIMIT } from './risk';
 import { sanitizeText, type SetupRule } from './rules';
 
 // ───────────────────────────── Client payload (untrusted) ─────────────────────────────
@@ -32,6 +34,8 @@ export interface ClientSetupInput {
   reserve: number | null;
   /** Trader explicitly confirms the account has no daily loss limit. */
   noDailyLimitConfirmed: boolean;
+  /** Trader confirms they checked their LIVE balance and today's P&L (no live feed is connected). */
+  liveAccountConfirmed: boolean;
   timeframe: string | null;
   notes: string;
   /** Explicit per-rule confirmations (nothing pre-ticked). */
@@ -72,6 +76,7 @@ export function parseClientInput(raw: unknown): ClientSetupInput | null {
     slippage: num(o.slippage),
     reserve: num(o.reserve),
     noDailyLimitConfirmed: o.noDailyLimitConfirmed === true,
+    liveAccountConfirmed: o.liveAccountConfirmed === true,
     timeframe: sanitizeText(o.timeframe, 20) || null,
     notes: sanitizeText(o.notes, 240),
     manual: confirmations(o.manual),
@@ -91,12 +96,7 @@ export function rulesAreCurrent(lastVerifiedAt: string | null | undefined, now: 
   return Number.isFinite(t) && now.getTime() - t <= FIRM_RULES_MAX_AGE_DAYS * 86_400_000 && t <= now.getTime() + 86_400_000;
 }
 
-/**
- * Documented NON-BINDING daily cap: used only when the trader explicitly
- * confirms their account has no daily loss limit. Finite so the engine's
- * arithmetic stays well-defined; far above any real account.
- */
-export const NONBINDING_DAILY_LIMIT = 1_000_000_000;
+// NONBINDING_DAILY_LIMIT (risk.ts): documented non-binding daily cap, used only when the trader confirms no daily loss limit.
 
 export interface AccountRiskState {
   kind: 'prop' | 'personal';
@@ -116,6 +116,10 @@ export interface AccountRiskState {
   /** Verified firm rules for this exact program / size / stage, not overridden. */
   verified: boolean;
   lastVerifiedAt: string | null;
+  /** Firm consistency rule (largest day as % of profit), when the account has one. */
+  consistencyPct?: number | null;
+  /** True only when balance / P&L come from a live broker feed (none is connected yet). */
+  liveData?: boolean;
 }
 
 /**
@@ -164,6 +168,8 @@ export interface TrustedContext {
   iccObservation?: { data: IccObservation; source: 'vision' | 'demo' } | null;
   /** Saved strategy timeframe (e.g. "1h / 15m / 5m"), for wording. */
   strategyTimeframe?: string | null;
+  /** Saved strategy name, for wording. */
+  strategyName?: string;
 }
 
 /**
@@ -220,6 +226,8 @@ export function buildEngineInput(client: ClientSetupInput, t: TrustedContext): I
       ...buffers,
       maxContracts: t.instrument ? normalizedMaxContracts(a.maxContracts, t.instrument.miniEquivalentRatio) : undefined,
       reserve: nonNeg(client.reserve),
+      // Journal-derived buffers are not live: the trader confirms the live state (a future broker feed sets liveData).
+      liveStateConfirmed: a.liveData === true || client.liveAccountConfirmed,
       otherChecks: client.firmConfirmations.map((c) => ({ ruleId: c.ruleId, status: c.status, source: 'manual' as const, confidence: c.status === 'UNVERIFIED' ? 0 : 1, reason: c.reason || `Trader ${c.status === 'PASS' ? 'confirmed' : c.status === 'FAIL' ? 'flagged' : 'could not confirm'}: ${c.ruleId}` })),
     };
   }
@@ -238,28 +246,44 @@ export function buildEngineInput(client: ClientSetupInput, t: TrustedContext): I
       slippage: nonNeg(client.slippage),
       minimumRR: pos(t.minimumRR),
       maxRisk: pos(t.maxRisk),
+      // Personal accounts: the account's own contract cap is the trader's plan limit.
+      maxContracts: a && a.kind === 'personal' && t.instrument ? normalizedMaxContracts(a.maxContracts, t.instrument.miniEquivalentRatio) : undefined,
     },
     prop,
     analysisMode: t.analysisMode,
   };
 }
 
-/** The one Setup Check run (device and server): engine decision, plus the ICC card for ICC strategies. */
-export function runSetupCheck(client: ClientSetupInput, t: TrustedContext): { input: Input; evaluation: SetupEvaluation; icc: IccSummary | null } {
+/**
+ * The one Setup Check run (device and server): the engine's evaluation, the
+ * ICC card for ICC strategies, and the unified decision built on both.
+ */
+export function runSetupCheck(client: ClientSetupInput, t: TrustedContext): { input: Input; evaluation: SetupEvaluation; icc: IccSummary | null; decision: SetupDecision } {
   const input = buildEngineInput(client, t);
   const evaluation = evaluateSetup(input);
-  if (!isIcc(t)) return { input, evaluation, icc: null };
-  const tf = client.timeframe || (t.strategyTimeframe ?? '').split('/').map((x) => x.trim()).filter(Boolean).pop() || null;
-  const icc = iccSummary({
-    stages: iccStagesOf(client, t),
-    observation: t.iccObservation ? { ...t.iccObservation, mode: t.analysisMode } : null,
-    trade: { ...iccTrade(client), target2: client.target2 },
-    minRR: t.minimumRR,
-    timeframe: tf,
+  let icc: IccSummary | null = null;
+  if (isIcc(t)) {
+    const tf = client.timeframe || (t.strategyTimeframe ?? '').split('/').map((x) => x.trim()).filter(Boolean).pop() || null;
+    icc = iccSummary({
+      stages: iccStagesOf(client, t),
+      observation: t.iccObservation ? { ...t.iccObservation, mode: t.analysisMode } : null,
+      trade: { ...iccTrade(client), target2: client.target2 },
+      minRR: t.minimumRR,
+      timeframe: tf,
+      input,
+      evaluation,
+    });
+  }
+  const decision = decideSetup({
+    rules: t.rules,
     input,
     evaluation,
+    icc,
+    strategyName: t.strategyName ?? 'your strategy',
+    account: t.account,
+    levels: { entry: client.entry, stop: client.stop, target: client.target, target2: client.target2 },
   });
-  return { input, evaluation, icc };
+  return { input, evaluation, icc, decision };
 }
 
 // ───────────────────────────── Staleness ─────────────────────────────

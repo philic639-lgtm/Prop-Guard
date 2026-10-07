@@ -1,16 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, EmptyState, ErrorState, HeaderIconButton, Input, LoadingState, NumericInput, Screen, SegmentedControl, SelectField, StatusBadge, ToggleRow } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import { newDraft } from '@/features/session/draft';
 import { IccSetupCard, IccStagePanel } from '@/features/setupCheck/IccPanels';
+import { buildJournalSave } from '@/features/setupCheck/journalSave';
 import { ConfirmChips, RuleConfirmations } from '@/features/setupCheck/RuleConfirmations';
 import { SAMPLE_CHART_JPEG_BASE64 } from '@/features/setupCheck/sampleChart';
-import { SetupCheckResult } from '@/features/setupCheck/SetupCheckResult';
+import { Collapsible, SetupDecisionCard } from '@/features/setupCheck/SetupDecisionCard';
 import { toSetupCheck } from '@/features/setupCheck/toSetupCheck';
 import { useSetupCheck } from '@/features/setupCheck/useSetupCheck';
 import { useActiveAccount, useActiveStrategy } from '@/hooks/useAppData';
@@ -38,6 +39,7 @@ export default function SetupCheckScreen() {
   const markets = useAppStore((s) => s.preferences.markets);
   const defaultInstrument = useAppStore((s) => s.preferences.defaultInstrument);
   const saveSetupCheck = useAppStore((s) => s.saveSetupCheck);
+  const upsertPendingTrade = useAppStore((s) => s.upsertPendingTrade);
   const setDraft = useAppStore((s) => s.setDraft);
   const activeAccount = useActiveAccount();
   const activeStrategy = useActiveStrategy();
@@ -57,6 +59,7 @@ export default function SetupCheckScreen() {
     slippage: null,
     reserve: null,
     noDailyLimitConfirmed: false,
+    liveAccountConfirmed: false,
     timeframe: null,
     notes: '',
   });
@@ -81,7 +84,13 @@ export default function SetupCheckScreen() {
     controller.setForm(patch);
   };
   const [pickError, setPickError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  // What was saved, for which exact decision — any change to the result makes it unsaved again.
+  const [savedFor, setSavedFor] = useState<{ decision: unknown; id: string; kind: 'trade_plan' | 'setup_review'; pending: boolean } | null>(null);
+  const saved = savedFor && savedFor.decision === view.decision ? savedFor : null;
+  const scrollRef = useRef<ScrollView | null>(null);
+  const tradeY = useRef(0);
+  const resultY = useRef(0);
+  const scrollTo = (y: number) => scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
 
   const strategyOptions = useMemo(() => strategies.map((s) => ({ value: s.id, label: s.name, sub: `${s.markets.join(', ') || 'Any market'} · ${s.timeframe}` })), [strategies]);
   const accountOptions = useMemo(() => accounts.map((a) => ({ value: a.id, label: a.name, sub: `${a.kind === 'prop' ? a.firm || 'Prop' : 'Personal'} · ${a.firmLink?.status === 'verified' ? 'verified firm rules' : 'firm rules not verified'}` })), [accounts]);
@@ -107,8 +116,11 @@ export default function SetupCheckScreen() {
   };
 
   const evaluation = view.evaluation;
-  const save = () => {
-    if (!evaluation || !strategy || !view.evaluatedBy || view.pending) return;
+  const decision = view.decision;
+  /** SAVE TO JOURNAL: QUALIFIED → analysis + pending journal trade; anything else → setup review only. */
+  const save = (): string | null => {
+    if (!evaluation || !decision || !strategy || !view.evaluatedBy || view.pending) return null;
+    if (saved) return saved.id;
     const check = toSetupCheck({
       id: uuid(),
       now: new Date().toISOString(),
@@ -122,17 +134,16 @@ export default function SetupCheckScreen() {
       screenshotUri: state.screenshot?.uri ?? null,
       icc: view.icc,
     });
-    saveSetupCheck(check);
-    setSaved(check.id);
+    const out = buildJournalSave({ check, decision, account, pendingId: uuid(), now: new Date() });
+    saveSetupCheck(out.setupCheck);
+    if (out.pendingTrade) upsertPendingTrade(out.pendingTrade);
+    setSavedFor({ decision, id: check.id, kind: out.setupCheck.kind ?? 'setup_review', pending: !!out.pendingTrade });
+    return check.id;
   };
 
   const planInCheckTrade = () => {
     if (!strategy) return;
-    let id = saved;
-    if (!id) {
-      save();
-      id = useAppStore.getState().setupChecks[0]?.id ?? null;
-    }
+    const id = save();
     const d = newDraft(strategy, form.instrument);
     setDraft({
       ...d,
@@ -158,10 +169,30 @@ export default function SetupCheckScreen() {
   return (
     <Screen
       header={<AppHeader title="Setup check" subtitle="Your saved rules · your risk limits" back right={<HeaderIconButton icon="time-outline" label="Saved setup checks" onPress={() => router.push('/setup-check/history')} />} />}
+      scrollRef={scrollRef}
       footer={
         <View style={{ gap: spacing.sm }}>
-          <Button label={saved ? 'Setup check saved' : 'Save Setup Check'} icon={saved ? 'checkmark' : 'bookmark-outline'} disabled={!!saved || !evaluation || view.pending} onPress={save} />
-          <Button label="Plan in Check Trade" icon="shield-checkmark-outline" variant="secondary" size="md" disabled={!evaluation} onPress={planInCheckTrade} />
+          <Button
+            label={saved ? (saved.kind === 'trade_plan' ? 'Saved to Journal' : 'Saved as setup review') : decision && decision.status !== 'QUALIFIED' ? 'Save to Journal (setup review)' : 'Save to Journal'}
+            icon={saved ? 'checkmark' : 'book-outline'}
+            disabled={!!saved || !decision || view.pending}
+            onPress={() => void save()}
+          />
+          <View style={styles.row}>
+            <Button label="Edit Trade" icon="create-outline" variant="secondary" size="md" style={styles.flex} onPress={() => scrollTo(tradeY.current)} />
+            <Button
+              label="Recheck Setup"
+              icon="refresh"
+              variant="secondary"
+              size="md"
+              style={styles.flex}
+              disabled={!strategy || state.analyzing || state.evaluating}
+              onPress={() => {
+                void controller.recheck();
+                scrollTo(resultY.current);
+              }}
+            />
+          </View>
         </View>
       }>
       <Card>
@@ -180,13 +211,12 @@ export default function SetupCheckScreen() {
         onChange={(id) => {
           const s = strategies.find((x) => x.id === id);
           controller.setForm({ strategyId: id, ...(s?.markets[0] ? { instrument: s.markets[0] } : {}) });
-          setSaved(null);
         }}
         placeholder="Choose a saved strategy"
         icon="list-outline"
       />
-      <SelectField label="Instrument" value={form.instrument} options={instruments} onChange={(v) => { controller.setForm({ instrument: v }); setSaved(null); }} icon="stats-chart-outline" />
-      {accounts.length ? <SelectField label="Account" value={form.accountId} options={accountOptions} onChange={(v) => { controller.setForm({ accountId: v }); setSaved(null); }} icon="briefcase-outline" /> : null}
+      <SelectField label="Instrument" value={form.instrument} options={instruments} onChange={(v) => { controller.setForm({ instrument: v }); }} icon="stats-chart-outline" />
+      {accounts.length ? <SelectField label="Account" value={form.accountId} options={accountOptions} onChange={(v) => { controller.setForm({ accountId: v }); }} icon="briefcase-outline" /> : null}
 
       <Card>
         <AppText variant="label">Chart screenshot</AppText>
@@ -228,7 +258,9 @@ export default function SetupCheckScreen() {
         ) : null}
       </Card>
 
-      <AppText variant="label">Trade</AppText>
+      <View onLayout={(e) => (tradeY.current = e.nativeEvent.layout.y)}>
+        <AppText variant="label">Trade</AppText>
+      </View>
       <SegmentedControl
         label="Direction"
         options={[
@@ -286,6 +318,14 @@ export default function SetupCheckScreen() {
           <View style={{ marginTop: spacing.sm }}>
             <NumericInput label="Reserve ($)" value={text.reserve} onChangeText={setNum('reserve')} placeholder="0 allowed" hint="Dollars to keep above your limits" />
           </View>
+          <View style={{ marginTop: spacing.sm }}>
+            <ToggleRow
+              label="I checked my live balance and today’s P&L"
+              description="Live account data isn’t connected. Until you confirm it in your trading platform, daily loss and drawdown stay UNVERIFIED."
+              value={form.liveAccountConfirmed}
+              onChange={(v: boolean) => controller.setForm({ liveAccountConfirmed: v })}
+            />
+          </View>
           {account.rules.dailyLossLimit == null ? (
             <View style={{ marginTop: spacing.sm }}>
               <ToggleRow label="This account has no daily loss limit" description="Only if your firm’s current terms for this exact account have none." value={form.noDailyLimitConfirmed} onChange={(v: boolean) => controller.setForm({ noDailyLimitConfirmed: v })} />
@@ -310,17 +350,42 @@ export default function SetupCheckScreen() {
       ) : null}
 
       {state.evaluationError ? <ErrorState message={state.evaluationError.message} onRetry={state.evaluationError.retry ? () => void controller.refresh() : undefined} /> : null}
-      {evaluation && strategy && view.icc ? <IccSetupCard icc={view.icc} decision={evaluation.decision} riskCheck={evaluation.riskCheck} propCompliance={evaluation.propFirmCompliance} screenshotUri={state.screenshot?.uri ?? (state.screenshot ? `data:${state.screenshot.mimeType};base64,${state.screenshot.base64}` : null)} /> : null}
-      {evaluation && strategy ? (
-        <SetupCheckResult
-          result={evaluation}
-          pending={view.pending || state.evaluating}
-          meta={{ strategyName: strategy.name, instrument: form.instrument, timeframe: form.timeframe, direction: form.side === 'LONG' ? 'Long' : form.side === 'SHORT' ? 'Short' : 'Direction not chosen', evaluatedBy: view.evaluatedBy }}
-          screenshotUri={state.screenshot?.uri ?? null}
-        />
-      ) : mode === 'REMOTE' && strategy ? (
-        <LoadingState label="Checking with Prop Guard…" />
-      ) : null}
+      <View onLayout={(e) => (resultY.current = e.nativeEvent.layout.y)} style={{ gap: spacing.md }}>
+        {decision && evaluation && strategy ? (
+          <>
+            <SetupDecisionCard
+              decision={decision}
+              instrument={form.instrument}
+              direction={form.side}
+              pending={view.pending || state.evaluating}
+              demo={mode === 'DEMO'}
+              details={
+                view.icc ? (
+                  <Collapsible title="ICC breakdown — stages, score & chart map">
+                    <IccSetupCard icc={view.icc} decision={evaluation.decision} status={decision.displayStatus} riskCheck={evaluation.riskCheck} propCompliance={evaluation.propFirmCompliance} screenshotUri={state.screenshot?.uri ?? (state.screenshot ? `data:${state.screenshot.mimeType};base64,${state.screenshot.base64}` : null)} />
+                  </Collapsible>
+                ) : null
+              }
+            />
+            {saved ? (
+              <Card tone="positive">
+                <AppText variant="bodyStrong">{saved.kind === 'trade_plan' ? 'Saved to your Journal' : 'Saved as a setup review'}</AppText>
+                <AppText variant="caption" style={{ marginTop: 2 }}>
+                  {saved.kind === 'trade_plan'
+                    ? saved.pending
+                      ? 'The full analysis is attached to a pending journal trade — add the result once the trade is done.'
+                      : 'The full analysis is saved. Choose an account to also add it to your pending journal trades.'
+                    : 'Kept as a reviewed setup — not an executed trade. Prop Guard learns from setups you correctly avoided too.'}
+                </AppText>
+                <Button label="View in Journal" icon="book-outline" variant="ghost" size="md" onPress={() => router.push(saved.kind === 'trade_plan' && saved.pending ? '/journal' : { pathname: '/setup-check/[id]', params: { id: saved.id } })} />
+              </Card>
+            ) : null}
+            {decision.status === 'QUALIFIED' ? <Button label="Open in Check Trade to enter" icon="shield-checkmark-outline" variant="secondary" size="md" onPress={planInCheckTrade} /> : null}
+          </>
+        ) : mode === 'REMOTE' && strategy ? (
+          <LoadingState label="Checking with Prop Guard…" />
+        ) : null}
+      </View>
       <View style={styles.hint}>
         <Ionicons name="lock-closed-outline" size={14} color={colors.textTertiary} />
         <AppText variant="caption" tone="tertiary" style={styles.flex}>

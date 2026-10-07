@@ -5,6 +5,7 @@ import {
   type IccManual,
   type IccObservation,
   type IccSummary,
+  type SetupDecision,
   type ClientSetupInput,
   type Evidence,
   type SetupEvaluation,
@@ -47,6 +48,8 @@ export interface SetupForm {
   slippage: number | null;
   reserve: number | null;
   noDailyLimitConfirmed: boolean;
+  /** Trader checked their live balance / today's P&L (prop accounts; no live feed is connected). */
+  liveAccountConfirmed: boolean;
   timeframe: string | null;
   notes: string;
 }
@@ -82,6 +85,8 @@ export interface SetupCheckView {
   key: string | null;
   /** ICC strategies: the ICC SETUP card (null for other strategies). */
   icc: IccSummary | null;
+  /** The unified decision (QUALIFIED / WAIT / STAND_DOWN / BLOCKED / NEEDS_INPUT). */
+  decision: SetupDecision | null;
 }
 
 export interface ControllerDeps {
@@ -110,6 +115,8 @@ export interface ControllerState {
   server: { requestKey: string; result: RemoteSetupResult } | null;
   evaluating: boolean;
   evaluationError: SetupCheckError | null;
+  /** Last explicit RECHECK (device modes re-evaluate with the current time). */
+  checkedAt: string | null;
 }
 
 const RESET_EVIDENCE_FIELDS: (keyof SetupForm)[] = ['strategyId', 'accountId', 'instrument'];
@@ -126,7 +133,7 @@ export class SetupCheckController {
     private deps: ControllerDeps,
     form: SetupForm,
   ) {
-    this.state = { form, screenshot: null, manual: {}, firm: {}, icc: {}, analysis: null, analyzing: false, analysisError: null, server: null, evaluating: false, evaluationError: null };
+    this.state = { form, screenshot: null, manual: {}, firm: {}, icc: {}, analysis: null, analyzing: false, analysisError: null, server: null, evaluating: false, evaluationError: null, checkedAt: null };
   }
 
   // ───────────── subscription (useSyncExternalStore) ─────────────
@@ -172,6 +179,8 @@ export class SetupCheckController {
     const before = this.state.form;
     const form = { ...before, ...patch };
     const resetEvidence = RESET_EVIDENCE_FIELDS.some((f) => f in patch && patch[f] !== before[f]);
+    // A live-state confirmation belongs to one account.
+    if ('accountId' in patch && patch.accountId !== before.accountId) form.liveAccountConfirmed = false;
     this.state = { ...this.state, form };
     this.set({ ...(resetEvidence ? { manual: {}, firm: {}, icc: {} } : {}), ...this.invalidateIfStale() });
   }
@@ -227,6 +236,7 @@ export class SetupCheckController {
       slippage: f.slippage,
       reserve: f.reserve,
       noDailyLimitConfirmed: f.noDailyLimitConfirmed,
+      liveAccountConfirmed: f.liveAccountConfirmed,
       timeframe: f.timeframe,
       notes: f.notes,
       manual: Object.entries(this.state.manual).map(([ruleId, status]) => ({ ruleId, status })),
@@ -297,6 +307,19 @@ export class SetupCheckController {
     }
   }
 
+  /**
+   * RECHECK SETUP: re-read the chart when there is a screenshot (DEMO / REMOTE),
+   * otherwise re-evaluate the current inputs now (time-of-day rules included).
+   */
+  async recheck(): Promise<void> {
+    if (this.deps.mode !== 'MANUAL' && this.state.screenshot && this.record()) return this.analyze();
+    if (this.deps.mode === 'REMOTE') {
+      this.state = { ...this.state, server: null };
+      return this.refresh();
+    }
+    this.set({ checkedAt: this.deps.now().toISOString() });
+  }
+
   // ───────────── view ─────────────
   view(): SetupCheckView {
     if (this.cachedView) return this.cachedView;
@@ -305,14 +328,14 @@ export class SetupCheckController {
     const a = this.state.analysis && this.state.analysis.key === key ? this.state.analysis : null;
     let v: SetupCheckView;
     if (!record) {
-      v = { rules: [], evaluation: null, analysisMode: 'UNAVAILABLE', evaluatedBy: null, pending: false, analysis: null, chartEvidence: {}, key, icc: null };
+      v = { rules: [], evaluation: null, analysisMode: 'UNAVAILABLE', evaluatedBy: null, pending: false, analysis: null, chartEvidence: {}, key, icc: null, decision: null };
     } else if (this.deps.mode === 'REMOTE') {
       const s = this.state.server;
       const fresh = !!s && s.requestKey === this.requestKey();
       const rules = (s?.result.rules ?? this.deps.trusted(this.state.form, record, this.deps.now()).rules) as SetupRule[];
       const chartEvidence: Record<string, Evidence> = {};
       if (s && a && s.result.analysisMode === 'REAL') for (const r of s.result.evaluation.evaluatedRules) if (r.source === 'vision') chartEvidence[r.id] = { ruleId: r.id, status: r.status, source: 'vision', confidence: r.confidence, reason: r.reason };
-      v = { rules, evaluation: s?.result.evaluation ?? null, analysisMode: a && s ? s.result.analysisMode : 'UNAVAILABLE', evaluatedBy: s ? 'server' : null, pending: !fresh, analysis: a, chartEvidence, key, icc: s?.result.icc ?? null };
+      v = { rules, evaluation: s?.result.evaluation ?? null, analysisMode: a && s ? s.result.analysisMode : 'UNAVAILABLE', evaluatedBy: s ? 'server' : null, pending: !fresh, analysis: a, chartEvidence, key, icc: s?.result.icc ?? null, decision: s?.result.decision ?? null };
     } else {
       const now = this.deps.now();
       const trusted = this.deps.trusted(this.state.form, record, now);
@@ -320,10 +343,10 @@ export class SetupCheckController {
       const mode: AnalysisMode = this.deps.mode === 'DEMO' ? 'DEMO' : 'UNAVAILABLE';
       const evidence = a?.evidence ?? [];
       const iccObservation = a?.icc ? { data: a.icc, source: 'demo' as const } : null;
-      const { evaluation, icc } = runSetupCheck(this.clientInput(), { ...trusted, visionEvidence: evidence, analysisMode: mode, iccObservation });
+      const { evaluation, icc, decision } = runSetupCheck(this.clientInput(), { ...trusted, visionEvidence: evidence, analysisMode: mode, iccObservation });
       const chartEvidence: Record<string, Evidence> = {};
       for (const e of evidence) chartEvidence[e.ruleId] = e;
-      v = { rules: trusted.rules, evaluation, analysisMode: evaluation.analysisMode, evaluatedBy: 'device', pending: false, analysis: a, chartEvidence, key, icc };
+      v = { rules: trusted.rules, evaluation, analysisMode: evaluation.analysisMode, evaluatedBy: 'device', pending: false, analysis: a, chartEvidence, key, icc, decision };
     }
     this.cachedView = v;
     return v;

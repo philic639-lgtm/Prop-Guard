@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { AnalysisMode, ClientSetupInput, IccSummary, SetupEvaluation } from '@/lib/engines/setupCheck';
+import type { AnalysisMode, ClientSetupInput, IccSummary, SetupDecision, SetupEvaluation } from '@/lib/engines/setupCheck';
 
 import { isErrorCode, SetupCheckError } from './errors';
 
@@ -15,6 +15,8 @@ export interface RemoteSetupResult {
   evaluation: SetupEvaluation;
   /** ICC strategies: the ICC SETUP card, computed on the server. */
   icc?: IccSummary | null;
+  /** The unified decision, computed on the server. */
+  decision?: SetupDecision;
 }
 
 export interface RemoteSetupClient {
@@ -23,11 +25,12 @@ export interface RemoteSetupClient {
 }
 
 const DECISIONS = new Set(['TAKE TRADE', 'WAIT', 'STAND DOWN']);
+const STATUSES = new Set(['QUALIFIED', 'WAIT', 'STAND_DOWN', 'BLOCKED', 'NEEDS_INPUT']);
 const TIMEOUT_MS = 60_000;
 
 function validate(data: unknown): RemoteSetupResult {
   const d = data as Partial<RemoteSetupResult> | null;
-  if (!d || typeof d !== 'object' || !d.evaluation || !DECISIONS.has(d.evaluation.decision) || !Array.isArray(d.rules) || !['REAL', 'UNAVAILABLE'].includes(String(d.analysisMode))) {
+  if (!d || typeof d !== 'object' || !d.evaluation || !DECISIONS.has(d.evaluation.decision) || (d.decision != null && !STATUSES.has(d.decision.status)) || !Array.isArray(d.rules) || !['REAL', 'UNAVAILABLE'].includes(String(d.analysisMode))) {
     throw new SetupCheckError('malformed');
   }
   return d as RemoteSetupResult;
