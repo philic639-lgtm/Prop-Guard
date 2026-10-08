@@ -24,12 +24,20 @@ export function ocrAvailable(): boolean {
   return typeof document !== 'undefined' && typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
 }
 
+/** Absolute URL: the OCR worker runs from a blob and cannot resolve relative paths. */
+const absolute = (raw: string) => new URL(raw.endsWith('/') ? raw : `${raw}/`, document.baseURI).href.replace(/\/$/, '');
+
 function assetOptions() {
   const raw = process.env.EXPO_PUBLIC_OCR_ASSETS_URL;
-  if (!raw) return {};
-  // Absolute URL: the OCR worker runs from a blob and cannot resolve relative paths.
-  const base = new URL(raw.endsWith('/') ? raw : `${raw}/`, document.baseURI).href.replace(/\/$/, '');
-  return { workerPath: `${base}/worker.min.js`, corePath: `${base}/core`, langPath: `${base}/lang`, gzip: true };
+  // Optional separate model location (e.g. a host that can't serve .gz files).
+  const lang = process.env.EXPO_PUBLIC_OCR_LANG_URL;
+  const out: Record<string, unknown> = {};
+  if (raw) {
+    const base = absolute(raw);
+    Object.assign(out, { workerPath: `${base}/worker.min.js`, corePath: `${base}/core`, langPath: `${base}/lang`, gzip: true });
+  }
+  if (lang) Object.assign(out, { langPath: absolute(lang), gzip: true });
+  return out;
 }
 
 async function getWorker(): Promise<TWorker> {

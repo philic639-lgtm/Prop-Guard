@@ -166,7 +166,7 @@ Accounts → New / an account's page / onboarding → **Import account screensho
 | | |
 | --- | --- |
 | Extraction | `src/lib/engines/accountImport` (pure, tested on real OCR output of 5 dashboard layouts) |
-| OCR (web) | [tesseract.js](https://github.com/naptha/tesseract.js) in the browser — free, no API key, the image never leaves the device. Engine + English model (~4 MB) load on first use from jsDelivr, or self-host: `npm run ocr:assets` then build with `EXPO_PUBLIC_OCR_ASSETS_URL=/ocr` |
+| OCR (web) | [tesseract.js](https://github.com/naptha/tesseract.js) in the browser — free, no API key, the image never leaves the device. Engine + English model (~4 MB) load on first use from jsDelivr, or self-host: `npm run ocr:assets` then build with `EXPO_PUBLIC_OCR_ASSETS_URL=/ocr` (`EXPO_PUBLIC_OCR_LANG_URL` can point the model elsewhere, e.g. a host that cannot serve `.gz`) |
 | OCR (iOS/Android) | Not bundled yet (needs a native text-recognition module in a development build). Native users can use the advanced reader, if configured, or enter values manually on the same review screen |
 | Advanced reader (optional) | `ai-gateway` task `account_screenshot_v2` (your Anthropic/OpenAI key, server-side). Runs only when the trader taps it for a hard screenshot; account numbers are blacked out first; the image is not stored |
 | Database | `accounts.import_state` (migration `20261019000000`): confirmed values + history + one-way account fingerprint (duplicate prevention). No screenshots, no raw account numbers |
