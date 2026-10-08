@@ -9,6 +9,7 @@ import { POPULAR_INSTRUMENTS, type InstrumentSpec } from '@/data/instruments';
 import { CustomInstrumentSheet } from '@/features/instruments/CustomInstrumentSheet';
 import { InstrumentBrowser } from '@/features/instruments/InstrumentBrowser';
 import { OnboardingScaffold } from '@/features/onboarding/OnboardingScaffold';
+import { useOnboardingStep } from '@/features/onboarding/steps';
 import { useOnboardingStore } from '@/features/onboarding/useOnboardingStore';
 import { findInstrument, getInstrument, setCustomInstruments } from '@/lib/engines/instrumentEngine';
 
@@ -16,6 +17,7 @@ export default function Markets() {
   const markets = useOnboardingStore((s) => s.markets);
   const customs = useOnboardingStore((s) => s.customInstruments);
   const set = useOnboardingStore((s) => s.set);
+  const { step, total } = useOnboardingStep('markets');
   const [browsing, setBrowsing] = useState(false);
   const [addingCustom, setAddingCustom] = useState(false);
 
@@ -33,12 +35,13 @@ export default function Markets() {
 
   return (
     <OnboardingScaffold
-      step={1}
+      step={step}
+      total={total}
       title="What do you trade?"
       subtitle="Select every futures contract you trade. Prop Guard uses each contract's tick size and value in every risk calculation."
       cta={markets.length ? `Continue · ${markets.length} selected` : 'Continue'}
       disabled={markets.length === 0}
-      onNext={() => router.push('/onboarding/path')}>
+      onNext={() => router.push('/onboarding/experience')}>
       <SectionHeader title="Popular instruments" />
       <ChoiceGrid
         columns={2}

@@ -17,6 +17,8 @@ import type {
   TradePlan,
   DisciplineEvent,
   Emotion,
+  ExperienceMode,
+  LearningProgress,
   NotificationPrefs,
   SessionReview,
   Strategy,
@@ -56,6 +58,10 @@ export interface AppState extends AppData {
   setTradingRules: (rules: TradingRules) => void;
   setPreferences: (prefs: Partial<UserPreferences>) => void;
   setNotificationPref: (key: keyof NotificationPrefs, value: boolean) => void;
+  /** Update beginner learning progress (lessons, assessment, plan) from the latest state. */
+  updateLearning: (fn: (current: LearningProgress | undefined) => LearningProgress) => void;
+  /** Switch beginner / experienced. Only changes what the app shows — no data is touched. */
+  setExperienceMode: (mode: ExperienceMode) => void;
 
   // strategies
   upsertStrategy: (strategy: Strategy) => void;
@@ -185,6 +191,16 @@ export const useAppStore = create<AppState>()(
 
       setPreferences: (prefs) => {
         set((s) => ({ preferences: { ...s.preferences, ...prefs } }));
+        syncService.savePreferences(get());
+      },
+
+      updateLearning: (fn) => {
+        set((s) => ({ preferences: { ...s.preferences, learning: fn(s.preferences.learning) } }));
+        syncService.savePreferences(get());
+      },
+
+      setExperienceMode: (mode) => {
+        set((s) => ({ preferences: { ...s.preferences, tradingProfile: { ...s.preferences.tradingProfile, mode } } }));
         syncService.savePreferences(get());
       },
 

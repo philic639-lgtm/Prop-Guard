@@ -10,6 +10,8 @@ export function finishOnboarding(): 'have_strategy' | 'build' | null {
   const app = useAppStore.getState();
   const mode = app.user ? 'cloud' : 'local';
   const keepName = app.mode === 'demo' ? '' : app.preferences.displayName;
+  // Lesson progress belongs to the person, not the data set — keep it when re-running onboarding.
+  const keepLearning = app.mode === 'demo' ? undefined : app.preferences.learning;
   app.startFresh(mode);
   const s = useAppStore.getState();
   if (o.account) {
@@ -25,7 +27,8 @@ export function finishOnboarding(): 'have_strategy' | 'build' | null {
     tradingType: o.tradingType,
     propFirm: o.propFirm,
     defaultInstrument: instruments[0] ?? 'MES',
-    tradingProfile: o.profile,
+    tradingProfile: { ...o.profile, mode: o.profile.mode ?? 'experienced' },
+    learning: keepLearning,
     onboarded: true,
   });
   if (syncService.enabled) syncService.savePreferences(useAppStore.getState());

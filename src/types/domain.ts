@@ -513,8 +513,13 @@ export type HoldTime = 'lt5' | '5to30' | '30to120' | 'hours';
 export type RiskPreference = 'conservative' | 'balanced' | 'aggressive';
 export type ConnectionMethod = 'manual' | 'screenshot' | 'connected';
 
+/** Which experience the app shows. Switchable any time — data is shared and never lost. */
+export type ExperienceMode = 'beginner' | 'experienced';
+
 export interface TradingProfile {
   path: 'have_strategy' | 'build' | null;
+  /** Absent for older profiles = experienced. */
+  mode?: ExperienceMode;
   style: TradingStyle;
   session: PreferredSession;
   experience: ExperienceLevel;
@@ -536,6 +541,40 @@ export interface UserPreferences {
   notifications: NotificationPrefs;
   tradingProfile: TradingProfile;
   onboarded: boolean;
+  /** Beginner learning path progress (kept when switching experience). */
+  learning?: LearningProgress;
+}
+
+/** Lesson progress, assessment and plan for the beginner path. */
+export interface LearningProgress {
+  lessons: Record<string, { status: 'started' | 'completed' | 'skipped'; quizScore?: number | null; updatedAt: string }>;
+  lastLessonId: string | null;
+  personality: PersonalityResult | null;
+  /** The plan the trader built and applied (strategy + rules), if any. */
+  plan: { templateId: string; strategyId: string | null; appliedAt: string } | null;
+}
+
+export interface PersonalityAnswers {
+  hours: 'lt1' | '1to2' | '2to4' | 'gt4';
+  session: 'ny_open' | 'ny_morning' | 'ny_afternoon' | 'flexible';
+  afterLoss: 'revenge' | 'frustrated' | 'calm';
+  openLoss: 'uncomfortable' | 'okay' | 'comfortable';
+  frequency: 'frequent' | 'quality' | 'selective';
+  hold: '1-5' | '5-20' | '20-60' | '60+';
+  /** The trader's own dollar limits. */
+  riskPerTrade: number;
+  dailyLoss: number;
+  experience: 'Beginner' | 'Intermediate' | 'Advanced';
+}
+
+export interface PersonalityResult {
+  answers: PersonalityAnswers;
+  archetype: string;
+  summary: string;
+  traits: string[];
+  cautions: string[];
+  suggestedRules: { maxRiskPerTrade: number; dailyStop: number; maxTradesPerDay: number; cooldownMinutes: number; maxConsecutiveLosses: number };
+  completedAt: string;
 }
 
 // ───────────────────────────── Setup Check ─────────────────────────────

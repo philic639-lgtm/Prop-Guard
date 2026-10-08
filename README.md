@@ -1,6 +1,8 @@
 # Prop Guard
 
-**Trade the plan. Protect the account.**
+**PLAN YOUR TRADE.**
+
+The risk-management, planning, education and strategy-improvement companion for prop firm traders.
 
 Prop Guard is an iOS-first (Android-compatible) discipline engine for futures traders: ES, MES, NQ and MNQ, often on prop-firm accounts. It sits beside the trader before, during and after every session. It sizes risk, enforces daily limits and cooldowns, checks each setup against the trader's **own** strategy, and journals everything into a Discipline Score.
 
@@ -17,7 +19,7 @@ npm install
 npm start          # Expo dev server. Press i (iOS simulator), a (Android) or w (web)
 ```
 
-Without Supabase credentials the app starts in **Demo Mode**. On the welcome screen tap **Explore the demo** to load a realistic 25K prop account, two strategies, about a month of trades, journal entries and discipline events. Tap **Get started** to run the 7-step onboarding with your own numbers, stored on the device.
+Without Supabase credentials the app starts in **Demo Mode**. On the welcome screen tap **Explore the demo** to load a realistic 25K prop account, two strategies, about a month of trades, journal entries and discipline events. Tap **Get started** to run the onboarding (Beginner: 5 steps → learning path; Experienced: 6 steps → quick start) with your own numbers, stored on the device.
 
 Requirements: Node 20+ and the Expo Go app (SDK 57) or an iOS/Android simulator.
 
@@ -25,7 +27,9 @@ Requirements: Node 20+ and the Expo Go app (SDK 57) or an iOS/Android simulator.
 
 | Area | Screens |
 | --- | --- |
-| Onboarding | Welcome → instruments → choose path (I have a strategy / Help me build) → account & risk (manual, screenshot import, connected *coming soon*) → trading preferences → rules |
+| Onboarding | Welcome (“PLAN YOUR TRADE.”) → instruments → **experience** (Beginner / Experienced) → [experienced: choose path — I have a strategy / Help me build] → account (firm → program → stage → size loads **verified** rules; unverified firms stay blank, nothing assumed) & risk limits → trading preferences → rules → Beginner: `/learn` · Experienced: strategy import/builder or `/start` |
+| Learn (beginner) | `/learn` hub with saved progress · 8 modules / 15 short lessons (prop firms, drawdown, daily loss, payouts & consistency, risk per trade, personality, strategy discovery, chart patterns/entries/stops, honest practice, plan, journal & review) · interactive examples on the real engines (drawdown simulator incl. a verified LucidPro 50K preset, daily-loss, position sizer, R:R, consistency) · quizzes · skip / revisit · `/learn/personality` · `/learn/strategies` (Strategy Finder matcher) · `/learn/plan` (rules + sizing + account limits + checklist + routine → saved strategy → Practice) |
+| Quick start (experienced) | `/start`: setup checklist from real data (verified account, risk manager, strategy, practice, journal, insights threshold) + tool grid. Switch Beginner ↔ Experienced any time in Profile; no data is lost |
 | Strategy | Describe in plain English → AI converts to measurable rules → review/edit/add/delete → practice or use · Help-me-build generator · Library (15M ORB Retest, VWAP Pullback, Breakout + Retest, Key Level Rejection, …) · Finder |
 | Home | Account progress, balance, daily P&L, risk/trades/drawdown remaining, consistency, trading plan, Check Trade / Analyze Setup, insight, recent trades |
 | Analyze (center tab) | Manual Entry / From Chart → AI entry analysis (GOOD ENTRY / CAUTION / RULE VIOLATION, per-condition ✓ ⚠ ✗, trade details, suggested adjustment) → Save Trade Plan or enter → Live Trade Monitor (chart, demo price feed, alerts) → loss cooldown |
@@ -177,7 +181,9 @@ To go live:
 src/
   app/                 Expo Router routes (screens only)
     (tabs)/            Home · Session · Strategy · Journal · Profile (custom tab bar)
-    onboarding/        7-step onboarding
+    onboarding/        Dual onboarding (beginner / experienced)
+    learn/             Beginner learning path: hub, lesson player, personality, strategy matches, plan
+    start              Experienced quick start
     auth/              Email sign-in / sign-up (Apple & Google structured, coming soon)
     session/           check · live · loss (anti-revenge) · review · screenshot
     strategy/          builder [id] · library · finder
@@ -213,6 +219,7 @@ supabase/
 | `disciplineEngine` | 0–100 adherence score (not P/L-based), components and timeline from discipline events |
 | `analyticsEngine` | Win rate, profit factor, avg R, equity curve, P/L by day, hour, strategy and instrument, compliance split |
 | `sessionEngine` | Session summary and local review (including cooldown-gap detection) |
+| `learningEngine` | Lesson progress (never downgrades completed), quiz grading, deterministic trading-personality profile (rules from the trader's own limits, only ever tightened to the account), strategy recommendations via the Strategy Finder, trading plan (risk-engine sizing + account limits), experienced quick-start checklist |
 
 Discipline events: `RULE_FOLLOWED`, `RULE_OVERRIDDEN`, `STOP_WIDENED`, `DAILY_LIMIT_HIT`, `TRADE_LIMIT_HIT`, `COOLDOWN_BROKEN`, `STRATEGY_VIOLATION`, `JOURNAL_COMPLETED`.
 

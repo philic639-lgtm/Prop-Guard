@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
 
 import { Disclaimer } from '@/components/domain/Disclaimer';
@@ -8,6 +8,8 @@ import { isDemoMode } from '@/config/env';
 import { PLANS } from '@/config/plans';
 import { SUPPORT_EMAIL } from '@/constants/legal';
 import { colors, radius, spacing } from '@/constants/theme';
+import { ExperienceSwitch } from '@/features/learning/ExperienceSwitch';
+import { overallProgress } from '@/lib/engines/learningEngine';
 import { authService } from '@/services/authService';
 import { useAppStore } from '@/store/useAppStore';
 import { useSubscriptionStore } from '@/store/useSubscriptionStore';
@@ -15,6 +17,7 @@ import { money } from '@/utils/format';
 
 export default function ProfileScreen() {
   const prefs = useAppStore((s) => s.preferences);
+  const learningProgress = useMemo(() => overallProgress(prefs.learning), [prefs.learning]);
   const user = useAppStore((s) => s.user);
   const mode = useAppStore((s) => s.mode);
   const accounts = useAppStore((s) => s.accounts);
@@ -50,6 +53,19 @@ export default function ProfileScreen() {
           <StatusBadge label={PLANS[plan].name} tone={plan === 'pro' ? 'accent' : 'neutral'} icon={plan === 'pro' ? 'diamond' : undefined} size="sm" />
           <StatusBadge label={modeLabel} tone={mode === 'cloud' ? 'positive' : 'neutral'} size="sm" />
         </View>
+      </Card>
+
+      <ExperienceSwitch />
+      <Card padded={false} style={styles.group}>
+        <ListRow
+          icon="school-outline"
+          iconTone="accent"
+          title="Learning path"
+          subtitle={`${learningProgress.completed}/${learningProgress.total} lessons · progress kept in both experiences`}
+          onPress={() => router.push('/learn')}
+        />
+        <Divider />
+        <ListRow icon="flash-outline" iconTone="accent" title="Quick start" subtitle="Setup checklist and tools" onPress={() => router.push('/start')} />
       </Card>
 
       <SectionHeader title="Trading" />

@@ -25,6 +25,7 @@ import {
 } from '@/components/ui';
 import { colors, GUTTER, radius, spacing, toneColor } from '@/constants/theme';
 import { CoachCard } from '@/features/home/CoachCard';
+import { HomeModeCard } from '@/features/learning/HomeModeCard';
 import { TradingPlanCard } from '@/features/home/TradingPlanCard';
 import { useAccountTrades, useActiveAccount, useActiveStrategy, useDailyGuard, useDiscipline, useOpenTrade, usePendingTrades } from '@/hooks/useAppData';
 import { evaluateAccount } from '@/lib/engines';
@@ -69,6 +70,7 @@ export default function HomeScreen() {
   if (!account) {
     return (
       <Screen tabBar header={header}>
+        <HomeModeCard />
         <Card>
           <EmptyState icon="briefcase-outline" title="Add your trading account" message="Prop Guard needs your account limits before it can protect you." actionLabel="Add account" onAction={() => router.push('/accounts/new')} />
         </Card>
@@ -84,6 +86,7 @@ export default function HomeScreen() {
   return (
     <Screen tabBar header={header}>
       <DemoBanner />
+      <HomeModeCard />
 
       <Card onPress={() => router.push({ pathname: '/accounts/[id]', params: { id: account.id } })} accessibilityLabel={`${account.name}, ${CONNECTION_LABEL[connection]}`}>
         <View style={styles.accountRow}>

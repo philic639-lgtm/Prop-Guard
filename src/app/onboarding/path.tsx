@@ -2,13 +2,15 @@ import { router } from 'expo-router';
 
 import { OptionCard } from '@/components/ui';
 import { OnboardingScaffold } from '@/features/onboarding/OnboardingScaffold';
+import { useOnboardingStep } from '@/features/onboarding/steps';
 import { useOnboardingStore } from '@/features/onboarding/useOnboardingStore';
 
 export default function ChoosePath() {
   const path = useOnboardingStore((s) => s.profile.path);
   const setProfile = useOnboardingStore((s) => s.setProfile);
+  const { step, total } = useOnboardingStep('path');
   return (
-    <OnboardingScaffold step={2} title="How do you want to start?" subtitle="Prop Guard checks every trade against a plan. Bring yours, or build one." cta="Continue" disabled={!path} onNext={() => router.push('/onboarding/account')}>
+    <OnboardingScaffold step={step} total={total} title="How do you want to start?" subtitle="Prop Guard checks every trade against a plan. Bring yours, or build one." cta="Continue" disabled={!path} onNext={() => router.push('/onboarding/account')}>
       <OptionCard
         icon="shield-checkmark-outline"
         title="I have a strategy"

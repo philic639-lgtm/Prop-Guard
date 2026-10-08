@@ -12,10 +12,10 @@ import { useOnboardingStore } from '@/features/onboarding/useOnboardingStore';
 import { useAppStore } from '@/store/useAppStore';
 
 const FEATURES: { icon: keyof typeof Ionicons.glyphMap; color: string; text: string }[] = [
-  { icon: 'link', color: colors.positive, text: 'Track your prop account or import trades' },
-  { icon: 'shield-checkmark', color: colors.accentBright, text: 'Enforce your rules & manage risk' },
-  { icon: 'sparkles', color: colors.warning, text: 'Automatic journaling & AI analysis' },
-  { icon: 'trending-up', color: colors.positive, text: 'Stay consistent and pass your accounts' },
+  { icon: 'shield-checkmark', color: colors.accentBright, text: 'Load your firm’s verified rules and protect the account' },
+  { icon: 'calculator', color: colors.positive, text: 'Plan every trade: size, risk and rules checked before entry' },
+  { icon: 'school', color: colors.warning, text: 'Learn step by step — or skip straight to your tools' },
+  { icon: 'trending-up', color: colors.positive, text: 'Practice, journal and improve your own strategy' },
 ];
 
 export default function Welcome() {
@@ -36,12 +36,12 @@ export default function Welcome() {
         <View style={styles.hero}>
           <Logo size="xl" />
           <AppText variant="body" tone="secondary" align="center">
-            Your AI trading discipline system
+            Risk management, planning and strategy coaching for prop firm traders
           </AppText>
           <AppText variant="display" align="center" style={styles.tagline}>
-            Trade Your Strategy.{'\n'}
+            PLAN YOUR{' '}
             <AppText variant="display" style={{ color: colors.positive }}>
-              Not Your Emotions.
+              TRADE.
             </AppText>
           </AppText>
         </View>

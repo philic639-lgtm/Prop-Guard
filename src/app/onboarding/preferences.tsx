@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 
 import { ChoiceGrid } from '@/components/ui';
 import { OnboardingScaffold } from '@/features/onboarding/OnboardingScaffold';
+import { useOnboardingStep } from '@/features/onboarding/steps';
 import { useOnboardingStore } from '@/features/onboarding/useOnboardingStore';
 
 export default function TradingPreferences() {
@@ -10,9 +11,10 @@ export default function TradingPreferences() {
   const markets = useOnboardingStore((s) => s.markets);
   const set = useOnboardingStore((s) => s.set);
   const primary = markets[0] ?? 'ES';
+  const { step, total } = useOnboardingStep('preferences');
 
   return (
-    <OnboardingScaffold step={4} title="Tell us about your trading style" subtitle="This helps Prop Guard create rules and checks that fit you." cta="Continue" onNext={() => router.push('/onboarding/rules')}>
+    <OnboardingScaffold step={step} total={total} title="Tell us about your trading style" subtitle="This helps Prop Guard create rules and checks that fit you." cta="Continue" onNext={() => router.push('/onboarding/rules')}>
       <ChoiceGrid
         label="Primary instrument"
         columns={Math.min(4, Math.max(2, markets.length))}

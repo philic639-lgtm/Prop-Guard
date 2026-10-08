@@ -418,6 +418,7 @@ export function preferencesToRow(
     trading_rules: rules,
     trading_profile: p.tradingProfile,
     custom_instruments: p.customInstruments,
+    learning_progress: p.learning ?? null,
     onboarded: p.onboarded,
     active_account_id: activeAccountId,
     active_strategy_id: activeStrategyId,

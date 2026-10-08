@@ -98,6 +98,7 @@ export class SupabaseRepository {
       tradingProfile: { ...DEFAULT_PREFERENCES.tradingProfile, ...((p?.trading_profile as object) ?? {}) },
       customInstruments: Array.isArray(p?.custom_instruments) ? (p!.custom_instruments as UserPreferences['customInstruments']) : [],
       onboarded: p?.onboarded === true,
+      learning: p?.learning_progress && typeof p.learning_progress === 'object' ? (p.learning_progress as UserPreferences['learning']) : undefined,
     };
 
     return {
