@@ -2,10 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Card, Input, Sheet, StatusBadge } from '@/components/ui';
+import { AppText, Button, Card, Input, SegmentedControl, Sheet, StatusBadge } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { FirmRulesDatabase, PropFirm, PropFirmProgram } from '@/data/propFirms/types';
-import { activeRuleVersion, isVerified, newerRulesAvailable, programFamilies, searchFirms, sizesForFamily, STAGE_LABEL, type ProgramFamily } from '@/lib/engines/firmRulesEngine';
+import { activeRuleVersion, isVerified, missingOptions, newerRulesAvailable, programFamilies, programLines, searchFirms, sizesForFamily, STAGE_LABEL, type ProgramFamily } from '@/lib/engines/firmRulesEngine';
 import type { AccountFirmLink, AccountRuleSnapshot, FirmRuleField } from '@/types/domain';
 import { longDate } from '@/utils/format';
 
@@ -147,30 +147,42 @@ function Option({ title, sub, on, onPress }: { title: string; sub?: string; on: 
 }
 
 /**
- * After a database firm is chosen: Program / Account (dropdown of the firm's
- * programs) → Account Size (only the sizes that program offers) → rules.
- * A firm without programs on file falls back to free text.
+ * After a database firm is chosen:
+ * Program (product line) → Stage → Account size → Purchase options → Purchase date.
+ * Rules load automatically once the configuration is complete; a firm
+ * without programs on file falls back to free text.
  */
 export function ProgramPicker({
   db,
   firm,
   link,
   familyKey,
+  options,
+  purchasedOn,
   onSelectFamily,
   onSelectProgram,
+  onSelectOption,
+  onChangePurchasedOn,
   onCustomProgram,
 }: {
   db: FirmRulesDatabase;
   firm: PropFirm;
   link: AccountFirmLink | null;
   familyKey: string | null;
+  options: Record<string, string>;
+  purchasedOn: string;
   onSelectFamily: (key: string) => void;
   onSelectProgram: (p: PropFirmProgram) => void;
+  onSelectOption: (id: string, choice: string) => void;
+  onChangePurchasedOn: (date: string) => void;
   onCustomProgram: (name: string) => void;
 }) {
   const [sheet, setSheet] = useState<'program' | 'size' | null>(null);
   const families = programFamilies(db, firm.id);
+  const lines = programLines(db, firm.id);
   const family = families.find((f) => f.key === familyKey) ?? null;
+  const [lineName, setLineName] = useState<string | null>(() => (family ? (family.programs[0].line ?? family.family) : null));
+  const line = lines.find((l) => l.line === lineName) ?? null;
   const current = family?.programs.find((p) => p.id === link?.programId) ?? null;
   const custom = !link?.programId && link?.programName ? link.programName : null;
   const [writing, setWriting] = useState(!families.length || !!custom);
@@ -187,19 +199,40 @@ export function ProgramPicker({
     );
   }
 
-  const stages = (['evaluation', 'funded', 'live'] as const).filter((s) => families.some((f) => f.stage === s));
   const familyVerified = (f: ProgramFamily) => f.programs.some((p) => verifiedOn(p));
+  const pickLine = (name: string) => {
+    const l = lines.find((x) => x.line === name)!;
+    setLineName(name);
+    // One stage only (e.g. Topstep's Trading Combine): the stage is implied.
+    if (l.stages.length === 1) {
+      const f = l.stages[0];
+      if (f.key !== familyKey) onSelectFamily(f.key);
+      if (f.programs.length === 1) onSelectProgram(f.programs[0]);
+      setSheet(f.programs.length > 1 ? 'size' : null);
+    } else setSheet(null);
+  };
+  const missing = current ? missingOptions(current, options) : [];
   return (
     <View style={styles.gap}>
       <Select
-        label="Program / Account"
+        label="Program"
         icon="layers-outline"
-        value={family?.family ?? null}
+        value={line?.line ?? null}
         placeholder={`Select a ${firm.name} program`}
-        sub={family ? `${STAGE_LABEL[family.stage]} · ${familyVerified(family) ? 'Verified rules' : 'Rules not yet verified'}` : null}
+        sub={line ? `${line.stages.map((f) => STAGE_LABEL[f.stage]).join(' · ')} · ${line.stages.some(familyVerified) ? 'Verified rules' : 'Rules not yet verified'}` : null}
         onPress={() => setSheet('program')}
       />
-      {family ? (
+      {line && line.stages.length > 1 ? (
+        <SegmentedControl
+          label="Account stage"
+          options={line.stages.map((f) => ({ value: f.key, label: STAGE_LABEL[f.stage] }))}
+          value={family && line.stages.some((f) => f.key === family.key) ? family.key : ''}
+          onChange={(key) => {
+            if (key !== familyKey) onSelectFamily(key);
+          }}
+        />
+      ) : null}
+      {family && line?.stages.some((f) => f.key === family.key) ? (
         <Select
           label="Account size"
           icon="cash-outline"
@@ -209,29 +242,37 @@ export function ProgramPicker({
           onPress={() => setSheet('size')}
         />
       ) : null}
+      {current?.options?.map((o) => (
+        <View key={o.id} style={styles.gap}>
+          <SegmentedControl label={o.label} options={o.choices.map((c) => ({ value: c.id, label: c.label }))} value={options[o.id] ?? ''} onChange={(v) => onSelectOption(o.id, v)} />
+          <AppText variant="caption">{o.choices.find((c) => c.id === options[o.id])?.description ?? o.description ?? ''}</AppText>
+        </View>
+      ))}
+      {missing.length ? (
+        <AppText variant="caption" tone="warning">
+          Choose {missing.map((o) => o.label).join(' and ')} — it changes this account’s rules, so nothing is loaded until it’s set.
+        </AppText>
+      ) : null}
+      {current ? (
+        <Input
+          label="Purchase / reset date"
+          value={purchasedOn}
+          onChangeText={onChangePurchasedOn}
+          placeholder="YYYY-MM-DD"
+          hint="Accounts bought under older terms load the rules in force on that date."
+          autoCorrect={false}
+        />
+      ) : null}
 
-      <Sheet visible={sheet === 'program'} onClose={() => setSheet(null)} title={`${firm.name} · PROGRAM / ACCOUNT`}>
-        {stages.map((stage) => (
-          <View key={stage} style={styles.gap}>
-            <AppText variant="label" style={{ marginTop: spacing.sm }}>
-              {STAGE_LABEL[stage]}
-            </AppText>
-            {families
-              .filter((f) => f.stage === stage)
-              .map((f) => (
-                <Option
-                  key={f.key}
-                  title={f.family}
-                  sub={`${f.programs.map(sizeLabel).join(' · ')} · ${familyVerified(f) ? 'Verified rules' : 'Rules not yet verified'}`}
-                  on={f.key === familyKey}
-                  onPress={() => {
-                    if (f.key !== familyKey) onSelectFamily(f.key);
-                    setSheet(f.programs.length > 1 ? 'size' : null);
-                    if (f.programs.length === 1) onSelectProgram(f.programs[0]);
-                  }}
-                />
-              ))}
-          </View>
+      <Sheet visible={sheet === 'program'} onClose={() => setSheet(null)} title={`${firm.name} · PROGRAM`}>
+        {lines.map((l) => (
+          <Option
+            key={l.line}
+            title={l.line}
+            sub={`${l.stages.map((f) => STAGE_LABEL[f.stage]).join(' · ')} · ${l.stages.some(familyVerified) ? 'Verified rules' : 'Rules not yet verified'}`}
+            on={l.line === line?.line}
+            onPress={() => pickLine(l.line)}
+          />
         ))}
         <Pressable
           accessibilityRole="button"
@@ -275,6 +316,20 @@ export function FirmRulesStatus({ db, link, overrides, firmName }: { db: FirmRul
   if (!link || link.status === 'custom') return null;
   if (link.status !== 'verified') {
     if (!link.firmId) return null;
+    const prog = link.programId ? db.programs.find((p) => p.id === link.programId) : null;
+    if (prog && missingOptions(prog, link.options).length) return null; // the picker asks for the option
+    if (prog && isVerified(activeRuleVersion(prog, today()))) {
+      return (
+        <Card tone="warning">
+          <AppText variant="bodyStrong" tone="warning">
+            No verified rules for that purchase date.
+          </AppText>
+          <AppText variant="caption" style={{ marginTop: 4 }}>
+            Prop Guard only has {link.programName}’s rules from a later date. Enter the terms from your purchase agreement — nothing was filled in.
+          </AppText>
+        </Card>
+      );
+    }
     return (
       <Card tone="warning">
         <View style={styles.row}>
@@ -308,6 +363,9 @@ export function FirmRulesStatus({ db, link, overrides, firmName }: { db: FirmRul
       <AppText variant="caption">
         Last verified: {link.lastVerifiedAt ? longDate(link.lastVerifiedAt) : '—'} · Rule version {link.ruleVersion}
       </AppText>
+      {link.options && Object.keys(link.options).length ? (
+        <AppText variant="caption">Options: {Object.entries(link.options).map(([k, v]) => `${k === 'dll' ? 'Daily Loss Limit' : k} ${v === 'on' ? 'On' : v === 'off' ? 'Off' : v}`).join(' · ')}</AppText>
+      ) : null}
       {review.length ? (
         <AppText variant="caption" tone="warning" style={{ marginTop: 4 }}>
           {review.length} rule{review.length === 1 ? '' : 's'} need review and {review.length === 1 ? 'was' : 'were'} not filled in: {review.map((r) => r.label).join(', ')}.
@@ -319,7 +377,7 @@ export function FirmRulesStatus({ db, link, overrides, firmName }: { db: FirmRul
         </AppText>
       ) : null}
       <AppText variant="caption" tone="tertiary" style={{ marginTop: 4 }}>
-        Every imported value stays editable. Firm terms change — check the official source before trading.
+        Firm rules are read-only — use “Override firm rules” if your purchased agreement differs. Firm terms change — check the official source before trading.
       </AppText>
       <View style={{ marginTop: spacing.md }}>
         <Button label="View rule sources" icon="link-outline" variant="secondary" size="md" onPress={() => setSources(true)} />

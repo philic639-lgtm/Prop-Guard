@@ -118,6 +118,10 @@ export interface AccountRiskState {
   lastVerifiedAt: string | null;
   /** Firm consistency rule (largest day as % of profit), when the account has one. */
   consistencyPct?: number | null;
+  /** Trailing floor stops at starting balance + this (verified firm configuration, e.g. +$100). */
+  trailingLockOffset?: number | null;
+  /** 'none' = verified: this configuration has no daily loss limit. */
+  dailyLossMode?: 'none' | 'fixed' | 'scaling' | null;
   /** True only when balance / P&L come from a live broker feed (none is connected yet). */
   liveData?: boolean;
 }
@@ -135,13 +139,14 @@ export function propBuffers(a: AccountRiskState, noDailyLimitConfirmed: boolean)
         ? a.startingBalance - a.maxDrawdown
         : (() => {
             const trailing = Math.max(a.highWaterMark, a.startingBalance) - a.maxDrawdown;
-            return a.trailingLocksAtStart ? Math.min(trailing, a.startingBalance) : trailing;
+            const lock = a.trailingLockOffset ?? (a.trailingLocksAtStart ? 0 : null);
+            return lock != null ? Math.min(trailing, a.startingBalance + lock) : trailing;
           })();
     drawdownBuffer = a.balance - floor - a.openRisk;
   }
   let dailyLossRemaining: number | undefined;
   if (a.dailyLossLimit != null && a.dailyLossLimit > 0) dailyLossRemaining = a.dailyLossLimit + Math.min(0, a.realizedPnlToday) - a.openRisk;
-  else if (noDailyLimitConfirmed) dailyLossRemaining = NONBINDING_DAILY_LIMIT;
+  else if (noDailyLimitConfirmed || a.dailyLossMode === 'none') dailyLossRemaining = NONBINDING_DAILY_LIMIT;
   return { drawdownBuffer, dailyLossRemaining };
 }
 

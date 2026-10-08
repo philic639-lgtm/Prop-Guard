@@ -1,3 +1,4 @@
+import { LUCID_PROGRAMS } from './firms/lucid';
 import { TOPSTEP_PROGRAMS } from './firms/topstep';
 import { FIRM_RULES_SCHEMA_VERSION, type FirmRulesDatabase, type PropFirm } from './types';
 
@@ -26,19 +27,21 @@ const FIRMS: PropFirm[] = [
   { id: 'bulenox', name: 'Bulenox', aliases: [], logo: null, website: 'https://bulenox.com', active: true },
   { id: 'earn2trade', name: 'Earn2Trade', aliases: ['E2T', 'Earn 2 Trade'], logo: null, website: 'https://www.earn2trade.com', active: true },
   { id: 'elite-trader-funding', name: 'Elite Trader Funding', aliases: ['ETF', 'Elite'], logo: null, website: 'https://elitetraderfunding.com', active: true },
+  { id: 'tradeday', name: 'TradeDay', aliases: ['Trade Day'], logo: null, website: 'https://www.tradeday.com', active: true },
   { id: 'tickticktrader', name: 'TickTickTrader', aliases: ['Tick Tick Trader', 'TTT'], logo: null, website: 'https://tickticktrader.com', active: true },
 ];
 
 /**
- * Program catalogue. Topstep is fully researched (`firms/topstep.ts`, every
- * rule with its official source); the other firms are placeholders until
- * their programs and rules are verified — traders enter those manually.
+ * Program catalogue. Researched from official pages, every rule with its
+ * source: Topstep (`firms/topstep.ts`) and Lucid Trading — LucidPro and
+ * LucidFlex, evaluation + funded (`firms/lucid.ts`). The other firms list no
+ * programs until theirs are verified — traders enter those rules manually.
  */
-const PROGRAMS = [...TOPSTEP_PROGRAMS];
+const PROGRAMS = [...TOPSTEP_PROGRAMS, ...LUCID_PROGRAMS];
 
 export const FIRM_RULES_SEED: FirmRulesDatabase = {
   schemaVersion: FIRM_RULES_SCHEMA_VERSION,
-  publishedAt: '2026-10-05T00:00:00.000Z',
+  publishedAt: '2026-10-08T00:00:00.000Z',
   source: 'seed',
   firms: FIRMS,
   programs: PROGRAMS,

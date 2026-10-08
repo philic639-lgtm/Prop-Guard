@@ -24,6 +24,7 @@ import { accountSchema, accountToForm, formToAccount, ruleValuesOf, type Account
 import { FirmAutocomplete, FirmRulesStatus, ProgramPicker } from '@/features/accounts/FirmRulePicker';
 import { isFirmCustomRule, useFirmRuleLink } from '@/features/accounts/useFirmRuleLink';
 import { detectOverrides, evaluateAccount, type RuleStatus } from '@/lib/engines';
+import { calcAfterOverrides, validateFirmConfiguration, type ConfigIssue } from '@/lib/engines/firmRulesEngine';
 import { useAppStore } from '@/store/useAppStore';
 import type { AccountStatus, CustomRule } from '@/types/domain';
 import { uuid } from '@/utils/id';
@@ -54,12 +55,29 @@ export default function AccountEditor() {
   const firmText = useWatch({ control, name: 'firm' });
   const values = useWatch({ control }) as AccountFormValues;
   const overrides = useMemo(() => (link ? detectOverrides(link.imported, ruleValuesOf(values)) : []), [link, values]);
+  // Firm rules are read-only by default; overriding is an explicit choice.
+  const [overriding, setOverriding] = useState(() => (existing?.firmLink?.overrides.length ?? 0) > 0);
+  const [issues, setIssues] = useState<ConfigIssue[]>([]);
+  const locked = link?.status === 'verified' && !overriding;
+  const toggleLock = () => {
+    if (!link) return;
+    if (overriding) for (const [k, v] of Object.entries(link.imported)) firmRules.restore(k as keyof typeof link.imported, v);
+    setOverriding((o) => !o);
+  };
 
   const save = handleSubmit((v) => {
+    // Never save a mismatched configuration (rules from another program / options / size).
+    const problems = validateFirmConfiguration(firmRules.db, link, { size: v.size }, new Date().toISOString());
+    setIssues(problems);
+    if (problems.length) return;
     const base = existing ? { ...existing, status, rules: { ...existing.rules, custom } } : null;
     const firmLink = link && (link.firmId || v.firm.trim()) ? { ...link, overrides: detectOverrides(link.imported, ruleValuesOf(v)) } : undefined;
     const account = formToAccount(v, base, existing?.id ?? uuid(), undefined, firmLink);
     account.rules.custom = custom;
+    // Verified typed calculations (lock offset, DLL mode, payout) — minus any rule the trader overrode.
+    const calc = firmLink?.status === 'verified' ? calcAfterOverrides(firmLink.calc, firmLink.overrides, v.dailyLossLimit) : undefined;
+    if (calc) account.rules.calc = calc;
+    else delete account.rules.calc;
     account.status = status;
     upsert(account);
     router.back();
@@ -70,6 +88,7 @@ export default function AccountEditor() {
       {evaluation ? (
         <>
           <SectionHeader title="Rule status" />
+          <AppText variant="caption">{evaluation.dataBasis}</AppText>
           <Card>
             {evaluation.rules.map((r, i) => (
               <View key={r.id} style={[styles.rule, i > 0 && styles.ruleBorder]}>
@@ -92,6 +111,8 @@ export default function AccountEditor() {
         control={control}
         imported={link?.status === 'verified' ? link.imported : undefined}
         onRestore={firmRules.restore}
+        locked={locked}
+        onToggleLock={link?.status === 'verified' ? toggleLock : undefined}
         firmSlot={
           <>
             <FirmAutocomplete db={firmRules.db} value={firmText ?? ''} selected={firmRules.firm} onChangeText={firmRules.changeFirmText} onSelectFirm={firmRules.selectFirm} />
@@ -101,14 +122,31 @@ export default function AccountEditor() {
                 firm={firmRules.firm}
                 link={link}
                 familyKey={firmRules.familyKey}
+                options={firmRules.options}
+                purchasedOn={firmRules.purchasedOn}
                 onSelectFamily={firmRules.selectFamily}
                 onSelectProgram={firmRules.selectProgram}
+                onSelectOption={firmRules.selectOption}
+                onChangePurchasedOn={firmRules.changePurchasedOn}
                 onCustomProgram={firmRules.customProgram}
               /> : null}
           </>
         }
         rulesFooter={<FirmRulesStatus db={firmRules.db} link={link} overrides={overrides} firmName={firmRules.firm?.name ?? firmText ?? ''} />}
       />
+
+      {issues.length ? (
+        <Card tone="danger">
+          <AppText variant="bodyStrong" tone="danger">
+            Fix the account configuration before saving
+          </AppText>
+          {issues.map((i) => (
+            <AppText key={i.message} variant="body" style={{ marginTop: 4 }}>
+              • {i.message}
+            </AppText>
+          ))}
+        </Card>
+      ) : null}
 
       <SectionHeader title="Custom rules" />
       <Card>

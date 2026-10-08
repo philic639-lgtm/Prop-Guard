@@ -30,6 +30,8 @@ export function accountRiskState(account: Account, trades: Trade[], now: Date): 
     verified: link?.status === 'verified' && !RISK_FIELDS.some((f) => link.overrides.includes(f)),
     lastVerifiedAt: link?.lastVerifiedAt ?? null,
     consistencyPct: account.rules.consistencyPct,
+    trailingLockOffset: account.rules.calc?.trailingLockOffset ?? null,
+    dailyLossMode: account.rules.calc?.dailyLossMode ?? null,
     // Balance and P&L come from the journal — no live broker feed is connected.
     liveData: false,
   };

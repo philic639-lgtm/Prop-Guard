@@ -16,7 +16,20 @@ import type { DrawdownType } from '@/types/domain';
 
 export const FIRM_RULES_SCHEMA_VERSION = 1;
 
+/** evaluation = challenge; funded = SIMULATED funded account; live = real-capital account. */
 export type ProgramStage = 'evaluation' | 'funded' | 'live';
+
+/**
+ * A choice the trader makes when buying the account (e.g. Lucid's
+ * "Daily Loss Limit: On / Off"). Rule records can depend on it (`when`).
+ */
+export interface ProgramOption {
+  id: string;
+  label: string;
+  description?: string;
+  choices: { id: string; label: string; description?: string }[];
+  sources: RuleSource[];
+}
 
 export interface PropFirm {
   id: string;
@@ -60,6 +73,10 @@ export interface FirmRuleRecord {
   checkedAt: string;
   /** Conflict explanation / caveats. */
   note?: string;
+  /** Applies only for these purchase options, e.g. `{ dll: 'on' }`. Absent = always. */
+  when?: Record<string, string>;
+  /** Structured values this record sets when it applies AND is verified (option-dependent values). */
+  structured?: Partial<ProgramRules>;
 }
 
 export type VerificationStatus = 'verified' | 'unverified';
@@ -83,6 +100,35 @@ export interface ConsistencyRule {
   description: string;
 }
 
+/** Daily loss limit that changes with the account (e.g. Lucid's LucidScale DLL). */
+export interface DailyLossScaling {
+  /** Percent of the basis, e.g. 60. */
+  pct: number;
+  basis: 'peak_eod_profit' | 'peak_eod_balance';
+  /** Applies once the end-of-day balance closes above this balance (null = from the start). */
+  afterBalance: number | null;
+}
+
+/** Typed payout eligibility (null = not stated / not verified). */
+export interface PayoutRules {
+  minRequest: number | null;
+  /** Largest request in dollars (first / later payouts may differ — see records). */
+  maxRequest: number | null;
+  /** Largest request as % of profit. */
+  maxRequestPctOfProfit: number | null;
+  /** Profit needed in each payout cycle. */
+  cycleProfitGoal: number | null;
+  /** Days in the cycle that must each reach `minDayProfit`. */
+  minProfitableDays: number | null;
+  minDayProfit: number | null;
+  /** Payouts allowed before the account moves on (e.g. to live). */
+  maxPayouts: number | null;
+  /** Balance that must remain: starting balance + this amount (payouts never come from it). */
+  bufferAboveStart: number | null;
+}
+
+export const emptyPayoutRules = (): PayoutRules => ({ minRequest: null, maxRequest: null, maxRequestPctOfProfit: null, cycleProfitGoal: null, minProfitableDays: null, minDayProfit: null, maxPayouts: null, bufferAboveStart: null });
+
 export interface FirmAdditionalRule {
   id: string;
   label: string;
@@ -97,6 +143,19 @@ export interface ProgramRules {
   drawdownType: DrawdownType | null;
   /** Trailing drawdown stops trailing once the floor reaches the starting balance. */
   trailingLocksAtStart: boolean | null;
+  /** Floor stops trailing at starting balance + this amount (e.g. Lucid: +$100). Overrides trailingLocksAtStart. */
+  trailingLockOffset: number | null;
+  /** Percentage-based max drawdown (% of starting balance), when the firm states it as a percent. */
+  maxDrawdownPct: number | null;
+  /** The drawdown floor jumps to the lock level when a payout is requested (e.g. LucidFlex). */
+  drawdownLocksOnPayout: boolean | null;
+  /** `none` = this configuration has NO daily loss limit (verified), never "unknown". */
+  dailyLossMode: 'none' | 'fixed' | 'scaling' | null;
+  /** soft = locked out for the session; hard = account failed. */
+  dailyLossBreach: 'soft' | 'hard' | null;
+  dailyLossScaling: DailyLossScaling | null;
+  payout: PayoutRules | null;
+  inactivityRule: string | null;
   maxContracts: number | null;
   consistencyRule: ConsistencyRule | null;
   minTradingDays: number | null;
@@ -146,6 +205,13 @@ export interface PropFirmProgram {
   stage: ProgramStage;
   accountSize: number | null;
   active: boolean;
+  /**
+   * Product line the trader recognises ("LucidPro", "LucidFlex"). Picked
+   * first, then the stage, then the size. Absent = the family is the line.
+   */
+  line?: string;
+  /** Purchase options that change the rules (all must be chosen before rules load). */
+  options?: ProgramOption[];
   /** Rule versions, any order. The active one is picked by effective date. */
   versions: ProgramRuleVersion[];
 }
@@ -166,6 +232,14 @@ export const emptyProgramRules = (): ProgramRules => ({
   maxDrawdown: null,
   drawdownType: null,
   trailingLocksAtStart: null,
+  trailingLockOffset: null,
+  maxDrawdownPct: null,
+  drawdownLocksOnPayout: null,
+  dailyLossMode: null,
+  dailyLossBreach: null,
+  dailyLossScaling: null,
+  payout: null,
+  inactivityRule: null,
   maxContracts: null,
   consistencyRule: null,
   minTradingDays: null,

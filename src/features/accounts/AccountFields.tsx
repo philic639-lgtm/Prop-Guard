@@ -16,7 +16,29 @@ type Name = keyof AccountFormValues;
 interface ImportProps {
   imported?: FirmRuleValues;
   onRestore?: (field: FirmRuleField, value: string) => void;
+  /** Firm rules are read-only (until the trader chooses to override). */
+  locked?: boolean;
 }
+
+/** A verified firm rule shown read-only. */
+function LockedRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.locked} accessible accessibilityLabel={`${label}: ${value}. Firm rule, read-only`}>
+      <Ionicons name="lock-closed" size={14} color={colors.positive} />
+      <AppText variant="body" tone="secondary" style={styles.flex}>
+        {label}
+      </AppText>
+      <AppText variant="bodyStrong">{value}</AppText>
+    </View>
+  );
+}
+
+const lockedValue = (name: Name, v: string, prefix?: string) =>
+  name === 'drawdownType' ? ({ eod_trailing: 'End-of-day trailing', trailing: 'Intraday trailing', static: 'Static' } as Record<string, string>)[v] ?? v
+  : v === 'allowed' ? 'Allowed' : v === 'not_allowed' ? 'Not allowed'
+  : prefix === '$' && Number.isFinite(Number(v)) ? `$${Number(v).toLocaleString('en-US')}`
+  : name === 'consistencyPct' ? `${v}%`
+  : v;
 
 function Tag({ control, name, imported, onRestore }: { control: Control<AccountFormValues>; name: FirmRuleField } & ImportProps) {
   const current = useWatch({ control, name });
@@ -26,6 +48,8 @@ function Tag({ control, name, imported, onRestore }: { control: Control<AccountF
 }
 
 function Money({ control, name, label, hint, prefix = '$', ...imp }: { control: Control<AccountFormValues>; name: Name; label: string; hint?: string; prefix?: string } & ImportProps) {
+  const v = imp.imported?.[name as FirmRuleField];
+  if (imp.locked && v != null) return <LockedRow label={label} value={lockedValue(name, v, prefix)} />;
   return (
     <View style={styles.field}>
       <Controller
@@ -41,6 +65,8 @@ function Money({ control, name, label, hint, prefix = '$', ...imp }: { control: 
 }
 
 function Text({ control, name, label, placeholder, multiline, ...imp }: { control: Control<AccountFormValues>; name: Name; label: string; placeholder?: string; multiline?: boolean } & ImportProps) {
+  const v = imp.imported?.[name as FirmRuleField];
+  if (imp.locked && v != null) return <LockedRow label={label} value={v.replace(/\n/g, ' · ')} />;
   return (
     <View style={styles.field}>
       <Controller
@@ -56,6 +82,8 @@ function Text({ control, name, label, placeholder, multiline, ...imp }: { contro
 }
 
 function Allowed({ control, name, label, ...imp }: { control: Control<AccountFormValues>; name: Name; label: string } & ImportProps) {
+  const v = imp.imported?.[name as FirmRuleField];
+  if (imp.locked && v) return <LockedRow label={label} value={lockedValue(name, v)} />;
   return (
     <View style={styles.field}>
       <Controller
@@ -92,15 +120,20 @@ export function AccountFields({
   rulesFooter,
   imported,
   onRestore,
+  locked,
+  onToggleLock,
 }: {
   control: Control<AccountFormValues>;
   showIdentity?: boolean;
+  /** Toggle between read-only firm rules and overriding them (shown only when rules were imported). */
+  onToggleLock?: () => void;
   /** Replaces the plain Firm input (firm autocomplete + program picker). */
   firmSlot?: ReactNode;
   /** Shown under the rules (imported-rules status). */
   rulesFooter?: ReactNode;
 } & ImportProps) {
-  const imp = { imported, onRestore };
+  const imp = { imported, onRestore, locked };
+  const hasImported = !!imported && Object.keys(imported).length > 0;
   const moreValues = useWatch({ control, name: MORE_FIELDS });
   const hasMore = moreValues.some((v) => !!v) || MORE_FIELDS.some((k) => imported?.[k as FirmRuleField] != null);
   const [showMore, setShowMore] = useState(false);
@@ -151,7 +184,24 @@ export function AccountFields({
       </View>
 
       <SectionHeader title="Account rules" />
-      <AppText variant="caption">Enter the rules from your firm&apos;s current terms, or pick a firm program with verified rules. Prop Guard never assumes firm-specific rules.</AppText>
+      {hasImported ? (
+        <View style={styles.lockHead}>
+          <AppText variant="caption" style={styles.flex}>
+            {locked
+              ? 'Loaded from the verified firm configuration — read-only. Rules the firm doesn’t state stay editable below.'
+              : 'Overriding firm rules — any change is saved as a custom override and shown on the account.'}
+          </AppText>
+          {onToggleLock ? (
+            <Pressable accessibilityRole="button" onPress={onToggleLock} hitSlop={8}>
+              <AppText variant="caption" tone="accent" style={{ fontWeight: '700' }}>
+                {locked ? 'Override firm rules' : 'Restore firm rules'}
+              </AppText>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : (
+        <AppText variant="caption">Enter the rules from your firm&apos;s current terms, or pick a firm program with verified rules. Prop Guard never assumes firm-specific rules.</AppText>
+      )}
       <View style={styles.row}>
         <View style={styles.flex}>
           <Money control={control} name="dailyLossLimit" label="Daily loss limit" {...imp} />
@@ -160,6 +210,9 @@ export function AccountFields({
           <Money control={control} name="maxDrawdown" label="Max drawdown" {...imp} />
         </View>
       </View>
+      {locked && imported?.drawdownType ? (
+        <LockedRow label="Drawdown type" value={lockedValue('drawdownType', imported.drawdownType)} />
+      ) : (
       <View style={styles.field}>
         <Controller
           control={control}
@@ -179,6 +232,7 @@ export function AccountFields({
         />
         <Tag control={control} name="drawdownType" {...imp} />
       </View>
+      )}
       <View style={styles.row}>
         <View style={styles.flex}>
           <Money control={control} name="profitTarget" label="Profit target" {...imp} />
@@ -233,4 +287,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   field: { gap: spacing.xs },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
+  locked: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  lockHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
 });

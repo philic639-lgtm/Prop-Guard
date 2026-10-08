@@ -46,6 +46,35 @@ export interface PropRules {
   custom: CustomRule[];
   /** Further firm terms (payouts, holding, news…). Text / tri-state, always editable. */
   terms?: FirmTerms;
+  /**
+   * Typed calculations loaded from a VERIFIED firm configuration (absent for
+   * hand-entered accounts). Dropped for any rule the trader overrides.
+   */
+  calc?: AccountRuleCalc;
+}
+
+/** Firm-specific calculation details beyond the basic limits (all optional / verified only). */
+export interface AccountRuleCalc {
+  /** Floor stops trailing at starting balance + offset (e.g. +$100). */
+  trailingLockOffset?: number | null;
+  /** Max drawdown stated as % of the starting balance. */
+  maxDrawdownPct?: number | null;
+  drawdownLocksOnPayout?: boolean | null;
+  /** `none` = verified: this configuration has no daily loss limit. */
+  dailyLossMode?: 'none' | 'fixed' | 'scaling' | null;
+  dailyLossBreach?: 'soft' | 'hard' | null;
+  dailyLossScaling?: { pct: number; basis: 'peak_eod_profit' | 'peak_eod_balance'; afterBalance: number | null } | null;
+  payout?: {
+    minRequest: number | null;
+    maxRequest: number | null;
+    maxRequestPctOfProfit: number | null;
+    cycleProfitGoal: number | null;
+    minProfitableDays: number | null;
+    minDayProfit: number | null;
+    maxPayouts: number | null;
+    bufferAboveStart: number | null;
+  } | null;
+  inactivityRule?: string | null;
 }
 
 /** 'allowed' | 'not_allowed' | '' (not set). */
@@ -108,6 +137,13 @@ export interface AccountFirmLink {
   /** Program family ("Trading Combine") and size the trader picked. */
   family?: string | null;
   accountSize?: number | null;
+  /** Product line ("LucidPro") and purchase options chosen ({ dll: 'on' }). */
+  line?: string | null;
+  options?: Record<string, string>;
+  /** Purchase / reset date — picks the rule version in force for that account (older terms). */
+  purchasedOn?: string | null;
+  /** Typed calculations from the verified configuration (see PropRules.calc). */
+  calc?: AccountRuleCalc;
   /**
    * The firm rules as they were when the account was saved. Later master-rule
    * updates never rewrite it (nor the account's own rules).

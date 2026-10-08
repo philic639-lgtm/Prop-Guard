@@ -135,6 +135,26 @@ Safety design:
 
 ---
 
+## Prop firm rules (automated account setup)
+
+New account → **Firm** (autocomplete) → **Program** (e.g. LucidPro) → **Stage** (Evaluation / Funded (simulated) / Live) → **Account size** → **purchase options** (e.g. Lucid "Daily Loss Limit On / Off") → **purchase date** → the verified rules load automatically, read-only, with their official source and last-verified date. "Override firm rules" unlocks them when your agreement differs (tracked as overrides). Rules a firm doesn't state stay editable; nothing is guessed, zeroed or copied from another program. Saving is blocked if the size, options or loaded rules don't match the selected configuration.
+
+Verified coverage today: **Topstep** (Trading Combine, Express Funded, Live Funded — 50K/100K/150K) and **Lucid Trading** (LucidPro and LucidFlex, evaluation + funded, 25K/50K/100K/150K, with the DLL On/Off option and dated legacy terms). Other firms in the directory (Apex Trader Funding, Take Profit Trader, MyFundedFutures, TradeDay, Earn2Trade, Tradeify, Bulenox, Elite Trader Funding, TickTickTrader) have **no programs on file yet** — their rules are entered manually.
+
+Loaded rules drive the account dashboard and Setup Check: EOD / intraday / static drawdown with firm lock points (e.g. start + $100), percentage drawdowns, fixed / scaling / "none" daily loss limits (soft or hard breach), consistency and typed payout requirements — all labelled as based on your entered balance and journal, never live broker data.
+
+Maintenance (server-only, low cost):
+
+```bash
+npm run firm-rules:sources                         # the official pages the monitor watches
+npx supabase db push                               # monitor tables + program options
+npx supabase functions deploy firm-rules-monitor --no-verify-jwt
+npx supabase secrets set FIRM_RULES_MONITOR_SECRET=<random>
+# schedule weekly with pg_cron + pg_net (SQL in supabase/migrations/20261017000000_firm_rules_automation.sql)
+```
+
+The monitor checks at most 25 due pages per run with conditional requests and a content hash (no AI, no per-visit scraping). A changed page opens a review in `prop_firm_rule_reviews`; a person re-verifies, edits the rules JSON (`firm-rules:export`) and publishes a new version (`firm-rules:publish`) — previous versions are kept for accounts bought under older terms. Blocked or unreachable pages back off (7 → 14 → 28 → 30 days) and keep the verified data.
+
 ## RevenueCat (later)
 
 Billing is abstracted in `src/services/subscriptionService.ts`, and plans and entitlements are configured in `src/config/plans.ts`. Business logic checks **features**, never prices. Until RevenueCat is configured, a development provider is used, and the paywall lets you preview the Free and Pro tiers.

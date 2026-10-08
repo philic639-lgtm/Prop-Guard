@@ -56,6 +56,7 @@ export function accountToRows(a: Account, userId: string) {
       payout_threshold: a.rules.payoutThreshold,
       custom_rules: a.rules.custom,
       firm_terms: a.rules.terms ?? null,
+      rule_calc: a.rules.calc ?? null,
     },
   };
 }
@@ -86,6 +87,7 @@ export function rowsToAccount(r: Row, rules: Row | undefined): Account {
       payoutThreshold: numOrNull(rules?.payout_threshold),
       custom: Array.isArray(rules?.custom_rules) ? (rules!.custom_rules as Account['rules']['custom']) : [],
       ...(rules?.firm_terms && typeof rules.firm_terms === 'object' ? { terms: rules.firm_terms as NonNullable<Account['rules']['terms']> } : {}),
+      ...(rules?.rule_calc && typeof rules.rule_calc === 'object' ? { calc: rules.rule_calc as NonNullable<Account['rules']['calc']> } : {}),
     },
     ...(r.firm_link && typeof r.firm_link === 'object' ? { firmLink: r.firm_link as NonNullable<Account['firmLink']> } : {}),
   };

@@ -4,13 +4,14 @@ import {
   FIRM_RULES_SCHEMA_VERSION,
   type FirmRuleRecord,
   type FirmRulesDatabase,
+  type ProgramOption,
   type ProgramRules,
   type ProgramRuleVersion,
   type ProgramStage,
   type PropFirm,
   type PropFirmProgram,
 } from '@/data/propFirms/types';
-import type { AccountFirmLink, AccountRuleSnapshot, AccountRuleSnapshotRule, DrawdownType, FirmRuleField, FirmRuleValues } from '@/types/domain';
+import type { AccountFirmLink, AccountRuleCalc, AccountRuleSnapshot, AccountRuleSnapshotRule, DrawdownType, FirmRuleField, FirmRuleValues } from '@/types/domain';
 
 /**
  * Prop-firm rules: search, program lookup, rule-version selection and import.
@@ -70,7 +71,7 @@ export const getProgram = (db: FirmRulesDatabase, id: string | null | undefined)
 
 // ───────────────────────────── Programs ─────────────────────────────
 
-export const STAGE_LABEL: Record<ProgramStage, string> = { evaluation: 'Evaluation', funded: 'Funded', live: 'Live' };
+export const STAGE_LABEL: Record<ProgramStage, string> = { evaluation: 'Evaluation', funded: 'Funded (simulated)', live: 'Live' };
 const STAGE_ORDER: ProgramStage[] = ['evaluation', 'funded', 'live'];
 
 /** Active programs of a firm: evaluation → funded → live, then by family and size. */
@@ -97,6 +98,25 @@ export function programFamilies(db: FirmRulesDatabase, firmId: string): ProgramF
     const f = out.find((x) => x.key === key);
     if (f) f.programs.push(p);
     else out.push({ key, family: p.family, stage: p.stage, programs: [p] });
+  }
+  return out;
+}
+
+/** A product line ("LucidPro") with the stages it offers, each a family with its own sizes. */
+export interface ProgramLine {
+  line: string;
+  stages: ProgramFamily[];
+}
+
+/** Firm → Program (line) → Stage → Size. Programs without a `line` form their own line (family). */
+export function programLines(db: FirmRulesDatabase, firmId: string): ProgramLine[] {
+  const families = programFamilies(db, firmId);
+  const out: ProgramLine[] = [];
+  for (const f of families) {
+    const line = f.programs[0].line ?? f.family;
+    const l = out.find((x) => x.line === line);
+    if (l) l.stages.push(f);
+    else out.push({ line, stages: [f] });
   }
   return out;
 }
@@ -130,7 +150,7 @@ export function rulesToValues(rules: ProgramRules): FirmRuleValues {
     out[k] = String(v);
   };
   put('profitTarget', rules.profitTarget);
-  put('dailyLossLimit', rules.dailyLossLimit);
+  if (rules.dailyLossMode !== 'none') put('dailyLossLimit', rules.dailyLossLimit);
   put('maxDrawdown', rules.maxDrawdown);
   put('drawdownType', rules.drawdownType);
   put('maxContracts', rules.maxContracts);
@@ -174,48 +194,135 @@ const FIELD_SOURCE: Record<Exclude<FirmRuleField, 'size'>, keyof ProgramRules> =
   copyTrading: 'copyTradingAllowed',
 };
 
-/**
- * Is this structured field backed by a VERIFIED rule record? Versions without
- * per-rule records rely on the version-level verification alone.
- */
-export function fieldVerified(version: ProgramRuleVersion, field: keyof ProgramRules): boolean {
-  if (!version.records?.length) return true;
-  return version.records.some((r) => r.field === field && r.status === 'verified' && hasEvidence(r));
+// ───────────────────────────── Purchase options ─────────────────────────────
+
+/** Does a rule record apply to the chosen purchase options? Records without `when` always apply. */
+export const recordApplies = (r: FirmRuleRecord, options: Record<string, string> | undefined) => !r.when || Object.entries(r.when).every(([k, v]) => options?.[k] === v);
+
+/** Options the trader still has to choose (or chose a value the program doesn't offer). */
+export function missingOptions(program: PropFirmProgram, options: Record<string, string> | undefined): ProgramOption[] {
+  return (program.options ?? []).filter((o) => !o.choices.some((c) => c.id === options?.[o.id]));
 }
 
 const hasEvidence = (r: FirmRuleRecord) => r.sources.length > 0 && r.sources.every((s) => !!s.url && !!s.title && !!s.retrievedAt) && !!r.checkedAt;
 
-export type FirmRuleImport =
-  | { status: 'verified'; version: ProgramRuleVersion; values: FirmRuleValues; additionalRules: ProgramRules['additionalRules']; withheld: FirmRuleRecord[] }
-  | { status: 'unverified'; version: ProgramRuleVersion | null; reason: string };
+/** Structured fields backed by an applicable, VERIFIED record (null set = version without records: all fields). */
+function verifiedFields(version: ProgramRuleVersion, options: Record<string, string> | undefined): Set<keyof ProgramRules> | null {
+  if (!version.records?.length) return null;
+  const out = new Set<keyof ProgramRules>();
+  for (const r of version.records) {
+    if (r.status !== 'verified' || !hasEvidence(r) || !recordApplies(r, options)) continue;
+    if (r.field) out.add(r.field);
+    for (const k of Object.keys(r.structured ?? {}) as (keyof ProgramRules)[]) out.add(k);
+  }
+  return out;
+}
 
 /**
- * What selecting `program` imports — from THIS program's own active version
- * only (never another program or size). Unverified / needs-review rules are
- * reported in `withheld`, never applied.
+ * Is this structured field backed by a VERIFIED rule record (for these options)?
+ * Versions without per-rule records rely on the version-level verification alone.
  */
-export function importProgramRules(program: PropFirmProgram, onDate: string): FirmRuleImport {
+export function fieldVerified(version: ProgramRuleVersion, field: keyof ProgramRules, options?: Record<string, string>): boolean {
+  const set = verifiedFields(version, options);
+  return set == null || set.has(field);
+}
+
+/** The version's rules with option-dependent values applied (verified, applicable records only). */
+export function rulesForOptions(version: ProgramRuleVersion, options: Record<string, string> | undefined): ProgramRules {
+  const rules: ProgramRules = { ...version.rules };
+  for (const r of version.records ?? []) if (r.structured && r.status === 'verified' && hasEvidence(r) && recordApplies(r, options)) Object.assign(rules, r.structured);
+  return rules;
+}
+
+/** Typed calculations for the account — verified fields only (everything else stays unknown). */
+export function calcOf(rules: ProgramRules, verified: (f: keyof ProgramRules) => boolean): AccountRuleCalc {
+  const calc: AccountRuleCalc = {};
+  const put = <K extends keyof AccountRuleCalc & keyof ProgramRules>(k: K) => {
+    if (verified(k) && rules[k] != null) (calc as Record<string, unknown>)[k] = rules[k];
+  };
+  put('trailingLockOffset');
+  put('maxDrawdownPct');
+  put('drawdownLocksOnPayout');
+  put('dailyLossMode');
+  put('dailyLossBreach');
+  put('dailyLossScaling');
+  put('payout');
+  put('inactivityRule');
+  return calc;
+}
+
+/** Drop typed calculations that belong to a rule the trader overrode (their own value wins). */
+export function calcAfterOverrides(calc: AccountRuleCalc | undefined, overrides: FirmRuleField[], dailyLossValue: string | undefined): AccountRuleCalc | undefined {
+  if (!calc) return undefined;
+  const c: AccountRuleCalc = { ...calc };
+  if (overrides.includes('maxDrawdown') || overrides.includes('drawdownType')) {
+    delete c.trailingLockOffset;
+    delete c.maxDrawdownPct;
+    delete c.drawdownLocksOnPayout;
+  }
+  if (overrides.includes('dailyLossLimit')) {
+    delete c.dailyLossScaling;
+    delete c.dailyLossBreach;
+    c.dailyLossMode = dailyLossValue && dailyLossValue.trim() ? 'fixed' : null;
+    if (!c.dailyLossMode) delete c.dailyLossMode;
+  }
+  if (overrides.includes('payoutThreshold') || overrides.includes('payoutRequirements') || overrides.includes('minProfitableDays')) delete c.payout;
+  return Object.keys(c).length ? c : undefined;
+}
+
+export type FirmRuleImport =
+  | { status: 'verified'; version: ProgramRuleVersion; values: FirmRuleValues; additionalRules: ProgramRules['additionalRules']; withheld: FirmRuleRecord[]; rules: ProgramRules; calc: AccountRuleCalc; options: Record<string, string>; unknown: string[] }
+  | { status: 'needs_options'; version: ProgramRuleVersion | null; missing: ProgramOption[]; reason: string }
+  | { status: 'unverified'; version: ProgramRuleVersion | null; reason: string };
+
+/** Key rules every account needs — reported when the verified configuration doesn't state them. */
+const KEY_FIELDS: [keyof ProgramRules, string][] = [
+  ['maxDrawdown', 'Maximum drawdown'],
+  ['drawdownType', 'Drawdown method'],
+  ['dailyLossMode', 'Daily loss limit'],
+  ['profitTarget', 'Profit target'],
+  ['maxContracts', 'Maximum contracts'],
+  ['consistencyRule', 'Consistency rule'],
+];
+
+/**
+ * What selecting `program` (+ purchase options) imports — from THIS
+ * program's own active version only (never another program or size).
+ * Every option must be chosen first; unverified / needs-review rules and
+ * rules for other options are never applied.
+ */
+export function importProgramRules(program: PropFirmProgram, onDate: string, options: Record<string, string> = {}): FirmRuleImport {
   const version = activeRuleVersion(program, onDate);
   if (!version) return { status: 'unverified', version: null, reason: 'No verified rules are on file for this program yet.' };
   if (!isVerified(version)) return { status: 'unverified', version, reason: 'The rules on file for this program have not been verified against the firm’s official terms.' };
-  const all = rulesToValues(version.rules);
+  const missing = missingOptions(program, options);
+  if (missing.length) return { status: 'needs_options', version, missing, reason: `Choose ${missing.map((o) => o.label).join(' and ')} first — the rules depend on it.` };
+  const chosen = Object.fromEntries((program.options ?? []).map((o) => [o.id, options[o.id]]));
+  const rules = rulesForOptions(version, chosen);
+  const ok = (f: keyof ProgramRules) => fieldVerified(version, f, chosen);
+  const all = rulesToValues(rules);
   const values: FirmRuleValues = {};
-  for (const [k, v] of Object.entries(all) as [Exclude<FirmRuleField, 'size'>, string][]) if (fieldVerified(version, FIELD_SOURCE[k])) values[k] = v;
+  for (const [k, v] of Object.entries(all) as [Exclude<FirmRuleField, 'size'>, string][]) if (ok(FIELD_SOURCE[k])) values[k] = v;
   if (program.accountSize) values.size = String(program.accountSize);
-  const extraOk = (id: string) => !version.records?.length || version.records.some((r) => r.key === `extra:${id}` && r.status === 'verified');
+  const extraOk = (id: string) => !version.records?.length || version.records.some((r) => r.key === `extra:${id}` && r.status === 'verified' && recordApplies(r, chosen));
+  const applicable = (version.records ?? []).filter((r) => recordApplies(r, chosen));
   return {
     status: 'verified',
     version,
     values,
-    additionalRules: version.rules.additionalRules.filter((a) => extraOk(a.id)),
-    withheld: (version.records ?? []).filter((r) => r.status !== 'verified'),
+    rules,
+    calc: calcOf(rules, ok),
+    options: chosen,
+    additionalRules: rules.additionalRules.filter((a) => extraOk(a.id)),
+    withheld: applicable.filter((r) => r.status !== 'verified'),
+    unknown: KEY_FIELDS.filter(([f]) => !ok(f) || rules[f] == null).map(([, label]) => label),
   };
 }
 
 /** Every rule of a program version with its evidence, labelled with program, size and stage. */
-export function ruleSourceRows(program: PropFirmProgram, version: ProgramRuleVersion): AccountRuleSnapshotRule[] {
+export function ruleSourceRows(program: PropFirmProgram, version: ProgramRuleVersion, options?: Record<string, string>): AccountRuleSnapshotRule[] {
   const records: FirmRuleRecord[] = version.records?.length
-    ? version.records
+    ? version.records.filter((r) => recordApplies(r, options))
     : ruleLines(version.rules)
         .filter((l) => l.value != null)
         .map((l) => ({ key: l.key, label: l.label, value: l.value!, status: version.verification.status, sources: version.verification.sources, checkedAt: version.lastVerifiedAt ?? version.effectiveDate }));
@@ -234,7 +341,7 @@ export function ruleSourceRows(program: PropFirmProgram, version: ProgramRuleVer
 }
 
 /** Frozen copy of the rules an account was set up with (survives later master updates). */
-export function snapshotOf(firm: PropFirm, program: PropFirmProgram, version: ProgramRuleVersion, now: string): AccountRuleSnapshot {
+export function snapshotOf(firm: PropFirm, program: PropFirmProgram, version: ProgramRuleVersion, now: string, options?: Record<string, string>): AccountRuleSnapshot {
   return {
     takenAt: now,
     firmId: firm.id,
@@ -244,12 +351,12 @@ export function snapshotOf(firm: PropFirm, program: PropFirmProgram, version: Pr
     ruleVersion: version.ruleVersion,
     effectiveDate: version.effectiveDate,
     lastVerifiedAt: version.lastVerifiedAt,
-    rules: ruleSourceRows(program, version),
+    rules: ruleSourceRows(program, version, options),
   };
 }
 
 /** The account's link to the database after selecting a program. */
-export function linkFor(firm: PropFirm | null, program: PropFirmProgram | null, imp: FirmRuleImport | null, now: string): AccountFirmLink {
+export function linkFor(firm: PropFirm | null, program: PropFirmProgram | null, imp: FirmRuleImport | null, now: string, options?: Record<string, string>): AccountFirmLink {
   const verified = imp?.status === 'verified' ? imp : null;
   return {
     firmId: firm?.id ?? null,
@@ -265,7 +372,10 @@ export function linkFor(firm: PropFirm | null, program: PropFirmProgram | null, 
     overrides: [],
     family: program?.family ?? null,
     accountSize: program?.accountSize ?? null,
-    ...(verified && firm && program ? { snapshot: snapshotOf(firm, program, verified.version, now) } : {}),
+    line: program ? (program.line ?? program.family) : null,
+    ...(options && Object.keys(options).length ? { options } : {}),
+    ...(verified && Object.keys(verified.calc).length ? { calc: verified.calc } : {}),
+    ...(verified && firm && program ? { snapshot: snapshotOf(firm, program, verified.version, now, verified.options) } : {}),
   };
 }
 
@@ -296,7 +406,7 @@ export interface RuleLine {
   value: string | null;
 }
 
-const money = (n: number | null) => (n == null ? null : `$${n.toLocaleString('en-US')}`);
+const money = (n: number | null | undefined) => (n == null ? null : `$${n.toLocaleString('en-US')}`);
 const yesNo = (b: boolean | null, extra?: string | null) => (b == null ? null : `${b ? 'Allowed' : 'Not allowed'}${extra ? ` — ${extra}` : ''}`);
 const DD_LABEL: Record<DrawdownType, string> = { static: 'Static', trailing: 'Intraday trailing', eod_trailing: 'End-of-day trailing' };
 
@@ -307,6 +417,10 @@ export function ruleLines(r: ProgramRules): RuleLine[] {
     { key: 'dailyLossLimit', label: 'Daily loss limit', value: money(r.dailyLossLimit) },
     { key: 'maxDrawdown', label: 'Maximum drawdown / loss limit', value: money(r.maxDrawdown) },
     { key: 'drawdownType', label: 'Drawdown type', value: r.drawdownType ? `${DD_LABEL[r.drawdownType]}${r.trailingLocksAtStart ? ' (stops trailing at starting balance)' : ''}` : null },
+    { key: 'drawdownLock', label: 'Drawdown lock', value: r.trailingLockOffset == null ? null : `Stops trailing at starting balance + ${money(r.trailingLockOffset)}${r.drawdownLocksOnPayout ? '; locks there when a payout is requested' : ''}` },
+    { key: 'maxDrawdownPct', label: 'Max drawdown (% of start)', value: r.maxDrawdownPct == null ? null : `${r.maxDrawdownPct}%` },
+    { key: 'dailyLossMode', label: 'Daily loss limit type', value: r.dailyLossMode == null ? null : r.dailyLossMode === 'none' ? 'None for this configuration' : `${r.dailyLossMode === 'scaling' ? 'Scaling' : 'Fixed'}${r.dailyLossBreach ? ` · ${r.dailyLossBreach} breach` : ''}` },
+    { key: 'dailyLossScaling', label: 'Scaling daily loss limit', value: r.dailyLossScaling ? `${r.dailyLossScaling.pct}% of ${r.dailyLossScaling.basis === 'peak_eod_profit' ? 'peak end-of-day profit' : 'peak end-of-day balance'}${r.dailyLossScaling.afterBalance ? ` once above ${money(r.dailyLossScaling.afterBalance)}` : ''}` : null },
     { key: 'maxContracts', label: 'Maximum contracts', value: r.maxContracts == null ? null : String(r.maxContracts) },
     { key: 'consistency', label: 'Consistency rule', value: r.consistencyRule ? `${r.consistencyRule.maxDayPctOfProfit != null ? `${r.consistencyRule.maxDayPctOfProfit}% max in one day — ` : ''}${r.consistencyRule.description}` : null },
     { key: 'minTradingDays', label: 'Minimum trading days', value: r.minTradingDays == null ? null : String(r.minTradingDays) },
@@ -315,6 +429,7 @@ export function ruleLines(r: ProgramRules): RuleLine[] {
     { key: 'payoutThreshold', label: 'Payout threshold', value: money(r.payoutThreshold) },
     { key: 'payoutFrequency', label: 'Payout frequency', value: r.payoutFrequency },
     { key: 'payoutRequirements', label: 'Payout eligibility', value: r.payoutRequirements.length ? r.payoutRequirements.join('; ') : null },
+    { key: 'inactivity', label: 'Inactivity rule', value: r.inactivityRule },
     { key: 'scalingRule', label: 'Scaling rules', value: r.scalingRule },
     { key: 'positionLimits', label: 'Position limits', value: r.positionLimits },
     { key: 'activationThreshold', label: 'Activation / funded threshold', value: r.activationThreshold },
@@ -353,6 +468,18 @@ const rulesSchema = z.object({
   weekendHoldingAllowed: z.boolean().nullable(),
   copyTradingAllowed: z.boolean().nullable(),
   additionalRules: z.array(z.object({ id: z.string(), label: z.string(), description: z.string().optional() })),
+  // Typed calculations (added later — older feeds omit them: default unknown).
+  trailingLockOffset: nn.default(null),
+  maxDrawdownPct: z.number().min(0).max(100).nullable().default(null),
+  drawdownLocksOnPayout: z.boolean().nullable().default(null),
+  dailyLossMode: z.enum(['none', 'fixed', 'scaling']).nullable().default(null),
+  dailyLossBreach: z.enum(['soft', 'hard']).nullable().default(null),
+  dailyLossScaling: z.object({ pct: z.number().min(0).max(100), basis: z.enum(['peak_eod_profit', 'peak_eod_balance']), afterBalance: nn }).nullable().default(null),
+  payout: z
+    .object({ minRequest: nn, maxRequest: nn, maxRequestPctOfProfit: z.number().min(0).max(100).nullable(), cycleProfitGoal: nn, minProfitableDays: nn, minDayProfit: nn, maxPayouts: nn, bufferAboveStart: nn })
+    .nullable()
+    .default(null),
+  inactivityRule: z.string().nullable().default(null),
 });
 const sourceSchema = z.object({ url: z.string().url(), title: z.string().optional(), retrievedAt: iso, method: z.enum(['page', 'search_excerpt']).optional() });
 const versionSchema = z.object({
@@ -377,6 +504,8 @@ const versionSchema = z.object({
         sources: z.array(sourceSchema),
         checkedAt: iso,
         note: z.string().optional(),
+        when: z.record(z.string(), z.string()).optional(),
+        structured: z.record(z.string(), z.unknown()).optional(),
       }),
     )
     .optional(),
@@ -395,6 +524,10 @@ const dbSchema = z.object({
       stage: z.enum(['evaluation', 'funded', 'live']),
       accountSize: z.number().positive().nullable(),
       active: z.boolean(),
+      line: z.string().min(1).optional(),
+      options: z
+        .array(z.object({ id: z.string().min(1), label: z.string().min(1), description: z.string().optional(), choices: z.array(z.object({ id: z.string().min(1), label: z.string().min(1), description: z.string().optional() })).min(1), sources: z.array(sourceSchema) }))
+        .optional(),
       versions: z.array(versionSchema),
     }),
   ),
@@ -413,7 +546,8 @@ function emptyRulesShape(): Record<keyof ProgramRules, true> {
     profitTarget: true, dailyLossLimit: true, maxDrawdown: true, drawdownType: true, trailingLocksAtStart: true, maxContracts: true, consistencyRule: true,
     minTradingDays: true, maxTradingDays: true, minProfitableDays: true, payoutThreshold: true, payoutRequirements: true, payoutFrequency: true, scalingRule: true,
     positionLimits: true, activationThreshold: true, newsTradingAllowed: true, newsRestriction: true, overnightAllowed: true, weekendHoldingAllowed: true,
-    copyTradingAllowed: true, additionalRules: true,
+    copyTradingAllowed: true, additionalRules: true, trailingLockOffset: true, maxDrawdownPct: true, drawdownLocksOnPayout: true, dailyLossMode: true,
+    dailyLossBreach: true, dailyLossScaling: true, payout: true, inactivityRule: true,
   };
 }
 
@@ -433,7 +567,11 @@ export function parseFirmRulesDatabase(input: unknown): ParsedFirmRules {
     ...p,
     versions: p.versions.map((raw) => {
       let v = raw as ProgramRuleVersion;
-      for (const rec of v.records ?? []) if (rec.field && !RULE_FIELDS.has(rec.field)) errors.push(`${p.id}@${v.ruleVersion}: unknown field ${rec.field}`);
+      for (const rec of v.records ?? []) {
+        if (rec.field && !RULE_FIELDS.has(rec.field)) errors.push(`${p.id}@${v.ruleVersion}: unknown field ${rec.field}`);
+        for (const k of Object.keys(rec.structured ?? {})) if (!RULE_FIELDS.has(k)) errors.push(`${p.id}@${v.ruleVersion}#${rec.key}: unknown structured field ${k}`);
+        for (const [o, c] of Object.entries(rec.when ?? {})) if (!p.options?.some((x) => x.id === o && x.choices.some((ch) => ch.id === c))) errors.push(`${p.id}@${v.ruleVersion}#${rec.key}: unknown option ${o}=${c}`);
+      }
       // A rule claiming "verified" needs an official source with title and check date.
       if (v.records?.some((rec) => rec.status === 'verified' && !hasEvidence(rec))) {
         v = { ...v, records: v.records!.map((rec) => (rec.status === 'verified' && !hasEvidence(rec) ? (downgraded.push(`${p.id}@${v.ruleVersion}#${rec.key}`), { ...rec, status: 'needs_review' as const }) : rec)) };
@@ -468,4 +606,39 @@ export function mergeFirmRules(base: FirmRulesDatabase, overlay: FirmRulesDataba
     firms: [...firms.values()],
     programs: [...programs.values()],
   };
+}
+
+// ───────────────────────────── Configuration validation ─────────────────────────────
+
+export interface ConfigIssue {
+  field: 'program' | 'options' | 'size' | 'stage' | 'rules';
+  message: string;
+}
+
+/**
+ * Problems that would save a mismatched account: rules imported for a
+ * different program / options / size, missing purchase options, or a size
+ * that doesn't match the selected program. Empty = consistent.
+ */
+export function validateFirmConfiguration(db: FirmRulesDatabase, link: AccountFirmLink | null, form: { size: string }, onDate: string): ConfigIssue[] {
+  if (!link?.programId) return [];
+  const issues: ConfigIssue[] = [];
+  const program = getProgram(db, link.programId);
+  if (!program) return [{ field: 'program', message: 'The selected program is no longer in the rules database — choose it again or enter the rules manually.' }];
+  if (link.firmId && program.firmId !== link.firmId) issues.push({ field: 'program', message: 'The selected program belongs to a different firm.' });
+  if (link.stage && link.stage !== program.stage) issues.push({ field: 'stage', message: `Stage mismatch: the program is ${STAGE_LABEL[program.stage]} but ${STAGE_LABEL[link.stage]} was recorded.` });
+  for (const o of missingOptions(program, link.options)) issues.push({ field: 'options', message: `Choose ${o.label} — it changes this account’s rules.` });
+  const size = Number(String(form.size).replace(/[$,]/g, ''));
+  if (program.accountSize && Number.isFinite(size) && size > 0 && size !== program.accountSize)
+    issues.push({ field: 'size', message: `Account size $${size.toLocaleString('en-US')} doesn’t match the selected $${program.accountSize.toLocaleString('en-US')} program — pick the matching size.` });
+  if (link.status === 'verified') {
+    if (link.snapshot && link.snapshot.programId !== program.id) issues.push({ field: 'rules', message: 'The loaded rules belong to a different program — reload the rules for this selection.' });
+    const imp = importProgramRules(program, link.purchasedOn ?? link.importedAt ?? onDate, link.options);
+    if (imp.status === 'verified' && link.snapshot?.ruleVersion === imp.version.ruleVersion) {
+      const stale = (Object.keys(link.imported) as FirmRuleField[]).filter((k) => k !== 'size' && imp.values[k] !== link.imported[k]);
+      const extra = (Object.keys(imp.values) as FirmRuleField[]).filter((k) => k !== 'size' && link.imported[k] == null);
+      if (stale.length || extra.length) issues.push({ field: 'rules', message: 'The loaded rules don’t match the selected options — reload the rules for this selection.' });
+    }
+  }
+  return issues;
 }

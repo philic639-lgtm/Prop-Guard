@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { UseFormGetValues, UseFormSetValue } from 'react-hook-form';
 
 import type { PropFirm, PropFirmProgram } from '@/data/propFirms/types';
@@ -46,6 +46,14 @@ export function useFirmRuleLink({
     return p ? `${p.stage}:${p.family}` : null;
   });
 
+  // Purchase options (e.g. Lucid "Daily Loss Limit: On/Off") and purchase date (older rule versions).
+  const [options, setOptions] = useState<Record<string, string>>(() => existing?.firmLink?.options ?? {});
+  const [purchasedOn, setPurchasedOn] = useState<string>(() => (existing?.firmLink?.purchasedOn ?? new Date().toISOString()).slice(0, 10));
+
+  // Last account name Prop Guard generated (so it can follow the selection without overwriting a typed name).
+  const autoName = useRef<string | null>(null);
+  const autoBalance = useRef<string | null>(null);
+
   const set = (k: FirmRuleField, v: string) => setValue(k as keyof AccountFormValues, v as never, { shouldDirty: true, shouldValidate: false });
 
   /** Remove previously imported values the trader did not change. */
@@ -61,6 +69,7 @@ export function useFirmRuleLink({
 
   const selectFirm = (f: PropFirm) => {
     clearImported(link?.imported);
+    setOptions({});
     setValue('firm', f.name, { shouldDirty: true });
     setValue('kind', 'prop', { shouldDirty: true });
     setFamilyKey(null);
@@ -71,6 +80,7 @@ export function useFirmRuleLink({
   const selectFamily = (key: string) => {
     if (!firm) return;
     clearImported(link?.imported);
+    setValue('size', '', { shouldDirty: true });
     setFamilyKey(key);
     setLink(linkFor(firm, null, null, new Date().toISOString()));
   };
@@ -86,29 +96,57 @@ export function useFirmRuleLink({
     }
   };
 
-  const selectProgram = (p: PropFirmProgram) => {
+  /** Load THIS program's verified rules for the chosen options and purchase date (nothing from any other program). */
+  const loadProgram = (p: PropFirmProgram, opts: Record<string, string>, onDate: string) => {
     if (!firm) return;
     const now = new Date().toISOString();
     clearImported(link?.imported);
     setFamilyKey(`${p.stage}:${p.family}`);
     const prevSize = getValues('size');
     if (p.accountSize) {
-      // The trader picked this size; keep the balance in step for a new account.
+      // The trader picked this size; keep the balance in step for a new account (unless they typed one).
       setValue('size', String(p.accountSize), { shouldDirty: true });
-      if (!existing && (getValues('balance') === prevSize || !getValues('balance'))) setValue('balance', String(p.accountSize), { shouldDirty: true });
+      const bal = getValues('balance');
+      if (!existing && (!bal || bal === prevSize || bal === accountToForm(null).balance || bal === autoBalance.current)) {
+        autoBalance.current = String(p.accountSize);
+        setValue('balance', autoBalance.current, { shouldDirty: true });
+      }
     }
     if (!existing) {
       // Generic starter values must not pass for this firm's rules: clear the untouched ones.
       const starter = accountToForm(null);
       for (const k of ['profitTarget', 'maxDrawdown', 'dailyLossLimit'] as const) if (getValues(k) === starter[k]) set(k, '');
     }
-    const imp = importProgramRules(p, now);
+    const imp = importProgramRules(p, onDate, opts);
     if (imp.status === 'verified') {
       for (const [k, v] of Object.entries(imp.values) as [FirmRuleField, string][]) set(k, v);
       setCustom((cur) => [...cur.filter((c) => !isFirmCustomRule(c)), ...imp.additionalRules.map((r) => ({ id: `${FIRM_RULE_PREFIX}${r.id}`, label: r.label, ...(r.description ? { description: r.description } : {}) }))]);
     }
-    if (!getValues('name').trim()) setValue('name', `${firm.name} ${p.name}`.slice(0, 60), { shouldDirty: true });
-    setLink(linkFor(firm, p, imp, now));
+    // Name follows the selection unless the trader typed their own.
+    const name = getValues('name').trim();
+    if (!name || name === autoName.current) {
+      autoName.current = `${firm.name} ${p.name}`.slice(0, 60);
+      setValue('name', autoName.current, { shouldDirty: true });
+    }
+    setLink({ ...linkFor(firm, p, imp, now, opts), purchasedOn: onDate });
+  };
+
+  const selectProgram = (p: PropFirmProgram) => {
+    // Keep only option choices this program also offers; anything else is cleared.
+    const kept = Object.fromEntries(Object.entries(options).filter(([k, v]) => p.options?.some((o) => o.id === k && o.choices.some((c) => c.id === v))));
+    setOptions(kept);
+    loadProgram(p, kept, purchasedOn);
+  };
+
+  const selectOption = (id: string, choice: string) => {
+    const next = { ...options, [id]: choice };
+    setOptions(next);
+    if (program) loadProgram(program, next, purchasedOn);
+  };
+
+  const changePurchasedOn = (date: string) => {
+    setPurchasedOn(date);
+    if (program && /^\d{4}-\d{2}-\d{2}$/.test(date)) loadProgram(program, options, date);
   };
 
   const customProgram = (name: string) => {
@@ -120,5 +158,5 @@ export function useFirmRuleLink({
 
   const restore = (k: FirmRuleField, v: string) => set(k, v);
 
-  return { db, link, firm, program, familyKey, selectFirm, selectFamily, changeFirmText, selectProgram, customProgram, restore };
+  return { db, link, firm, program, familyKey, options, purchasedOn, selectFirm, selectFamily, changeFirmText, selectProgram, selectOption, changePurchasedOn, customProgram, restore };
 }

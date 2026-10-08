@@ -16,6 +16,8 @@ export interface RuleEvaluation {
 }
 
 export interface AccountEvaluation {
+  /** Where the numbers come from — never live broker data unless connected. */
+  dataBasis: string;
   drawdownFloor: number | null;
   drawdownBuffer: number | null;
   profitToTarget: number | null;
@@ -35,11 +37,41 @@ const money = (n: number) =>
  * Supports static, trailing (intraday high-water) and EOD trailing styles.
  */
 export function drawdownFloor(account: Account): number | null {
-  const { maxDrawdown, drawdownType, trailingLocksAtStart } = account.rules;
+  const { drawdownType, trailingLocksAtStart, calc } = account.rules;
+  const maxDrawdown = maxDrawdownAmount(account);
   if (maxDrawdown == null || maxDrawdown <= 0) return null;
   if (drawdownType === 'static') return account.startingBalance - maxDrawdown;
   const trailing = Math.max(account.highWaterMark, account.startingBalance) - maxDrawdown;
-  return trailingLocksAtStart ? Math.min(trailing, account.startingBalance) : trailing;
+  // Lock point: firm-specific offset (e.g. Lucid: start + $100), else the starting balance.
+  const lockOffset = calc?.trailingLockOffset ?? (trailingLocksAtStart ? 0 : null);
+  return lockOffset != null ? Math.min(trailing, account.startingBalance + lockOffset) : trailing;
+}
+
+/** Max drawdown in dollars — fixed amount, or a percentage of the starting balance. */
+export function maxDrawdownAmount(account: Account): number | null {
+  const { maxDrawdown, calc } = account.rules;
+  if (maxDrawdown != null && maxDrawdown > 0) return maxDrawdown;
+  if (calc?.maxDrawdownPct != null && calc.maxDrawdownPct > 0) return Math.round(account.startingBalance * calc.maxDrawdownPct) / 100;
+  return null;
+}
+
+/**
+ * Today's daily loss limit in dollars: fixed, scaling (e.g. % of peak
+ * end-of-day profit once above a balance) or none (verified for the plan).
+ * `undefined` = no daily loss rule configured.
+ */
+export function dailyLossLimitFor(account: Account): { limit: number | null; mode: 'none' | 'fixed' | 'scaling'; soft: boolean } | undefined {
+  const { dailyLossLimit, calc } = account.rules;
+  const soft = calc?.dailyLossBreach === 'soft';
+  if (calc?.dailyLossMode === 'none') return { limit: null, mode: 'none', soft: false };
+  const s = calc?.dailyLossScaling;
+  if (s && (s.afterBalance == null || account.highWaterMark > s.afterBalance)) {
+    const basis = s.basis === 'peak_eod_profit' ? Math.max(0, account.highWaterMark - account.startingBalance) : account.highWaterMark;
+    const scaled = Math.round(basis * s.pct) / 100;
+    return { limit: Math.max(scaled, dailyLossLimit ?? 0), mode: 'scaling', soft };
+  }
+  if (dailyLossLimit != null && dailyLossLimit > 0) return { limit: dailyLossLimit, mode: 'fixed', soft };
+  return undefined;
 }
 
 export function drawdownBuffer(account: Account): number | null {
@@ -75,29 +107,37 @@ export function evaluateAccount(account: Account, accountTrades: Trade[], now = 
   const byDay = dailyPnl(closed);
   const todayPnl = byDay.get(dayKey(now)) ?? 0;
 
-  // Daily loss limit
-  if (rules.dailyLossLimit != null && rules.dailyLossLimit > 0) {
+  // Daily loss limit (fixed / scaling / none for this plan)
+  const dll = dailyLossLimitFor(account);
+  if (dll?.mode === 'none') {
+    evaluations.push({ id: 'daily_loss', label: 'Daily loss limit', status: 'info', current: 'None', limit: 'None', proximity: null, message: 'This plan has no daily loss limit (verified configuration). Your personal daily stop still applies.' });
+  } else if (dll?.limit != null && dll.limit > 0) {
     const used = Math.max(0, -todayPnl);
-    const p = used / rules.dailyLossLimit;
+    const p = used / dll.limit;
     evaluations.push({
       id: 'daily_loss',
-      label: 'Daily loss limit',
+      label: dll.mode === 'scaling' ? 'Daily loss limit (scaling)' : 'Daily loss limit',
       status: proximityStatus(p),
       current: money(used),
-      limit: money(rules.dailyLossLimit),
+      limit: money(dll.limit),
       proximity: Math.min(1, p),
       message:
         p >= 1
-          ? 'Daily loss limit reached. Stop trading this account today.'
-          : `${money(rules.dailyLossLimit - used)} of daily loss remaining.`,
+          ? dll.soft
+            ? 'Daily loss limit reached — trading is locked until the next session (soft breach).'
+            : 'Daily loss limit reached. Stop trading this account today.'
+          : p >= WARNING_PROXIMITY
+            ? `Close to the daily loss limit — ${money(dll.limit - used)} left today.`
+            : `${money(dll.limit - used)} of daily loss remaining.`,
     });
   }
 
   // Max drawdown
   const floor = drawdownFloor(account);
   const buffer = drawdownBuffer(account);
-  if (floor != null && buffer != null && rules.maxDrawdown) {
-    const p = 1 - buffer / rules.maxDrawdown;
+  const mdd = maxDrawdownAmount(account);
+  if (floor != null && buffer != null && mdd) {
+    const p = 1 - buffer / mdd;
     const label =
       rules.drawdownType === 'static'
         ? 'Static drawdown'
@@ -111,7 +151,12 @@ export function evaluateAccount(account: Account, accountTrades: Trade[], now = 
       current: `${money(buffer)} buffer`,
       limit: `Floor ${money(floor)}`,
       proximity: Math.min(1, Math.max(0, p)),
-      message: buffer <= 0 ? 'Drawdown floor breached.' : `${money(buffer)} above the drawdown floor.`,
+      message:
+        buffer <= 0
+          ? 'Drawdown floor breached.'
+          : p >= WARNING_PROXIMITY
+            ? `Near the drawdown floor — only ${money(buffer)} left before the account is breached.`
+            : `${money(buffer)} above the drawdown floor${rules.calc?.trailingLockOffset != null && floor >= account.startingBalance + rules.calc.trailingLockOffset ? ' (floor locked)' : ''}.`,
     });
   }
 
@@ -210,6 +255,39 @@ export function evaluateAccount(account: Account, accountTrades: Trade[], now = 
     });
   }
 
+  // Typed payout eligibility (verified firm configuration).
+  const payout = rules.calc?.payout;
+  if (payout) {
+    const profit = account.balance - account.cycleStartBalance;
+    const parts: string[] = [];
+    let met = true;
+    if (payout.cycleProfitGoal != null) {
+      parts.push(`${money(Math.max(0, profit))} / ${money(payout.cycleProfitGoal)} cycle profit`);
+      if (profit < payout.cycleProfitGoal) met = false;
+    }
+    if (payout.minProfitableDays != null && payout.minDayProfit != null) {
+      const good = [...byDay.values()].filter((v) => v >= payout.minDayProfit!).length;
+      parts.push(`${good} / ${payout.minProfitableDays} days ≥ ${money(payout.minDayProfit)}`);
+      if (good < payout.minProfitableDays) met = false;
+    }
+    let available: number | null = null;
+    if (payout.bufferAboveStart != null) {
+      available = account.balance - (account.startingBalance + payout.bufferAboveStart);
+      parts.push(`${money(Math.max(0, available))} above the payout buffer`);
+      if (available < (payout.minRequest ?? 0)) met = false;
+    }
+    if (payout.minRequest != null && available == null && profit < payout.minRequest) met = false;
+    evaluations.push({
+      id: 'payout_eligibility',
+      label: 'Payout eligibility',
+      status: 'info',
+      current: met ? 'Requirements met' : 'Not yet',
+      limit: payout.minRequest != null ? `Min request ${money(payout.minRequest)}` : '—',
+      proximity: null,
+      message: `${parts.join(' · ') || 'See the firm’s payout rules.'}. Based on your journal — confirm in your firm dashboard before requesting.`,
+    });
+  }
+
   if (rules.maxContracts != null && rules.maxContracts > 0) {
     const maxUsed = closed
       .filter((t) => t.closedAt && dayKey(t.closedAt) === dayKey(now))
@@ -238,6 +316,7 @@ export function evaluateAccount(account: Account, accountTrades: Trade[], now = 
   }
 
   return {
+    dataBasis: 'Based on the balance you entered and the trades in your journal — not live broker data.',
     drawdownFloor: floor,
     drawdownBuffer: buffer,
     profitToTarget,

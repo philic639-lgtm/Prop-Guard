@@ -259,6 +259,8 @@ Deno.serve(async (req) => {
       verified: link?.status === 'verified' && !riskFields.some((f) => link.overrides?.includes(f)),
       lastVerifiedAt: link?.lastVerifiedAt ?? null,
       consistencyPct: n(prow?.consistency_pct),
+      trailingLockOffset: n((prow?.rule_calc as Row | null)?.trailingLockOffset),
+      dailyLossMode: ['none', 'fixed', 'scaling'].includes(String((prow?.rule_calc as Row | null)?.dailyLossMode)) ? ((prow!.rule_calc as Row).dailyLossMode as 'none' | 'fixed' | 'scaling') : null,
       // Balance / P&L come from the user's journal rows — no live broker feed yet.
       liveData: false,
     };

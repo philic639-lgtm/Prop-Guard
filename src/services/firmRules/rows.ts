@@ -10,7 +10,7 @@ type Row = Record<string, unknown>;
 export function dbToRows(db: FirmRulesDatabase) {
   return {
     firms: db.firms.map((f) => ({ id: f.id, name: f.name, aliases: f.aliases, logo_url: f.logo, website: f.website, active: f.active })),
-    programs: db.programs.map((p, i) => ({ id: p.id, firm_id: p.firmId, name: p.name, family: p.family, stage: p.stage, account_size: p.accountSize, active: p.active, sort_order: i })),
+    programs: db.programs.map((p, i) => ({ id: p.id, firm_id: p.firmId, name: p.name, family: p.family, stage: p.stage, account_size: p.accountSize, active: p.active, sort_order: i, line: p.line ?? null, options: p.options ?? [] })),
     versions: db.programs.flatMap((p) =>
       p.versions.map((v) => ({
         program_id: p.id,
@@ -61,6 +61,8 @@ export function rowsToDb(firms: Row[], programs: Row[], versions: Row[], publish
       stage: p.stage,
       accountSize: p.account_size == null ? null : Number(p.account_size),
       active: p.active !== false,
+      ...(p.line ? { line: String(p.line) } : {}),
+      ...(Array.isArray(p.options) && p.options.length ? { options: p.options } : {}),
       versions: byProgram.get(String(p.id)) ?? [],
     })),
   };

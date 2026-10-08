@@ -4,6 +4,13 @@
  *   npm run firm-rules:export   -- data/firm-rules.json   write the bundled seed as an editable JSON file
  *   npm run firm-rules:validate -- data/firm-rules.json   check a rules file (schema + verification evidence)
  *   npm run firm-rules:publish  -- data/firm-rules.json   publish it to Supabase (dry run without credentials)
+ *   npm run firm-rules:sources                             list the official pages the weekly monitor watches
+ *
+ * Maintenance: the `firm-rules-monitor` Edge Function (weekly, pg_cron)
+ * re-checks those pages with conditional requests + a content hash (no AI)
+ * and files a review in `prop_firm_rule_reviews` when one changes. A person
+ * re-verifies, edits the JSON and publishes a NEW rule version — previous
+ * versions are never overwritten.
  *
  * A future backend job re-verifies official firm sources on a schedule and
  * calls the same `publishFirmRules`. Mark a version `verified` only with the
@@ -17,11 +24,18 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import { FIRM_RULES_SEED } from '@/data/propFirms/seed';
 import { parseFirmRulesDatabase } from '@/lib/engines/firmRulesEngine';
+import { sourcesFromDatabase } from '@/lib/engines/firmRulesMonitor';
 import { publishFirmRules } from '@/services/firmRules/publish';
 
 async function main() {
   const [cmd, file] = process.argv.slice(2);
-  if (!cmd || !file) throw new Error('Usage: firm-rules <export|validate|publish> <file.json>');
+  if (cmd === 'sources') {
+    const list = sourcesFromDatabase(FIRM_RULES_SEED);
+    for (const s of list) console.log(`${s.firmId.padEnd(10)} ${String(s.programIds.length).padStart(3)} programs  ${s.url}`);
+    console.log(`${list.length} official sources monitored.`);
+    return;
+  }
+  if (!cmd || !file) throw new Error('Usage: firm-rules <export|validate|publish> <file.json> | firm-rules sources');
 
   if (cmd === 'export') {
     writeFileSync(file, JSON.stringify(FIRM_RULES_SEED, null, 2));
