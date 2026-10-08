@@ -39,6 +39,7 @@ export function accountToRows(a: Account, userId: string) {
       high_water_mark: a.highWaterMark,
       status: a.status,
       firm_link: a.firmLink ?? null,
+      import_state: a.importState ?? null,
       created_at: a.createdAt,
     },
     rules: {
@@ -90,6 +91,7 @@ export function rowsToAccount(r: Row, rules: Row | undefined): Account {
       ...(rules?.rule_calc && typeof rules.rule_calc === 'object' ? { calc: rules.rule_calc as NonNullable<Account['rules']['calc']> } : {}),
     },
     ...(r.firm_link && typeof r.firm_link === 'object' ? { firmLink: r.firm_link as NonNullable<Account['firmLink']> } : {}),
+    ...(r.import_state && typeof r.import_state === 'object' ? { importState: r.import_state as NonNullable<Account['importState']> } : {}),
   };
 }
 

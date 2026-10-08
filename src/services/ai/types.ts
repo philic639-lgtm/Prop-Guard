@@ -155,6 +155,18 @@ export const AccountExtractionSchema = z.object({
 });
 export type AccountExtraction = z.infer<typeof AccountExtractionSchema> & { source: AISource };
 
+/** `account_screenshot_v2`: per-field readings with the label seen. Validated again by the import engine. */
+const ReadingField = z
+  .object({ value: z.union([z.number(), z.string().max(80)]).nullable(), label: z.string().max(80).nullable().catch(null), confidence: z.number().min(0).max(1).catch(0.5) })
+  .nullable()
+  .catch(null);
+export const AccountReadingSchema = z.object({
+  fields: z.record(z.string(), ReadingField).catch({}),
+  legible: z.boolean().catch(true),
+  notes: z.string().max(300).catch(''),
+});
+export type AccountReading = z.infer<typeof AccountReadingSchema>;
+
 // ---------- Practice feedback ----------
 export interface PracticeInput {
   strategyName: string;

@@ -147,6 +147,11 @@ export class MockAIProvider implements AIProvider {
     return analyzeStrategyText(text, { references: opts.references });
   }
 
+  /** No on-device vision model: the advanced reader is unavailable (never a made-up reading). */
+  async readAccountScreenshot(_input: ScreenshotInput): Promise<null> {
+    return null;
+  }
+
   async analyzeAccountScreenshot(input: ScreenshotInput): Promise<AccountExtraction> {
     await delay(900);
     if (input.demo) {

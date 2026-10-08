@@ -19,6 +19,8 @@ import {
   StatusBadge,
 } from '@/components/ui';
 import { colors, spacing } from '@/constants/theme';
+import { ScreenshotStatus } from '@/features/accountImport/ScreenshotStatus';
+import { useConsumeImport } from '@/features/accountImport/useConsumeImport';
 import { AccountFields } from '@/features/accounts/AccountFields';
 import { accountSchema, accountToForm, formToAccount, ruleValuesOf, type AccountFormValues } from '@/features/accounts/accountSchema';
 import { FirmAutocomplete, FirmRulesStatus, ProgramPicker } from '@/features/accounts/FirmRulePicker';
@@ -52,6 +54,7 @@ export default function AccountEditor() {
   const evaluation = useMemo(() => (existing ? evaluateAccount(existing, trades) : null), [existing, trades]);
   const firmRules = useFirmRuleLink({ existing, setValue, getValues, setCustom });
   const { link } = firmRules;
+  const imported = useConsumeImport({ target: 'new', setValue, getValues, loadFromImport: firmRules.loadFromImport });
   const firmText = useWatch({ control, name: 'firm' });
   const values = useWatch({ control }) as AccountFormValues;
   const overrides = useMemo(() => (link ? detectOverrides(link.imported, ruleValuesOf(values)) : []), [link, values]);
@@ -72,13 +75,15 @@ export default function AccountEditor() {
     if (problems.length) return;
     const base = existing ? { ...existing, status, rules: { ...existing.rules, custom } } : null;
     const firmLink = link && (link.firmId || v.firm.trim()) ? { ...link, overrides: detectOverrides(link.imported, ruleValuesOf(v)) } : undefined;
-    const account = formToAccount(v, base, existing?.id ?? uuid(), undefined, firmLink);
+    let account = formToAccount(v, base, existing?.id ?? uuid(), undefined, firmLink);
     account.rules.custom = custom;
     // Verified typed calculations (lock offset, DLL mode, payout) — minus any rule the trader overrode.
     const calc = firmLink?.status === 'verified' ? calcAfterOverrides(firmLink.calc, firmLink.overrides, v.dailyLossLimit) : undefined;
     if (calc) account.rules.calc = calc;
     else delete account.rules.calc;
     account.status = status;
+    // A confirmed screenshot import: drawdown tracking from the firm's numbers + history.
+    if (!existing) account = imported.finish(account);
     upsert(account);
     router.back();
   });
@@ -104,6 +109,21 @@ export default function AccountEditor() {
             ))}
           </Card>
         </>
+      ) : null}
+
+      {existing ? <ScreenshotStatus account={existing} /> : null}
+      {!existing ? (
+        imported.active ? (
+          <Card tone="positive">
+            <StatusBadge label="Screenshot values loaded" tone="positive" icon="camera-outline" size="sm" />
+            <AppText variant="caption" style={{ marginTop: spacing.sm }}>
+              Confirmed values from your screenshot are filled in{imported.active.programId ? ' and the matched program’s verified rules are loaded' : ''}. Review and save.
+            </AppText>
+            <Button label="Discard screenshot values" variant="ghost" size="md" onPress={imported.discard} />
+          </Card>
+        ) : (
+          <Button label="Import account screenshot" icon="camera-outline" variant="secondary" onPress={() => router.push({ pathname: '/accounts/import', params: { from: 'new' } })} />
+        )
       ) : null}
 
       <SectionHeader title="Details" />

@@ -13,8 +13,6 @@ interface OnboardingState {
   account: Account | null;
   rules: TradingRules;
   profile: TradingProfile;
-  /** Values confirmed from an imported dashboard screenshot. */
-  imported: { balance: number | null; drawdownRemaining: number | null; accountType: string | null } | null;
   set: (patch: Partial<Omit<OnboardingState, 'set' | 'reset'>>) => void;
   setProfile: (patch: Partial<TradingProfile>) => void;
   reset: () => void;
@@ -28,7 +26,6 @@ const initial = {
   account: null,
   rules: DEFAULT_TRADING_RULES,
   profile: DEFAULT_PREFERENCES.tradingProfile,
-  imported: null,
 };
 
 export const useOnboardingStore = create<OnboardingState>((set) => ({

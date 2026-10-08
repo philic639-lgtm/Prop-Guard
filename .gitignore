@@ -47,3 +47,6 @@ example
 
 # server-only secrets for scripts/market-data.ts (never bundled)
 .env.server
+
+# Self-hosted OCR engine (npm run ocr:assets)
+public/ocr/

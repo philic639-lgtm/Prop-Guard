@@ -25,6 +25,7 @@ import {
 } from '@/components/ui';
 import { colors, GUTTER, radius, spacing, toneColor } from '@/constants/theme';
 import { CoachCard } from '@/features/home/CoachCard';
+import { screenshotLabel } from '@/features/accountImport/ScreenshotStatus';
 import { HomeModeCard } from '@/features/learning/HomeModeCard';
 import { TradingPlanCard } from '@/features/home/TradingPlanCard';
 import { useAccountTrades, useActiveAccount, useActiveStrategy, useDailyGuard, useDiscipline, useOpenTrade, usePendingTrades } from '@/hooks/useAppData';
@@ -102,7 +103,7 @@ export default function HomeScreen() {
             <View style={styles.connRow}>
               <View style={[styles.connDot, { backgroundColor: connection === 'connected' ? colors.positive : colors.accentBright }]} />
               <AppText variant="caption" style={{ color: connection === 'connected' ? colors.positive : colors.accentBright }}>
-                {CONNECTION_LABEL[connection]}
+                {account.importState?.reported ? `Screenshot updated · ${screenshotLabel(account.importState.reported.at)}` : CONNECTION_LABEL[connection]}
               </AppText>
             </View>
           </View>

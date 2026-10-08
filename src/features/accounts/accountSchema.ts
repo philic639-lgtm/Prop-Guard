@@ -184,5 +184,7 @@ export function formToAccount(v: AccountFormValues, base: Account | null, id: st
       ...(termsOf(v) ? { terms: termsOf(v) } : {}),
     },
     ...(firmLink ? { firmLink } : base?.firmLink ? { firmLink: base.firmLink } : {}),
+    // Screenshot-import history and fingerprint survive edits to the account.
+    ...(base?.importState ? { importState: base.importState } : {}),
   };
 }

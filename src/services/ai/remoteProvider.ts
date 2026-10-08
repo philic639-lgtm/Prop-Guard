@@ -12,6 +12,7 @@ import { matchStrategies } from './strategyMatcher';
 import type { AIProvider } from './provider';
 import {
   AccountExtractionSchema,
+  AccountReadingSchema,
   DailyCoachSchema,
   ParsedStrategySchema,
   PracticeFeedbackSchema,
@@ -28,7 +29,7 @@ import {
   type StrategyFinderAnswers,
 } from './types';
 
-type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach' | 'strategy_parse' | 'strategy_analyze' | 'account_screenshot' | 'practice';
+type Task = 'setup' | 'screenshot' | 'session_review' | 'strategy_finder' | 'daily_coach' | 'strategy_parse' | 'strategy_analyze' | 'account_screenshot' | 'account_screenshot_v2' | 'practice';
 
 /**
  * Calls the `ai-gateway` Supabase Edge Function. Provider API keys live ONLY
@@ -116,6 +117,11 @@ export class RemoteAIProvider implements AIProvider {
     const { demo: _demo, ...payload } = input;
     const r = await this.call('account_screenshot', payload, AccountExtractionSchema);
     return r ? { ...r, source: 'ai' as const } : this.fallback.analyzeAccountScreenshot(input);
+  }
+
+  async readAccountScreenshot(input: ScreenshotInput) {
+    const { demo: _demo, ...payload } = input;
+    return this.call('account_screenshot_v2', payload, AccountReadingSchema);
   }
 
   async practiceFeedback(input: PracticeInput) {

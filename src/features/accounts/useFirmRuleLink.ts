@@ -97,7 +97,8 @@ export function useFirmRuleLink({
   };
 
   /** Load THIS program's verified rules for the chosen options and purchase date (nothing from any other program). */
-  const loadProgram = (p: PropFirmProgram, opts: Record<string, string>, onDate: string) => {
+  const loadProgram = (p: PropFirmProgram, opts: Record<string, string>, onDate: string, f: PropFirm | null = firm) => {
+    const firm = f;
     if (!firm) return;
     const now = new Date().toISOString();
     clearImported(link?.imported);
@@ -158,5 +159,20 @@ export function useFirmRuleLink({
 
   const restore = (k: FirmRuleField, v: string) => set(k, v);
 
-  return { db, link, firm, program, familyKey, options, purchasedOn, selectFirm, selectFamily, changeFirmText, selectProgram, selectOption, changePurchasedOn, customProgram, restore };
+  /** From a confirmed screenshot import: load the matched program (its firm comes from the program itself). */
+  const loadFromImport = (programId: string, opts: Record<string, string>, onDate?: string | null) => {
+    const p = getProgram(db, programId);
+    const f = p ? getFirm(db, p.firmId) : null;
+    if (!p || !f) return false;
+    setValue('firm', f.name, { shouldDirty: true });
+    setValue('kind', 'prop', { shouldDirty: true });
+    const kept = Object.fromEntries(Object.entries(opts).filter(([k, v]) => p.options?.some((o) => o.id === k && o.choices.some((c) => c.id === v))));
+    const date = onDate && /^\d{4}-\d{2}-\d{2}$/.test(onDate) ? onDate : purchasedOn;
+    setOptions(kept);
+    setPurchasedOn(date);
+    loadProgram(p, kept, date, f);
+    return true;
+  };
+
+  return { db, link, firm, program, familyKey, options, purchasedOn, selectFirm, selectFamily, changeFirmText, selectProgram, selectOption, changePurchasedOn, customProgram, restore, loadFromImport };
 }

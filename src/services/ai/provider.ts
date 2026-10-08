@@ -6,6 +6,7 @@ import type { ParsedStrategy } from '@/lib/engines/strategyParser';
 
 import type {
   AccountExtraction,
+  AccountReading,
   DailyCoach,
   PracticeInput,
   DailyCoachInput,
@@ -40,6 +41,11 @@ export interface AIProvider {
   analyzeStrategy(text: string, opts?: { references?: UniquenessReference[] }): Promise<StructuredStrategy>;
   /** Read balance / P&L / drawdown from a prop-firm dashboard screenshot. */
   analyzeAccountScreenshot(input: ScreenshotInput): Promise<AccountExtraction>;
+  /**
+   * Advanced reader for difficult dashboard screenshots (server-side vision).
+   * Null when unavailable — callers fall back to on-device OCR / manual entry.
+   */
+  readAccountScreenshot(input: ScreenshotInput): Promise<AccountReading | null>;
   /** Short, specific feedback for a practice attempt. */
   practiceFeedback(input: PracticeInput): Promise<{ feedback: string; source: 'ai' | 'local' }>;
 }

@@ -8,6 +8,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.117.2",
     "expo": "~57.0.26",
+    "expo-asset": "~57.0.18",
     "expo-constants": "~57.0.20",
     "expo-device": "~57.0.2",
     "expo-file-system": "~57.0.7",
@@ -37,10 +38,12 @@
     "react-native-url-polyfill": "^4.0.0",
     "react-native-web": "~0.21.0",
     "react-native-worklets": "0.10.1",
+    "tesseract.js": "^7.0.0",
     "zod": "^4.6.5",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
@@ -67,7 +70,8 @@
     "firm-rules:validate": "tsx scripts/firm-rules.ts validate",
     "firm-rules:publish": "tsx --env-file-if-exists=.env.server scripts/firm-rules.ts publish",
     "firm-rules:sources": "tsx scripts/firm-rules.ts sources",
-    "shared:sync": "tsx scripts/sync-setup-check-shared.ts"
+    "shared:sync": "tsx scripts/sync-setup-check-shared.ts",
+    "ocr:assets": "node scripts/ocr-assets.mjs"
   },
   "private": true
 }

@@ -192,7 +192,39 @@ export interface Account {
   rules: PropRules;
   /** Firm / program / rule version the rules were loaded from (absent for older accounts). */
   firmLink?: AccountFirmLink;
+  /** Values confirmed from dashboard screenshots (never "live connected"). */
+  importState?: AccountImportState;
   createdAt: string;
+}
+
+/** Screenshot-import state of an account. Screenshots themselves are never stored. */
+export interface AccountImportState {
+  /** Non-reversible fingerprint of the account number seen on the dashboard (duplicate detection). */
+  fingerprint: string | null;
+  /** Masked account number for display, e.g. "••••4917" (only if the trader kept it). */
+  maskedId: string | null;
+  /** Latest confirmed dashboard values. */
+  reported: {
+    at: string;
+    balance: number | null;
+    drawdownThreshold: number | null;
+    drawdownRemaining: number | null;
+    maxDrawdown: number | null;
+    dailyLossLimit: number | null;
+  } | null;
+  /** Confirmed updates, newest first (capped). */
+  history: AccountImportRecord[];
+}
+
+export interface AccountImportRecord {
+  id: string;
+  at: string;
+  engine: 'ocr' | 'vision' | 'sample' | 'manual';
+  pages: number;
+  fields: { key: string; value: number | string; confidence: number | null; source: 'ocr' | 'vision' | 'derived' | 'user'; edited: boolean }[];
+  before: { balance: number; highWaterMark: number };
+  after: { balance: number; highWaterMark: number };
+  notes: string[];
 }
 
 /** The trader's personal discipline rules. These apply on top of account rules. */

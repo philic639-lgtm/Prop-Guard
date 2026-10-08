@@ -13,6 +13,7 @@ import { useFirmRuleLink } from '@/features/accounts/useFirmRuleLink';
 import { OnboardingScaffold } from '@/features/onboarding/OnboardingScaffold';
 import { useOnboardingStep } from '@/features/onboarding/steps';
 import { useOnboardingStore } from '@/features/onboarding/useOnboardingStore';
+import { useConsumeImport } from '@/features/accountImport/useConsumeImport';
 import { detectOverrides } from '@/lib/engines';
 import { calcAfterOverrides, validateFirmConfiguration, type ConfigIssue } from '@/lib/engines/firmRulesEngine';
 import type { ConnectionMethod, CustomRule } from '@/types/domain';
@@ -28,17 +29,17 @@ const BLANK_RULES: Partial<AccountFormValues> = { size: '', balance: '', profitT
 
 export default function AccountStep() {
   const o = useOnboardingStore();
-  const imported = o.imported;
   const { step, total } = useOnboardingStep('account');
 
   const { control, handleSubmit, setValue, getValues } = useForm<AccountFormValues>({
     resolver: zodResolver(accountSchema),
-    defaultValues: o.account ? accountToForm(o.account) : accountToForm(null, { ...BLANK_RULES, balance: imported?.balance != null ? String(imported.balance) : '' }),
+    defaultValues: o.account ? accountToForm(o.account) : accountToForm(null, BLANK_RULES),
     mode: 'onBlur',
   });
   const [custom, setCustom] = useState<CustomRule[]>(o.account?.rules.custom ?? []);
   const firmRules = useFirmRuleLink({ existing: o.account, setValue, getValues, setCustom });
   const { link } = firmRules;
+  const imported = useConsumeImport({ target: 'onboarding', setValue, getValues, loadFromImport: firmRules.loadFromImport });
   const firmText = useWatch({ control, name: 'firm' });
   const values = useWatch({ control }) as AccountFormValues;
   const overrides = useMemo(() => (link ? detectOverrides(link.imported, ruleValuesOf(values)) : []), [link, values]);
@@ -54,17 +55,9 @@ export default function AccountStep() {
   const [dailyLoss, setDailyLoss] = useState(String(o.rules.dailyStop === 400 ? 200 : o.rules.dailyStop));
   const [maxTrades, setMaxTrades] = useState<string>(o.rules.maxTradesPerDay > 3 ? 'custom' : String(Math.min(o.rules.maxTradesPerDay, 2)));
   const [customTrades, setCustomTrades] = useState('4');
-  const [ddRemaining, setDdRemaining] = useState(imported?.drawdownRemaining != null ? String(imported.drawdownRemaining) : '');
+  const [ddRemaining, setDdRemaining] = useState('');
   const [riskErrors, setRiskErrors] = useState<{ risk?: string; daily?: string }>({});
   const [issues, setIssues] = useState<ConfigIssue[]>([]);
-
-  // Apply confirmed screenshot values when the trader returns from the import screen.
-  const [seenImport, setSeenImport] = useState(imported);
-  if (imported !== seenImport) {
-    setSeenImport(imported);
-    if (imported?.balance != null) setValue('balance', String(imported.balance));
-    if (imported?.drawdownRemaining != null) setDdRemaining(String(imported.drawdownRemaining));
-  }
 
   const connection = o.profile.connection;
   const accountDll = parseNum(values.dailyLossLimit);
@@ -88,11 +81,13 @@ export default function AccountStep() {
       setIssues(problems);
       if (!limits || problems.length) return;
       const firmLink = link && (link.firmId || v.firm.trim()) ? { ...link, overrides: detectOverrides(link.imported, ruleValuesOf(v)) } : undefined;
-      const account = formToAccount(v, null, o.account?.id ?? uuid(), parseNum(ddRemaining), firmLink);
+      // Screenshot import → its confirmed drawdown numbers; otherwise the optional "drawdown remaining".
+      let account = formToAccount(v, null, o.account?.id ?? uuid(), imported.active ? undefined : parseNum(ddRemaining), firmLink);
       account.rules.custom = custom;
       const calc = firmLink?.status === 'verified' ? calcAfterOverrides(firmLink.calc, firmLink.overrides, v.dailyLossLimit) : undefined;
       if (calc) account.rules.calc = calc;
       else delete account.rules.calc;
+      account = imported.finish(account);
       const trades = maxTrades === 'custom' ? Math.max(1, Math.round(parseNum(customTrades) ?? 3)) : Number(maxTrades);
       o.set({
         account,
@@ -113,20 +108,21 @@ export default function AccountStep() {
 
   const chooseConnection = (c: ConnectionMethod) => {
     o.setProfile({ connection: c });
-    if (c === 'screenshot') router.push('/onboarding/connect');
+    if (c === 'screenshot') router.push({ pathname: '/accounts/import', params: { from: 'onboarding' } });
   };
 
   return (
     <OnboardingScaffold step={step} total={total} title="Let's set up your account" subtitle="Pick your firm and program — verified rules load automatically." cta="Continue" onNext={next}>
       <SectionHeader title="How should Prop Guard get your account data?" />
       <OptionCard icon="link" title="Connect trading account" description="Tradovate, NinjaTrader, Rithmic, ProjectX" badge="Coming soon" disabled onPress={() => undefined} />
-      <OptionCard icon="camera-outline" title="Import from screenshot" description="Upload your dashboard. AI reads balance & drawdown." selected={connection === 'screenshot'} onPress={() => chooseConnection('screenshot')} />
+       <OptionCard icon="camera-outline" title="Import account screenshot" description="Upload or photograph your dashboard. Values are read on your device; you confirm each one." selected={connection === 'screenshot'} onPress={() => chooseConnection('screenshot')} />
       <OptionCard icon="create-outline" title="Enter manually" description="Add your account details yourself. Works with any platform." selected={connection === 'manual'} onPress={() => chooseConnection('manual')} />
-      {imported ? (
+      {imported.active ? (
         <Card tone="positive">
-          <StatusBadge label="Imported from screenshot" tone="positive" icon="checkmark-circle" size="sm" />
+          <StatusBadge label="Screenshot values loaded" tone="positive" icon="checkmark-circle" size="sm" />
           <AppText variant="caption" style={{ marginTop: spacing.sm }}>
-            Balance {money(imported.balance)} · Drawdown remaining {money(imported.drawdownRemaining)} — confirmed by you.
+            Balance {money(typeof imported.active.confirmed.values.balance === 'number' ? imported.active.confirmed.values.balance : null)} — confirmed by you
+            {imported.active.programId ? '; verified program rules loaded' : ''}. Review below.
           </AppText>
         </Card>
       ) : null}
@@ -161,7 +157,7 @@ export default function AccountStep() {
         }
         rulesFooter={<FirmRulesStatus db={firmRules.db} link={link} overrides={overrides} firmName={firmRules.firm?.name ?? firmText ?? ''} />}
       />
-      {values.kind !== 'personal' && values.drawdownType !== 'static' ? (
+      {!imported.active && values.kind !== 'personal' && values.drawdownType !== 'static' ? (
         <NumericInput label="Drawdown remaining" prefix="$" value={ddRemaining} onChangeText={setDdRemaining} hint="Optional — from your firm dashboard" />
       ) : null}
 

@@ -159,6 +159,20 @@ npx supabase secrets set FIRM_RULES_MONITOR_SECRET=<random>
 
 The monitor checks at most 25 due pages per run with conditional requests and a content hash (no AI, no per-visit scraping). A changed page opens a review in `prop_firm_rule_reviews`; a person re-verifies, edits the rules JSON (`firm-rules:export`) and publishes a new version (`firm-rules:publish`) — previous versions are kept for accounts bought under older terms. Blocked or unreachable pages back off (7 → 14 → 28 → 30 days) and keep the verified data.
 
+## Account screenshot import
+
+Accounts → New / an account's page / onboarding → **Import account screenshot**: upload (several at once), take a photo, drag & drop or paste (desktop). Prop Guard reads the dashboard, matches firm → program → size → stage, and shows every value for review — low-confidence values highlighted, missing ones "Not detected", screenshot conflicts as choices. Nothing is saved until the trader confirms; then the balance and drawdown tracking update, the account shows **Screenshot updated · date** (not "connected") and a dated history is kept.
+
+| | |
+| --- | --- |
+| Extraction | `src/lib/engines/accountImport` (pure, tested on real OCR output of 5 dashboard layouts) |
+| OCR (web) | [tesseract.js](https://github.com/naptha/tesseract.js) in the browser — free, no API key, the image never leaves the device. Engine + English model (~4 MB) load on first use from jsDelivr, or self-host: `npm run ocr:assets` then build with `EXPO_PUBLIC_OCR_ASSETS_URL=/ocr` |
+| OCR (iOS/Android) | Not bundled yet (needs a native text-recognition module in a development build). Native users can use the advanced reader, if configured, or enter values manually on the same review screen |
+| Advanced reader (optional) | `ai-gateway` task `account_screenshot_v2` (your Anthropic/OpenAI key, server-side). Runs only when the trader taps it for a hard screenshot; account numbers are blacked out first; the image is not stored |
+| Database | `accounts.import_state` (migration `20261019000000`): confirmed values + history + one-way account fingerprint (duplicate prevention). No screenshots, no raw account numbers |
+
+Demo Mode includes **synthetic** sample dashboards (Lucid-style, Topstep-style, generic, blurry) that run through the real OCR.
+
 ## RevenueCat (later)
 
 Billing is abstracted in `src/services/subscriptionService.ts`, and plans and entitlements are configured in `src/config/plans.ts`. Business logic checks **features**, never prices. Until RevenueCat is configured, a development provider is used, and the paywall lets you preview the Free and Pro tiers.
