@@ -39,6 +39,7 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   { target: 'profitTarget', phrases: ['profit target', 'profit goal', 'target profit'], weight: 1 },
   { target: 'accountSize', phrases: ['account size', 'plan size', 'starting size', 'evaluation size'], weight: 1 },
   { target: 'program', phrases: ['plan', 'program', 'account type', 'product', 'plan name', 'account plan'], weight: 0.95 },
+  { target: 'firm', phrases: ['prop firm', 'firm', 'firm name', 'provider', 'company'], weight: 0.9 },
   { target: 'stage', phrases: ['stage', 'phase', 'account stage'], weight: 0.95 },
   { target: 'status', phrases: ['status', 'account status'], weight: 0.95 },
   { target: 'startDate', phrases: ['purchase date', 'start date', 'date purchased', 'purchased on', 'purchased', 'activation date', 'activated', 'created', 'started', 'opened'], weight: 0.95 },
@@ -344,7 +345,7 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
         } else if (key === 'status') {
           const s = statusFrom(text);
           if (s) put('status', s, conf, `“${redactText(line.text)}”`);
-        } else if (key === 'program' && text.length >= 2 && /[a-z]/i.test(text)) put('program', text, conf, `“${redactText(line.text)}”`);
+        } else if ((key === 'program' || key === 'firm') && text.length >= 2 && /[a-z]/i.test(text)) put(key, text, conf, `“${redactText(line.text)}”`);
       }
     });
   });
@@ -392,15 +393,34 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
   // Unlabelled context: firm, program/size title line, stage, ids, emails.
   const full = page.lines.map((l) => l.text).join('\n');
   const fullLower = full.toLowerCase();
+  const allWords = page.lines.flatMap((l) => l.words);
+  let firmFound = false;
   for (const f of opts.firms ?? []) {
-    const names = [f.name, ...f.aliases.filter((a) => a.length >= 5)];
+    // Whole name / alias as words ("Lucid Trading", "Apex"); short acronyms (ETF, TPT) are too ambiguous.
+    const names = [f.name, ...f.aliases.filter((a) => a.length >= 4)];
     const hit = names.find((n) => new RegExp(`(^|[^a-z0-9])${n.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`).test(fullLower));
     if (hit) {
       const parts = hit.toLowerCase().split(' ');
-      const words = page.lines.flatMap((l) => l.words).filter((w) => parts.includes(normWord(w.text)));
+      const words = allWords.filter((w) => parts.includes(normWord(w.text)) && !looksLikeAccountId(w.text));
+      if (!words.length && parts.length === 1) continue; // only inside an account number ("APEX-284-11902")
       const conf = words.length ? Math.min(...words.map((w) => w.confidence)) / 100 : 0.85;
       put('firm', f.name, conf * 0.97, `“${hit}” on the screenshot`);
+      firmFound = true;
       break;
+    }
+  }
+  if (!firmFound) {
+    // A word that starts with the firm's name: "LucidFlex", "TopstepX", "lucidtrading.com", "MyFundedFutures".
+    const compact = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+    outer: for (const f of opts.firms ?? []) {
+      for (const n of [f.name, ...f.aliases].map(compact).filter((n) => n.length >= 5)) {
+        // Web addresses may carry it mid-word ("dashboard.lucidtrading.com").
+        const w = allWords.find((x) => !looksLikeAccountId(x.text) && (compact(x.text).startsWith(n) || (/[a-z]\.[a-z]/i.test(x.text) && compact(x.text).includes(n))));
+        if (w) {
+          put('firm', f.name, (w.confidence / 100) * 0.85, `“${redactText(w.text)}” on the screenshot`);
+          break outer;
+        }
+      }
     }
   }
   page.lines.forEach((line, li) => {
@@ -418,6 +438,8 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     const sizeWord = line.words.find((w) => /^\$?\d{2,3}(\.\d)?[kK]$/.test(w.text.replace(/[,;:]+$/, '')));
     const stage = stageFrom(line.text);
     if (!sizeWord && !stage) continue;
+    // A menu item ("Funded Accounts") is not a title.
+    if (!sizeWord && line.words.every((w) => stageFrom(w.text) || NAV_WORDS.has(normWord(w.text)))) continue;
     if (line.words.some((w) => parseMoney(w.text) != null && !/[kK]$/.test(w.text))) continue;
     const crumbs = /[>›»]|@/.test(line.text) ? 1.5 : 0;
     const score = (sizeWord ? 1 : 0) + (stage ? 1 : 0) - crumbs - Math.max(0, line.words.length - 7) * 0.2;
@@ -429,7 +451,8 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     const cut = kept.findIndex((w, i) => i > 0 && /^(account|status)/i.test(w.text));
     let words = cut > 0 ? kept.slice(0, cut) : kept;
     // Menu words merged in from a sidebar, and stray OCR specks ("a", "|") at the start.
-    while (words.length > 1 && (NAV_WORDS.has(normWord(words[0].text)) || !/[a-z0-9]{2}/i.test(words[0].text))) words = words.slice(1);
+    // …and 1–2 letter fragments of a logo or icon ("RE LucidPro 50K") — a plan name never starts with one.
+    while (words.length > 1 && (NAV_WORDS.has(normWord(words[0].text)) || !/[a-z0-9]{2}/i.test(words[0].text) || /^[a-z]{1,2}$/i.test(words[0].text))) words = words.slice(1);
     const name = words.map((w) => w.text).join(' ').replace(/\s*\|\s*$/, '').trim();
     const conf = words.length ? Math.min(...words.map((w) => w.confidence)) / 100 : 0.5;
     if (sizeWord) put('accountSize', parseMoney(sizeWord.text.replace(/[,;:]+$/, ''), true)!, (sizeWord.confidence / 100) * 0.9, `“${redactText(line.text)}”`);
@@ -438,11 +461,40 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     const named = words.some((w) => /[a-z]{3}/i.test(w.text) && !stageFrom(w.text));
     if (name && named) put('program', name, conf * 0.72, `“${redactText(line.text)}”`);
   }
-  if (!fields.status) {
+  if (!cands.status) {
     const s = page.lines.find((l) => /\bstatus\b/i.test(l.text));
-    if (s) {
-      const v = statusFrom(s.text.replace(/.*status/i, ''));
-      if (v) put('status', v, (s.confidence / 100) * 0.9, `“${redactText(s.text)}”`);
+    const v = s ? statusFrom(s.text.replace(/.*status/i, '')) : null;
+    if (s && v) put('status', v, (s.confidence / 100) * 0.9, `“${redactText(s.text)}”`);
+    else {
+      // A status badge without a label ("Active") on the account's own line or alone — "check this".
+      // "Funded" / "Pending" are left out: they are stages or order states as often as statuses.
+      const BADGE = /^\(?(active|passed|failed|breached|liquidated|inactive|closed|suspended|disabled)[.)]?$/i;
+      const found = new Set<string>();
+      let first: { v: string; line: OcrLine } | null = null;
+      for (const line of page.lines) {
+        if (isTableRow(line) || isTableHeader(line)) continue;
+        const own = line.words.some((w) => looksLikeAccountId(w.text)) || line.words.length <= 3;
+        const b = own ? line.words.find((w) => BADGE.test(w.text)) : undefined;
+        if (!b) continue;
+        const val = statusFrom(b.text)!;
+        found.add(val);
+        first ??= { v: val, line };
+      }
+      if (first && found.size === 1) put('status', first.v, (first.line.confidence / 100) * 0.75, `“${redactText(first.line.text)}”`);
+    }
+  }
+  if (!cands.stage) {
+    // Stage word on a short line ("Evaluation Account"), unless menus show several stages.
+    const seen = new Map<string, OcrLine>();
+    for (const line of page.lines) {
+      if (line.words.length > 6 || isTableRow(line) || isTableHeader(line)) continue;
+      // Plural menu items ("Evaluations") count too, so a menu listing several stages is recognised.
+      const st = stageFrom(line.text.replace(/\b([a-z]+)s\b/gi, '$1'));
+      if (st && !seen.has(st)) seen.set(st, line);
+    }
+    if (seen.size === 1) {
+      const [[st, line]] = [...seen];
+      put('stage', st, (line.confidence / 100) * 0.7, `“${redactText(line.text)}”`);
     }
   }
 

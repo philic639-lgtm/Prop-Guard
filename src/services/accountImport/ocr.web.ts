@@ -23,7 +23,7 @@ let progressCb: ((p: number) => void) | null = null;
 let lastActivity = 0;
 
 /** Failure reasons the import screen can explain (and retry). */
-export type OcrErrorCode = 'load_failed' | 'load_timeout' | 'read_timeout' | 'image_failed';
+export type OcrErrorCode = 'load_failed' | 'load_blocked' | 'load_missing' | 'load_timeout' | 'read_timeout' | 'image_failed';
 export class OcrError extends Error {
   constructor(
     readonly code: OcrErrorCode,
@@ -34,7 +34,9 @@ export class OcrError extends Error {
   }
 }
 const MESSAGES: Record<OcrErrorCode, string> = {
-  load_failed: 'The text reader could not be downloaded. Check your connection and try again.',
+  load_failed: 'The text reader could not start in this browser. Try again, or enter the values manually.',
+  load_blocked: 'The text reader could not be downloaded — you may be offline, or this page blocks the download. Check your connection and try again.',
+  load_missing: 'The text reader files are missing on this server. Enter the values manually; the app owner needs to add the OCR files (npm run ocr:assets).',
   load_timeout: 'The text reader took too long to download (about 7 MB, first use only). Try again, ideally on Wi-Fi.',
   read_timeout: 'Reading this screenshot took too long. Try again, or crop it to the account panel.',
   image_failed: 'This file could not be opened as an image.',
@@ -51,20 +53,72 @@ export function ocrAvailable(): boolean {
   return typeof document !== 'undefined' && typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
 }
 
-/** Absolute URL: the OCR worker runs from a blob and cannot resolve relative paths. */
-const absolute = (raw: string) => new URL(raw.endsWith('/') ? raw : `${raw}/`, document.baseURI).href.replace(/\/$/, '');
+/**
+ * Absolute URL (the OCR worker cannot resolve relative paths). Relative paths
+ * are relative to the app root — a page's <base> when it sets one — never to
+ * the current route ("/accounts/import" + "ocr" must not become "/accounts/ocr").
+ */
+const absolute = (raw: string) => {
+  const root = document.querySelector('base[href]') ? document.baseURI : `${location.origin}/`;
+  return new URL(raw.endsWith('/') ? raw : `${raw}/`, root).href.replace(/\/$/, '');
+};
 
-function assetOptions() {
+/** tesseract.js's default model location when nothing is self-hosted. */
+const CDN_LANG = 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int';
+
+export function ocrAssets() {
   const raw = process.env.EXPO_PUBLIC_OCR_ASSETS_URL;
-  // Optional separate model location (e.g. a host that can't serve .gz files).
+  // Optional separate model location. Prefer the app's own origin: sandboxed
+  // pages (and strict CSPs) block cross-origin downloads from the OCR worker.
   const lang = process.env.EXPO_PUBLIC_OCR_LANG_URL;
-  const out: Record<string, unknown> = {};
-  if (raw) {
-    const base = absolute(raw);
-    Object.assign(out, { workerPath: `${base}/worker.min.js`, corePath: `${base}/core`, langPath: `${base}/lang`, gzip: true });
+  const base = raw ? absolute(raw) : null;
+  const langPath = lang ? absolute(lang) : base ? `${base}/lang` : CDN_LANG;
+  const sameOrigin = !!base && new URL(base).origin === location.origin;
+  const options: Record<string, unknown> = { gzip: true, langPath };
+  // A same-origin worker file needs no blob: worker (often blocked by CSP).
+  if (base) Object.assign(options, { workerPath: `${base}/worker.min.js`, corePath: `${base}/core`, workerBlobURL: !sameOrigin });
+  return { options, modelUrl: `${langPath}/eng.traineddata.gz` };
+}
+
+/** Download the language model here (timeout, progress, clear errors); the worker then reads it from the browser cache. */
+let modelReady: Promise<void> | null = null;
+async function fetchModel(url: string): Promise<void> {
+  const ctrl = new AbortController();
+  const started = Date.now();
+  let last = Date.now();
+  const timer = setInterval(() => {
+    if (Date.now() - last > STALL_MS || Date.now() - started > LOAD_MS) ctrl.abort();
+  }, 1000);
+  try {
+    let resp: Response;
+    try {
+      resp = await fetch(url, { signal: ctrl.signal, cache: 'force-cache' });
+    } catch {
+      throw fail(ctrl.signal.aborted ? 'load_timeout' : 'load_blocked');
+    }
+    if (!resp.ok) throw fail(resp.status === 404 ? 'load_missing' : 'load_blocked');
+    const total = Number(resp.headers.get('content-length')) || 0;
+    let got = 0;
+    try {
+      const reader = resp.body?.getReader();
+      if (reader) {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          got += value.byteLength;
+          last = lastActivity = Date.now();
+          if (total) progressCb?.(Math.min(0.25, (got / total) * 0.25));
+        }
+      } else got = (await resp.arrayBuffer()).byteLength;
+    } catch {
+      throw fail(ctrl.signal.aborted ? 'load_timeout' : 'load_blocked');
+    }
+    // A host error page or a truncated file is not a 3 MB model.
+    if (got < 500_000) throw fail('load_missing');
+    ocrLog('model: downloaded', { ms: Date.now() - started, kb: Math.round(got / 1024), host: new URL(url).host });
+  } finally {
+    clearInterval(timer);
   }
-  if (lang) Object.assign(out, { langPath: absolute(lang), gzip: true });
-  return out;
 }
 
 /** Diagnostics in the browser console: stage names, timings and counts only — never screenshot text or values. */
@@ -102,26 +156,51 @@ async function getWorker(): Promise<TWorker> {
     ocrLog('engine: loading');
     const T = Tesseract as unknown as { createWorker?: CreateWorker; default?: { createWorker: CreateWorker } };
     const createWorker = (T.createWorker ?? T.default!.createWorker) as CreateWorker;
-    let created: Promise<TWorker>;
-    try {
-      // The JS wrapper is small (~18 KB); the WASM engine and model load here, on first use.
-      created = createWorker('eng', 1, {
-        ...assetOptions(),
-        logger: (m: { status: string; progress: number }) => {
-          lastActivity = Date.now();
-          if (m.status === 'recognizing text') progressCb?.(0.3 + m.progress * 0.7);
-          else if (m.status.startsWith('loading')) progressCb?.(Math.min(0.3, m.progress * 0.3));
-        },
-        // Worker-level errors after start-up: surface them instead of hanging.
-        errorHandler: () => dropWorker(),
+    const { options, modelUrl } = ocrAssets();
+    let ready = false;
+    let rejectInit: (e: OcrError) => void = () => undefined;
+    // tesseract.js swallows a failed model load / initialisation (its start-up
+    // promise then never settles) and only reports it to `errorHandler`.
+    const initFailed = new Promise<never>((_, reject) => {
+      rejectInit = reject;
+    });
+    const start = async (): Promise<TWorker> => {
+      modelReady ??= fetchModel(modelUrl).catch((e) => {
+        modelReady = null;
+        throw e;
       });
-    } catch {
-      throw fail('load_failed'); // e.g. workers blocked by the page's security policy
-    }
-    const p = guard(created, LOAD_MS, LOAD_MS, 'load_timeout').catch((e) => {
-      void created.then((w) => w.terminate()).catch(() => undefined);
+      await modelReady;
+      let created: Promise<TWorker>;
+      try {
+        // The JS wrapper is small (~18 KB); the WASM engine loads here, on first use.
+        created = createWorker('eng', 1, {
+          ...options,
+          logger: (m: { status: string; progress: number }) => {
+            lastActivity = Date.now();
+            if (m.status === 'recognizing text') progressCb?.(0.3 + m.progress * 0.7);
+            else if (m.status.startsWith('loading')) progressCb?.(0.25 + Math.min(0.05, m.progress * 0.05));
+          },
+          errorHandler: () => {
+            if (!ready) rejectInit(fail('load_failed'));
+            // After start-up: a broken worker is replaced on the next read.
+            else dropWorker();
+          },
+        });
+      } catch {
+        throw fail('load_failed'); // e.g. workers blocked by the page's security policy
+      }
+      created.catch(() => undefined);
+      return Promise.race([created, initFailed]).catch((e) => {
+        void created.then((w) => w.terminate()).catch(() => undefined);
+        throw e;
+      });
+    };
+    const p = guard(start(), LOAD_MS, LOAD_MS, 'load_timeout').catch((e) => {
       throw e instanceof OcrError ? e : fail('load_failed');
     });
+    void p.then(() => {
+      ready = true;
+    }, () => undefined);
     workerP = p;
     p.then(
       () => ocrLog('engine: ready', { ms: Date.now() - t0 }),

@@ -458,3 +458,40 @@ describe('OCR helpers', () => {
     expect(isTableHeader(card)).toBe(false);
   });
 });
+
+describe('firm / program / stage / status on real dashboards', () => {
+  const page = (lines: string[]) => extractPage(textPage(lines), 0, { firms });
+
+  it('firm from a program name or address bar when the logo is an image ("LucidFlex", "lucidtrading.com", "TopstepX")', () => {
+    expect(page(['LucidFlex 50K Evaluation', 'Balance $50,100.00']).fields.firm?.value).toBe('Lucid Trading');
+    expect(page(['dashboard.lucidtrading.com/accounts', 'Balance $50,100.00']).fields.firm?.value).toBe('Lucid Trading');
+    expect(page(['TopstepX', 'Balance $50,100.00']).fields.firm?.value).toBe('Topstep');
+    expect(page(['Apex 50K Evaluation', 'Balance $50,100.00']).fields.firm?.value).toBe('Apex Trader Funding');
+    // Inferred, so "check this" — never high confidence.
+    expect(page(['LucidFlex 50K Evaluation']).fields.firm!.confidence).toBeLessThan(0.9);
+  });
+
+  it('never a firm from inside an account number, and unknown firms are not guessed', () => {
+    expect(page(['Account APEX-284-11902', 'Balance $50,100.00']).fields.firm).toBeUndefined();
+    expect(page(['Northwind Capital 50K Evaluation', 'Balance $50,100.00']).fields.firm).toBeUndefined();
+    // …unless the screenshot labels it: then it is read as text for the trader to confirm.
+    expect(page(['Prop Firm: Northwind Capital']).fields.firm?.value).toBe('Northwind Capital');
+  });
+
+  it('status badge without a "Status:" label, on the account line', () => {
+    const p = page(['LucidFlex 50K Evaluation', 'Account LFE-50K-771204 · Active · Purchased Sep 15, 2026']);
+    expect(p.fields.status?.value).toBe('Active');
+    expect(p.fields.status!.confidence).toBeLessThan(0.8);
+    expect(p.fields.stage?.value).toBe('evaluation');
+  });
+
+  it('menus listing several stages or statuses give no stage / status (not guessed)', () => {
+    const p = page(['Evaluations', 'Funded Accounts', 'Balance $50,100.00', 'Active', 'Failed']);
+    expect(p.fields.stage).toBeUndefined();
+    expect(p.fields.status).toBeUndefined();
+  });
+
+  it('logo / icon fragments in front of the plan name are dropped ("RE LucidPro 50K Evaluation")', () => {
+    expect(page(['RE LucidPro 50K Evaluation', 'Balance $50,100.00']).fields.program?.value).toBe('LucidPro 50K Evaluation');
+  });
+});

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import type { FirmRulesDatabase } from '@/data/propFirms/types';
-import { extractPage, visionToPage, type FieldKey, type PageExtraction } from '@/lib/engines/accountImport';
+import { extractPage, redactText, visionToPage, type FieldKey, type PageExtraction } from '@/lib/engines/accountImport';
 import { aiService } from '@/services/ai';
 import { MAX_IMAGES, releaseImages, type ImportImage } from '@/services/accountImport/images';
 import { disposeOcr, OcrError, ocrAvailable, ocrLog, recognize, redactImage } from '@/services/accountImport/ocr';
@@ -21,7 +21,12 @@ export interface SessionImage {
   page: PageExtraction | null;
   error: string | null;
   reader: 'ocr' | 'vision' | null;
+  /** Debug builds only: the recognised text (account numbers / emails masked), in memory only. */
+  ocrText?: string[];
 }
+
+/** Show the recognised text for troubleshooting (development, or EXPO_PUBLIC_IMPORT_DEBUG=true). */
+export const IMPORT_DEBUG = (typeof __DEV__ !== 'undefined' && __DEV__) || process.env.EXPO_PUBLIC_IMPORT_DEBUG === 'true';
 
 interface State {
   images: SessionImage[];
@@ -97,7 +102,8 @@ export const useImportSession = create<State>((set, get) => ({
           const page = extractPage(ocr, index, { firms: db.firms });
           // Counts only — never the screenshot's text or values.
           ocrLog('page: parsed', { words: page.wordCount, confidence: page.ocrConfidence, quality: page.quality, labels: page.labelsFound ?? 0, fields: Object.keys(page.fields).length });
-          set({ images: patch(get().images, id, { status: 'done', progress: 1, page, reader: 'ocr' }) });
+          const ocrText = IMPORT_DEBUG ? ocr.lines.map((l) => `${l.confidence}% | ${redactText(l.text)}`) : undefined;
+          set({ images: patch(get().images, id, { status: 'done', progress: 1, page, reader: 'ocr', ...(ocrText ? { ocrText } : {}) }) });
         } catch (e) {
           if (gen !== generation) return;
           set({ images: patch(get().images, id, { status: 'error', progress: 0, error: friendly(e) }) });

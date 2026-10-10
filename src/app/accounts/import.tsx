@@ -11,7 +11,7 @@ import { DROP_SUPPORTED, DropZone } from '@/features/accountImport/DropZone';
 import { displayValue, ImportFieldRow } from '@/features/accountImport/ImportFieldRow';
 import { SAMPLE_SETS, sampleImages } from '@/features/accountImport/samples';
 import { useImportReview } from '@/features/accountImport/useImportReview';
-import { useImportSession } from '@/features/accountImport/useImportSession';
+import { IMPORT_DEBUG, useImportSession } from '@/features/accountImport/useImportSession';
 import { usePendingImport } from '@/features/accountImport/usePendingImport';
 import { applyImport, confirmImport, FIELD_LABEL, LOW_CONFIDENCE, lockedRuleFields, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
 import { drawdownBuffer } from '@/lib/engines/propRuleEngine';
@@ -302,6 +302,8 @@ export default function AccountScreenshotImport() {
         </Card>
       ) : null}
 
+      {IMPORT_DEBUG && !reading && images.some((i) => i.ocrText) ? <OcrDebugPanel images={images} /> : null}
+
       {images.map((i, n) => {
         // Text was read fine, but none of it looked like an account panel we know.
         const unrecognised = i.status === 'done' && i.page && i.page.quality !== 'poor' && !i.error && Object.keys(i.page.fields).length === 0;
@@ -461,6 +463,8 @@ export default function AccountScreenshotImport() {
 
 const styles = StyleSheet.create({
   gap: { gap: spacing.sm },
+  debugHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  mono: { fontFamily: 'monospace', fontSize: 11, lineHeight: 16 },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   flex: { flex: 1 },
   drop: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xxl, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.accent + '88', backgroundColor: '#0B1730' },
@@ -471,3 +475,30 @@ const styles = StyleSheet.create({
   thumbX: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 10, padding: 3 },
   thumbName: { fontSize: 10 },
 });
+
+/** Development aid: what OCR actually read, to tell a reading problem from a parsing problem. */
+function OcrDebugPanel({ images }: { images: { image: { id: string }; ocrText?: string[]; page: { labelsFound?: number; fields: object } | null }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card style={styles.gap}>
+      <Pressable onPress={() => setOpen((o) => !o)} accessibilityRole="button" accessibilityState={{ expanded: open }} style={styles.debugHead}>
+        <AppText variant="label">OCR text (debug)</AppText>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
+      </Pressable>
+      {open
+        ? images.map((i, n) =>
+            i.ocrText ? (
+              <View key={i.image.id} style={styles.gap}>
+                <AppText variant="caption" tone="secondary">
+                  Screenshot {n + 1} · {i.ocrText.length} lines · {i.page?.labelsFound ?? 0} labels recognised · {Object.keys(i.page?.fields ?? {}).length} values
+                </AppText>
+                <AppText variant="caption" style={styles.mono} selectable>
+                  {i.ocrText.length ? i.ocrText.join('\n') : '(no text recognised)'}
+                </AppText>
+              </View>
+            ) : null,
+          )
+        : null}
+    </Card>
+  );
+}
