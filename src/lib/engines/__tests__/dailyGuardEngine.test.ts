@@ -109,3 +109,32 @@ describe('consecutiveLosses', () => {
     expect(consecutiveLosses(trades)).toBe(2);
   });
 });
+
+describe('V1 audit: remaining risk respects the drawdown floor and the program daily-loss mode', () => {
+  it('a small drawdown buffer caps today’s remaining risk below the daily budget', () => {
+    // Trailing $1,500 from a $25,500 peak → floor $24,000; balance $24,300 → $300 above the floor.
+    const account = makeAccount({ balance: 24300, highWaterMark: 25500, rules: { trailingLocksAtStart: false } as never });
+    const g = computeDailyGuard({ account, rules: makeRules({ dailyStop: 400 }), trades: [], now: NOW });
+    expect(g.drawdownBuffer).toBe(300);
+    expect(g.riskRemaining).toBe(300);
+  });
+
+  it('open risk counts against the drawdown room too', () => {
+    const account = makeAccount({ balance: 24300, highWaterMark: 25500, rules: { trailingLocksAtStart: false } as never });
+    const open = makeTrade({ status: 'open', pnl: null, exitPrice: null, closedAt: null, riskDollars: 250 });
+    const g = computeDailyGuard({ account, rules: makeRules({ dailyStop: 400 }), trades: [open], now: NOW });
+    expect(g.riskRemaining).toBe(50);
+  });
+
+  it('a verified "no daily loss limit" program uses only the personal daily stop', () => {
+    const account = makeAccount({ rules: { dailyLossLimit: null, calc: { dailyLossMode: 'none' } } as never });
+    const g = computeDailyGuard({ account, rules: makeRules({ dailyStop: 400 }), trades: [], now: NOW });
+    expect(g.dailyLimit).toBe(400);
+  });
+
+  it('the program’s scaling daily limit is what the guard uses (same as the account evaluation)', () => {
+    const account = makeAccount({ highWaterMark: 26000, balance: 26000, rules: { dailyLossLimit: 300, calc: { dailyLossMode: 'scaling', dailyLossScaling: { pct: 2, basis: 'peak_eod_balance', afterBalance: null } } } as never });
+    const g = computeDailyGuard({ account, rules: makeRules({ dailyStop: 1000 }), trades: [], now: NOW });
+    expect(g.dailyLimit).toBe(520);
+  });
+});

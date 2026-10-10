@@ -15,6 +15,7 @@ type Op = { label: string; run: (repo: SupabaseRepository) => Promise<void> };
 
 class SyncService {
   private repo: SupabaseRepository | null = null;
+  private userId: string | null = null;
   private queue: Op[] = [];
   private running = false;
   lastError: string | null = null;
@@ -25,12 +26,16 @@ class SyncService {
 
   attach(userId: string) {
     if (!supabase) return;
+    // Writes queued for another user must never be replayed into this user's account.
+    if (this.userId && this.userId !== userId) this.queue = [];
+    this.userId = userId;
     this.repo = new SupabaseRepository(supabase, userId);
     void this.flush();
   }
 
   detach() {
     this.repo = null;
+    this.userId = null;
     this.queue = [];
   }
 

@@ -13,7 +13,8 @@ import type { DateField, ExtractedField, FieldKey, FieldMap, MoneyField, OcrBox,
 
 // ───────────────────────────── Labels ─────────────────────────────
 
-type LabelTarget = FieldKey | 'sensitive:account_id' | 'sensitive:name';
+/** `ignore`: look-alike numbers that must never fill a field (their value is claimed and dropped). */
+type LabelTarget = FieldKey | 'sensitive:account_id' | 'sensitive:name' | 'ignore';
 
 const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   // Balance (current)
@@ -31,7 +32,9 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   { target: 'maxDrawdown', phrases: ['mll', 'loss limit', 'max loss'], weight: 0.82 },
   { target: 'dailyLossLimit', phrases: ['daily loss limit', 'max daily loss', 'daily max loss', 'daily drawdown limit', 'daily loss', 'dll'], weight: 1 },
   { target: 'dailyPnl', phrases: ["today's p&l", 'todays p&l', 'today p&l', 'daily p&l', 'day p&l', "today's profit", 'daily profit'], weight: 1 },
-  { target: 'netPnl', phrases: ['net p&l', 'total p&l', 'net profit', 'total profit', 'profit/loss', 'profit & loss', 'profit and loss', 'realized p&l', 'net pnl'], weight: 1 },
+  { target: 'netPnl', phrases: ['net p&l', 'total p&l', 'net profit', 'total profit', 'profit/loss', 'profit & loss', 'profit and loss', 'net pnl'], weight: 1 },
+  // Platforms differ on whether "realized" is today or lifetime: readable, but always "verify".
+  { target: 'netPnl', phrases: ['realized p&l'], weight: 0.8 },
   { target: 'netPnl', phrases: ['p&l'], weight: 0.85 },
   { target: 'profitTarget', phrases: ['profit target', 'profit goal', 'target profit'], weight: 1 },
   { target: 'accountSize', phrases: ['account size', 'plan size', 'starting size', 'evaluation size'], weight: 1 },
@@ -40,6 +43,18 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   { target: 'status', phrases: ['status', 'account status'], weight: 0.95 },
   { target: 'startDate', phrases: ['purchase date', 'start date', 'date purchased', 'activation date', 'created', 'started', 'opened'], weight: 0.95 },
   { target: 'statementDate', phrases: ['last updated', 'updated', 'as of', 'statement date'], weight: 0.95 },
+  // Look-alikes: not balance / P&L / target / drawdown values.
+  {
+    target: 'ignore',
+    phrases: [
+      'unrealized p&l', 'unrealized', 'open p&l', 'floating p&l', 'open profit', 'open position p&l',
+      'buying power', 'available funds', 'available margin', 'excess liquidity', 'margin used', 'initial margin', 'maintenance margin', 'equity', 'net equity',
+      'profit target remaining', 'remaining profit target', 'remaining target', 'target remaining', 'to target', 'distance to target', 'profit remaining', 'profit needed', 'needed to pass',
+      'high water mark', 'highest balance', 'peak balance', 'max balance', 'highest eod balance', 'trailing high',
+      'win rate', 'avg win', 'avg loss', 'average win', 'average loss', 'largest win', 'largest loss', 'commissions', 'fees', 'total trades', 'trades', 'contracts traded', 'volume',
+    ],
+    weight: 1,
+  },
   { target: 'sensitive:account_id', phrases: ['account id', 'account #', 'account number', 'account no', 'acct #', 'acct', 'account'], weight: 1 },
   { target: 'sensitive:name', phrases: ['account holder', 'trader name', 'full name', 'name'], weight: 1 },
 ];
@@ -205,10 +220,11 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
 
   const labels = page.lines.map((l, i) => findLabels(l, i));
 
+  // Every reading is kept; several DIFFERENT readings of one field on a page are an ambiguity, not a choice.
+  const cands: Partial<Record<FieldKey, ExtractedField[]>> = {};
   const put = (key: FieldKey, value: number | string, confidence: number, evidence: string) => {
     const c = Math.max(0, Math.min(1, confidence * qualityFactor));
-    const prev = fields[key];
-    if (!prev || prev.confidence < c) fields[key] = { key, value, confidence: Math.round(c * 100) / 100, source: 'ocr', evidence, page: pageIndex };
+    (cands[key] ??= []).push({ key, value, confidence: Math.round(c * 100) / 100, source: 'ocr', evidence, page: pageIndex });
   };
   const addSensitive = (kind: SensitiveItem['kind'], raw: string, bbox: OcrBox | null) => {
     const clean = raw.replace(/[,;:|]+$/, '');
@@ -237,6 +253,12 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
           addSensitive('account_id', id.text, id.bbox);
           claimed.add(`${li}:${line.words.indexOf(id)}`);
         }
+        return;
+      }
+      if (h.target === 'ignore') {
+        const v = words[0] && (parseMoney(words[0].text) != null || /^[+-]?\$?[\d,.]+%$/.test(words[0].text));
+        if (v) claimed.add(`${li}:${startIdx}`);
+        else pending.push(h);
         return;
       }
       if (h.target === 'sensitive:name') {
@@ -277,8 +299,8 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
   // Pass 2 — card / grid layouts: value in the same column on a nearby label-free line.
   const valueLines = page.lines.map((_, i) => labels[i].length === 0);
   for (const h of pending) {
-    if (!MONEY.has(h.target as FieldKey)) continue;
-    const key = h.target as MoneyField;
+    if (!MONEY.has(h.target as FieldKey) && h.target !== 'ignore') continue;
+    const key = h.target as MoneyField | 'ignore';
     const lh = Math.max(8, h.bbox.y1 - h.bbox.y0);
     const siblings = labels[h.line];
     let best: { li: number; wi: number; w: OcrWord; v: number; score: number; layout: number } | null = null;
@@ -291,7 +313,7 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
         if (gap > Math.max(3.5 * lh, 70) || gap < -lh) continue;
         line.words.forEach((w, wi) => {
           if (claimed.has(`${li}:${wi}`)) return;
-          const v = parseMoney(w.text, key === 'accountSize');
+          const v = parseMoney(w.text, key === 'accountSize') ?? (key === 'ignore' && /^[+-]?[\d,.]+%$/.test(w.text) ? 0 : null);
           if (v == null) return;
           // The value belongs to the label in this row it overlaps most.
           const overlapWith = (b: OcrBox) => Math.max(0, Math.min(b.x1, w.bbox.x1) - Math.max(b.x0, w.bbox.x0));
@@ -310,7 +332,7 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     if (best) {
       const b = best as { li: number; wi: number; w: OcrWord; v: number; layout: number };
       claimed.add(`${b.li}:${b.wi}`);
-      put(key, SIGNED.has(key) ? b.v : Math.abs(b.v), (b.w.confidence / 100) * h.weight * b.layout, `“${page.lines[h.line].words.slice(h.w0, h.w1).map((x) => x.text).join(' ')}” → ${b.w.text}`);
+      if (key !== 'ignore') put(key, SIGNED.has(key) ? b.v : Math.abs(b.v), (b.w.confidence / 100) * h.weight * b.layout, `“${page.lines[h.line].words.slice(h.w0, h.w1).map((x) => x.text).join(' ')}” → ${b.w.text}`);
     }
   }
 
@@ -357,6 +379,21 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
       const v = statusFrom(s.text.replace(/.*status/i, ''));
       if (v) put('status', v, (s.confidence / 100) * 0.9, `“${redactText(s.text)}”`);
     }
+  }
+
+  for (const [key, list] of Object.entries(cands) as [FieldKey, ExtractedField[]][]) {
+    const sorted = [...list].sort((a, b) => b.confidence - a.confidence);
+    const best = { ...sorted[0] };
+    const same = (a: number | string, b: number | string) => (typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) <= 0.5 : String(a).toLowerCase() === String(b).toLowerCase());
+    const contained = (a: number | string, b: number | string) => typeof a === 'string' && typeof b === 'string' && (a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase()));
+    const others: ExtractedField[] = [];
+    for (const f of sorted.slice(1)) if (!same(f.value, best.value) && !(key === 'program' && contained(f.value, best.value)) && !others.some((o) => same(o.value, f.value))) others.push(f);
+    if (others.length) {
+      // e.g. two account balances on one screenshot: the trader must pick.
+      best.alternatives = others.map((f) => ({ value: f.value, confidence: f.confidence, page: f.page }));
+      best.confidence = Math.min(best.confidence, 0.5);
+    }
+    fields[key] = best;
   }
 
   return { page: pageIndex, fields, sensitive, quality, ocrConfidence: Math.round(page.confidence), wordCount };

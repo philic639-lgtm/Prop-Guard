@@ -281,3 +281,102 @@ describe('apply (after confirmation)', () => {
     expect(r.record.notes.join(' ')).toMatch(/Check the drawdown rules/);
   });
 });
+
+// ───────────────────────────── V1 audit regressions ─────────────────────────────
+
+/** Synthetic OCR page: one line per string, words laid out left to right. */
+function textPage(lines: string[], confidence = 93): OcrPage {
+  return {
+    width: 800,
+    height: lines.length * 40,
+    confidence,
+    lines: lines.map((t, i) => {
+      let x = 10;
+      const words = t.split(/\s+/).filter(Boolean).map((w) => {
+        const bbox = { x0: x, y0: i * 40, x1: x + w.length * 10, y1: i * 40 + 16 };
+        x += w.length * 10 + 10;
+        return { text: w, confidence, bbox };
+      });
+      return { text: t, confidence, bbox: { x0: 10, y0: i * 40, x1: x, y1: i * 40 + 16 }, words };
+    }),
+  };
+}
+
+describe('audit: look-alike values are never read as account fields', () => {
+  it('unrealized / open P&L is not net P&L; realized P&L is readable but always "verify"', () => {
+    const x = run(textPage(['Account Balance $50,500.00', 'Unrealized P&L $350.00', 'Open P&L $120.00']));
+    expect(x.fields.netPnl).toBeUndefined();
+    const r = run(textPage(['Realized P&L $500.00']));
+    expect(r.fields.netPnl?.confidence).toBeLessThan(0.85);
+  });
+
+  it('buying power and equity are not the balance', () => {
+    expect(v(run(textPage(['Buying Power $200,000.00', 'Cash Balance $50,250.00'])), 'balance')).toBe(50250);
+    expect(run(textPage(['Equity $50,820.00'])).fields.balance).toBeUndefined();
+  });
+
+  it('remaining profit target is not the profit target', () => {
+    expect(v(run(textPage(['Profit Target $3,000.00', 'Profit Target Remaining $1,750.00'])), 'profitTarget')).toBe(3000);
+    expect(run(textPage(['Profit Target Remaining $1,750.00'])).fields.profitTarget).toBeUndefined();
+  });
+
+  it('percentages are never dollar amounts', () => {
+    const x = run(textPage(['Balance $50,000', 'Max Drawdown 4%', 'Daily Loss Limit 2%']));
+    expect(x.fields.maxDrawdown).toBeUndefined();
+    expect(x.fields.dailyLossLimit).toBeUndefined();
+  });
+
+  it('peak balance / high-water mark and unrelated statistics are ignored', () => {
+    const x = run(textPage(['Balance $50,500.00', 'Peak Balance $51,000.00', 'High Water Mark $51,000.00', 'Win Rate 54%', 'Avg Win $210.00', 'Largest Loss $900.00', 'Commissions $84.00']));
+    expect(x.fields.balance).toMatchObject({ value: 50500 });
+    expect(x.fields.balance!.alternatives).toBeUndefined();
+    expect(Object.keys(x.fields)).toEqual(['balance']);
+  });
+
+  it('two balances on one screenshot (multi-account list) → ambiguity the trader must resolve', () => {
+    const x = run(textPage(['Account 1 Balance $50,100.00', 'Account 2 Balance $101,300.00']));
+    expect(x.fields.balance!.confidence).toBeLessThanOrEqual(0.5);
+    expect(x.fields.balance!.alternatives?.map((a) => a.value)).toEqual([101300]);
+    expect(x.checks.some((c) => c.id === 'conflict:balance' && c.status === 'conflict')).toBe(true);
+  });
+
+  it('daily vs lifetime P&L, negatives in -$ and (parentheses)', () => {
+    const x = run(textPage(["Today's P&L -$420.50", 'Net P&L ($1,240.50)', 'Balance $48,759.50']));
+    expect(v(x, 'dailyPnl')).toBe(-420.5);
+    expect(v(x, 'netPnl')).toBe(-1240.5);
+  });
+
+  it('partially obscured numbers are not detected rather than guessed', () => {
+    const x = run(textPage(['Balance $5•,240.50', 'Max Drawdown $2,0', 'Daily Loss Limit $1,200.00']));
+    expect(x.fields.balance).toBeUndefined();
+    expect(x.fields.maxDrawdown).toBeUndefined();
+    expect(v(x, 'dailyLossLimit')).toBe(1200);
+  });
+
+  it('missing drawdown information stays missing (nothing derived from one value)', () => {
+    const x = run(textPage(['Balance $50,500.00', 'Daily Loss Limit $1,000.00']));
+    for (const k of ['maxDrawdown', 'drawdownThreshold', 'drawdownRemaining', 'currentDrawdown'] as FieldKey[]) expect(x.fields[k]).toBeUndefined();
+  });
+});
+
+describe('audit: real-OCR layout variants', () => {
+  it('cropped screenshot (header cut off): values still read, firm/program/id simply not detected', () => {
+    const cropped = { ...(lucid as OcrPage), lines: (lucid as OcrPage).lines.slice(3) };
+    const x = run(cropped);
+    expect(v(x, 'balance')).toBe(51240.5);
+    expect(v(x, 'drawdownThreshold')).toBe(49340);
+    expect(x.fields.firm).toBeUndefined();
+    expect(x.fingerprint).toBeNull();
+  });
+
+  it('dark theme (Lucid-style) and light theme (Topstep-style) both read', () => {
+    expect(v(run(lucid as OcrPage), 'balance')).toBe(51240.5);
+    expect(v(run(topstep as OcrPage), 'balance')).toBe(50812.25);
+  });
+
+  it('low-confidence OCR page lowers every reading below the auto-trust level', () => {
+    const x = run(textPage(['Balance $50,500.00', 'Max Drawdown $2,000.00', 'Liquidation Threshold $48,500.00'], 55));
+    expect(x.pages[0].quality).toBe('poor');
+    for (const f of Object.values(x.fields)) expect(f!.confidence).toBeLessThan(0.7);
+  });
+});

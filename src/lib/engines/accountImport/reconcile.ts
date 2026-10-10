@@ -76,7 +76,7 @@ export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } =
   for (const [key, f] of Object.entries(fields) as [FieldKey, ExtractedField][]) {
     if (f.alternatives?.length) {
       const fmt = (v: number | string) => (typeof v === 'number' ? money(v) : v);
-      checks.push({ id: `conflict:${key}`, status: 'conflict', fields: [key], message: `Screenshots disagree on this value: ${[f.value, ...f.alternatives.map((a) => a.value)].map(fmt).join(' vs ')}. Pick the correct one.` });
+      checks.push({ id: `conflict:${key}`, status: 'conflict', fields: [key], message: `Different values were read for this field: ${[f.value, ...f.alternatives.map((a) => a.value)].map(fmt).join(' vs ')}. Pick the correct one.` });
     }
   }
 

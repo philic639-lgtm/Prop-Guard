@@ -1,7 +1,7 @@
 import type { Account, GuardStatus, Trade, TradingRules } from '@/types/domain';
 import { dayKey } from '@/utils/dates';
 
-import { drawdownBuffer } from './propRuleEngine';
+import { dailyLossLimitFor, drawdownBuffer } from './propRuleEngine';
 
 export interface CooldownState {
   active: boolean;
@@ -84,7 +84,9 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
   const todaysClosed = todays.filter((t) => t.status === 'closed');
   const open = todays.filter((t) => t.status === 'open');
 
-  const limits = [rules.dailyStop, account.rules.dailyLossLimit].filter(
+  // The account's daily limit as its program defines it (fixed, scaling, or verified "none").
+  const accountDaily = dailyLossLimitFor(account)?.limit ?? null;
+  const limits = [rules.dailyStop, accountDaily].filter(
     (v): v is number => typeof v === 'number' && v > 0,
   );
   const dailyLimit = limits.length > 0 ? Math.min(...limits) : 0;
@@ -92,7 +94,12 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
   const realizedPnlToday = todaysClosed.reduce((s, t) => s + (t.pnl ?? 0), 0);
   const openRisk = open.reduce((s, t) => s + t.riskDollars, 0);
   const riskUsed = Math.max(0, -realizedPnlToday) + openRisk;
-  const riskRemaining = Math.max(0, dailyLimit - riskUsed);
+  const buffer = drawdownBuffer(account);
+  // What can still be lost today: the daily budget AND the room above the drawdown floor
+  // (open risk counts against both). Never more than either.
+  const dailyRoom = Math.max(0, dailyLimit - riskUsed);
+  const drawdownRoom = buffer != null ? Math.max(0, buffer - openRisk) : null;
+  const riskRemaining = dailyLimit > 0 ? (drawdownRoom != null ? Math.min(dailyRoom, drawdownRoom) : dailyRoom) : (drawdownRoom ?? 0);
   const riskUsedPct = dailyLimit > 0 ? Math.min(1, riskUsed / dailyLimit) : 0;
 
   const tradesTaken = todays.length;
@@ -100,21 +107,20 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
   const tradesRemaining = Math.max(0, maxTrades - tradesTaken);
   const losses = consecutiveLosses(todaysClosed);
   const cooldown = computeCooldown(todaysClosed, rules, now);
-  const buffer = drawdownBuffer(account);
   const maxContracts = account.rules.maxContracts;
 
   const stopReasons: string[] = [];
   const cautionReasons: string[] = [];
 
   if (account.status === 'failed') stopReasons.push('This account is marked as failed.');
-  if (dailyLimit > 0 && riskRemaining <= 0) stopReasons.push("You've reached your daily loss limit.");
+  if (dailyLimit > 0 && dailyRoom <= 0) stopReasons.push("You've reached your daily loss limit.");
   if (maxTrades > 0 && tradesTaken >= maxTrades) stopReasons.push("You've reached your maximum trades for today.");
   if (rules.maxConsecutiveLosses > 0 && losses >= rules.maxConsecutiveLosses) {
     stopReasons.push(`${losses} consecutive losses. Your rules say the session is over.`);
   }
   if (buffer != null && buffer <= 0) stopReasons.push('Drawdown floor reached.');
 
-  if (dailyLimit > 0 && riskUsedPct >= CAUTION_RISK_PCT && riskRemaining > 0) {
+  if (dailyLimit > 0 && riskUsedPct >= CAUTION_RISK_PCT && dailyRoom > 0) {
     cautionReasons.push(`${Math.round(riskUsedPct * 100)}% of today's risk budget used.`);
   }
   if (cooldown.active) cautionReasons.push('Cooldown active after a loss.');

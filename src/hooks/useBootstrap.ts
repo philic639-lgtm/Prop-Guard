@@ -27,6 +27,9 @@ export function useBootstrap() {
       if (session?.user) {
         const user = { id: session.user.id, email: session.user.email ?? '' };
         const switchedUser = store.user?.id !== user.id;
+        // A different signed-in user on this device: drop the previous user's local data first,
+        // so it is never shown to, or synced into, the new account.
+        if (store.user && switchedUser) store.startFresh('cloud');
         store.setUser(user);
         syncService.attach(user.id);
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {

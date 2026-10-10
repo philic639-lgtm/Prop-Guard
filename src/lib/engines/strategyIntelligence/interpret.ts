@@ -71,8 +71,12 @@ function windowIn(text: string): TradingWindow {
   if (range && (range[2] || range[3] || range[5] || range[6])) {
     return { start: clock(+range[1], +(range[2] ?? 0), range[3]), end: clock(+range[4], +(range[5] ?? 0), range[6]), provenance: 'trader', quote: range[0] };
   }
-  const startM = new RegExp(String.raw`(?:after|from|starting(?: at)?|not before|once it'?s)\s+${TIME}`, 'i').exec(text);
-  const endM = new RegExp(String.raw`(?:until|till|before|by|no later than|stop trading (?:at|by))\s+${TIME}`, 'i').exec(text);
+  // "No trades after 11:00" / "don't trade past 11" is an END time, not a start.
+  const NEG_AFTER = new RegExp(String.raw`(?:no(?: new)? (?:more )?(?:trades?|entries|entry|positions?|setups?)|(?:don'?t|do not|never|won'?t|will not)\s+(?:trade|enter|take(?: any| a| new)? (?:trades?|entries|positions?)|open (?:a )?(?:trades?|positions?))|stop trading|done(?: trading)?|nothing)\s+(?:after|past|beyond|later than)\s+${TIME}`, 'i');
+  const negM = NEG_AFTER.exec(text);
+  const rest = negM ? text.slice(0, negM.index) + ' '.repeat(negM[0].length) + text.slice(negM.index + negM[0].length) : text;
+  const startM = new RegExp(String.raw`(?:after|from|starting(?: at)?|not before|once it'?s)\s+${TIME}`, 'i').exec(rest);
+  const endM = new RegExp(String.raw`(?:until|till|before|by|no later than|stop trading (?:at|by))\s+${TIME}`, 'i').exec(rest) ?? (negM ? Object.assign([...negM.slice(0, 1), ...negM.slice(-3)], { index: negM.index, input: text, groups: undefined }) as unknown as RegExpExecArray : null);
   const valid = (m: RegExpExecArray | null) => !!m && (!!m[2] || !!m[3]);
   const start = valid(startM) ? clock(+startM![1], +(startM![2] ?? 0), startM![3]) : null;
   const end = valid(endM) ? clock(+endM![1], +(endM![2] ?? 0), endM![3]) : null;
@@ -153,6 +157,10 @@ function detectStyles(text: string): DetectedStyle[] {
 const AND_SPLIT = /\s+(?=and\s+(?:then\s+|I\s+|it\s+|price\s+|wait|enter|buy|sell|short|go\s|take|place|put|use|exit|move|quickly|look|only|never|don'?t|no\s|confirm|retest|close|closes|stop|target|max|risk|momentum|volume|aggressive|breaks?\b|rejects?\b|holds?\b|the\s+(?:candle|market|price|level))|and\s+(?:a\s+)?\d+(?:\.\d+)?\s*-?\s*(?:point|pt|tick|handle)s?\s+(?:target|profit|stop))/i;
 const CONNECTOR_SPLIT = /\s+(?=(?:then|but|when|whenever|once|after|if|unless|until|as soon as)\b)|\s+(?=with an? \d+(?:\.\d+)?\s*-?\s*(?:point|pt|tick|handle)s?\s+stop)/i;
 
+const BARE_ACTION = /^(?:and\s+)?(?:i\s+)?(?:enter|buy|sell|short|go long|go short|get in|fade|join|take it|take the trade)$/i;
+const CONDITION_LEAD = /^(?:if|when|whenever|once|as soon as)\b/i;
+const NEXT_RULE = /^(?:and\s+)?(?:my\s+)?(?:stop|sl\b|target|tp\b|take profit|exit|move (?:my |the )?stop|trail|break ?even|no\b|don'?t|never|max(?:imum)?\b|risk)/i;
+
 export function fragmentsOf(text: string): string[] {
   return text
     .replace(/\s+/g, ' ')
@@ -162,10 +170,13 @@ export function fragmentsOf(text: string): string[] {
     .flatMap((s) => s.split(CONNECTOR_SPLIT))
     .map((s) => s.trim().replace(/[.!?;,]+$/, ''))
     .filter((s) => s.length > 1)
-    // "enter | when X" — a bare action verb belongs to the condition that follows it.
     .reduce<string[]>((out, f) => {
       const prev = out[out.length - 1];
-      if (prev && /^(?:and\s+)?(?:i\s+)?(?:enter|buy|sell|short|go long|go short|get in|fade|join|take it|take the trade)$/i.test(prev)) out[out.length - 1] = `${prev} ${f}`;
+      // "enter | when X" — a bare action verb belongs to the condition that follows it,
+      // but never swallows the next rule ("I go long. Stop 2 ticks below…").
+      if (prev && BARE_ACTION.test(prev) && !NEXT_RULE.test(f)) out[out.length - 1] = `${prev} ${f}`;
+      // "If X, I go long" — the condition came first: keep it with the action.
+      else if (prev && BARE_ACTION.test(f) && CONDITION_LEAD.test(prev)) out[out.length - 1] = `${f} ${prev.charAt(0).toLowerCase()}${prev.slice(1)}`;
       else out.push(f);
       return out;
     }, []);

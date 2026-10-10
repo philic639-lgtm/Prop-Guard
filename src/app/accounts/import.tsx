@@ -8,12 +8,12 @@ import { AppHeader, AppText, Button, Card, Chip, DetailTable, RiskProgress, Scre
 import { isDemoMode } from '@/config/env';
 import { colors, radius, spacing } from '@/constants/theme';
 import { DROP_SUPPORTED, DropZone } from '@/features/accountImport/DropZone';
-import { ImportFieldRow } from '@/features/accountImport/ImportFieldRow';
+import { displayValue, ImportFieldRow } from '@/features/accountImport/ImportFieldRow';
 import { SAMPLE_SETS, sampleImages } from '@/features/accountImport/samples';
 import { useImportReview } from '@/features/accountImport/useImportReview';
 import { useImportSession } from '@/features/accountImport/useImportSession';
 import { usePendingImport } from '@/features/accountImport/usePendingImport';
-import { applyImport, confirmImport, lockedRuleFields, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
+import { applyImport, confirmImport, FIELD_LABEL, LOW_CONFIDENCE, lockedRuleFields, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
 import { drawdownBuffer } from '@/lib/engines/propRuleEngine';
 import { aiIsLive } from '@/services/ai';
 import { MAX_IMAGES, pickImages, type ImportImage } from '@/services/accountImport/images';
@@ -29,6 +29,8 @@ const GROUPS: { title: string; keys: FieldKey[] }[] = [
   { title: 'Limits', keys: ['dailyLossLimit', 'profitTarget'] },
 ];
 const RULE_KEYS = ['maxDrawdown', 'dailyLossLimit', 'profitTarget'] as const;
+/** Values `applyImport` writes into the account (balance + drawdown tracking). */
+const APPLIED_KEYS: FieldKey[] = ['balance', 'drawdownThreshold', 'drawdownRemaining', 'currentDrawdown'];
 type RuleKey = (typeof RULE_KEYS)[number];
 
 /**
@@ -65,7 +67,8 @@ export default function AccountScreenshotImport() {
 
   const add = useCallback((list: ImportImage[]) => {
     const r = useImportSession.getState().add(list);
-    setError(r.skipped ? `Up to ${MAX_IMAGES} screenshots per import${r.added ? '' : ' — already added'}.` : null);
+    const msgs = [...r.rejected, ...(r.skipped ? [`Up to ${MAX_IMAGES} screenshots per import${r.added ? '' : ' — already added'}.`] : [])];
+    setError(msgs.length ? msgs.join('\n') : null);
   }, []);
   const pick = async (source: 'library' | 'camera') => {
     setError(null);
@@ -86,6 +89,11 @@ export default function AccountScreenshotImport() {
   const blocking = [
     ...match.conflicts.filter((c) => c.severity === 'conflict').map((c) => ({ id: `m:${c.field}:${c.message}`, message: c.message })),
     ...extraction.checks.filter((c) => c.status === 'conflict').map((c) => ({ id: `c:${c.id}`, message: c.message })),
+    // Uncertain readings that would change the account must be checked one by one (or corrected).
+    ...APPLIED_KEYS.filter((k) => fields[k] && fields[k]!.source !== 'user' && fields[k]!.confidence < LOW_CONFIDENCE).map((k) => ({
+      id: `low:${k}:${fields[k]!.value}`,
+      message: `Uncertain reading — ${FIELD_LABEL[k]}: ${displayValue(k, fields[k]!.value)}. Compare it with your dashboard or correct it below.`,
+    })),
   ];
   const warnings = [...match.conflicts.filter((c) => c.severity === 'warning').map((c) => c.message), ...extraction.checks.filter((c) => c.status === 'warning').map((c) => c.message)];
   const consistent = extraction.checks.filter((c) => c.status === 'consistent');

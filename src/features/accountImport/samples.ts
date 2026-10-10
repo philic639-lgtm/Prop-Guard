@@ -30,7 +30,7 @@ export async function sampleImages(keys: SampleKey[]): Promise<(ImportImage & { 
     const s = SAMPLES.find((x) => x.key === k)!;
     const a = Asset.fromModule(s.mod);
     if (!a.localUri && !a.uri.startsWith('http') && !a.uri.startsWith('/')) await a.downloadAsync();
-    out.push({ id: imageId(), uri: a.localUri ?? a.uri, name: s.name, width: a.width ?? s.w, height: a.height ?? s.h, sample: true });
+    out.push({ id: imageId(), uri: a.localUri ?? a.uri, name: s.name, width: a.width ?? s.w, height: a.height ?? s.h, type: 'image/png', sample: true });
   }
   return out;
 }

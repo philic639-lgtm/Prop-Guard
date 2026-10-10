@@ -375,3 +375,32 @@ describe('integration', () => {
     expect(back.requiresBiasAlignment).toBe(false);
   });
 });
+
+describe('V1 audit: strategy text parsing', () => {
+  const ORB = 'I trade NQ. I mark the 9:30-9:45 opening range high and low. If price breaks above the range high and a 5 minute candle closes above it, I go long; below the low I go short. Stop on the other side of the range. Target 2R. No trades after 11:00.';
+  it('"No trades after 11:00" is an END time, never a start', () => {
+    const a = analyzeStrategyText(ORB);
+    expect(a.tradingWindow).toMatchObject({ start: null, end: '11:00', provenance: 'trader' });
+    expect(analyzeStrategyText("I trade ES from 9:45. Don't trade past 11:30.").tradingWindow).toMatchObject({ start: '09:45', end: '11:30' });
+    expect(analyzeStrategyText('I only enter after 10:00 on MES.').tradingWindow).toMatchObject({ start: '10:00', end: null });
+  });
+  it('"If X, I go long" keeps the condition with the entry', () => {
+    const a = analyzeStrategyText(ORB);
+    expect(a.entryRules.map((r) => r.text).join(' | ')).toMatch(/go long if price breaks above the range high/i);
+  });
+  it('a bare "I go long." never swallows the next sentence’s stop', () => {
+    const a = analyzeStrategyText('On ES I watch the footprint for absorption. When delta flips positive and volume confirms, I go long. Stop 2 ticks below the absorption level.');
+    expect(a.stopRules.map((r) => r.text)).toEqual(['Stop 2 ticks below the absorption level']);
+    expect(a.entryRules.length).toBeGreaterThan(0);
+  });
+  it('four different strategies produce four different classifications', () => {
+    const texts = [
+      ORB,
+      'On ES I only trade with the trend: price above the 20 EMA on the 15 minute chart. I wait for a pullback to the 20 EMA and enter long on a bullish engulfing candle. Stop below the pullback low.',
+      'Mean reversion on MES: when price stretches more than 2 standard deviations from VWAP I fade the move back toward VWAP. Stop 4 points beyond the extreme, target VWAP.',
+      'Order flow on ES: at a key level I watch the footprint for absorption. When delta flips positive and volume confirms, I go long. Stop 2 ticks below the absorption level.',
+    ];
+    const classes = texts.map((t) => analyzeStrategyText(t).classification);
+    expect(new Set(classes).size).toBe(4);
+  });
+});

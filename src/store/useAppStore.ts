@@ -299,14 +299,22 @@ export const useAppStore = create<AppState>()(
 
       updateTrade: (id, patch) => {
         let updated: Trade | undefined;
+        const before = get().trades.find((t) => t.id === id);
+        // A changed result on a closed trade moves the account balance by the difference.
+        const delta = before && before.status === 'closed' && 'pnl' in patch ? (patch.pnl ?? 0) - (before.pnl ?? 0) : 0;
         set((s) => ({
           trades: s.trades.map((t) => {
             if (t.id !== id) return t;
             updated = { ...t, ...patch };
             return updated;
           }),
+          accounts: delta && before ? s.accounts.map((a) => (a.id === before.accountId ? { ...a, balance: Math.round((a.balance + delta) * 100) / 100 } : a)) : s.accounts,
         }));
         if (updated) syncService.upsertTrade(updated);
+        if (delta && before) {
+          const account = get().accounts.find((a) => a.id === before.accountId);
+          if (account) syncService.upsertAccount(account);
+        }
       },
 
       closeTrade: (id, exitPrice, at = new Date(), extra) => {
@@ -364,8 +372,20 @@ export const useAppStore = create<AppState>()(
       },
 
       deleteTrade: (id) => {
-        set((s) => ({ trades: s.trades.filter((t) => t.id !== id), events: s.events.filter((e) => e.tradeId !== id) }));
+        const trade = get().trades.find((t) => t.id === id);
+        // Deleting a closed trade removes its result from the balance (the high-water mark is kept:
+        // a past peak can't be un-made, and keeping it is the conservative choice for trailing drawdown).
+        const pnl = trade && trade.status === 'closed' && trade.pnl != null ? trade.pnl : 0;
+        set((s) => ({
+          trades: s.trades.filter((t) => t.id !== id),
+          events: s.events.filter((e) => e.tradeId !== id),
+          accounts: pnl && trade ? s.accounts.map((a) => (a.id === trade.accountId ? { ...a, balance: Math.round((a.balance - pnl) * 100) / 100 } : a)) : s.accounts,
+        }));
         syncService.remove('trades', id);
+        if (pnl && trade) {
+          const account = get().accounts.find((a) => a.id === trade.accountId);
+          if (account) syncService.upsertAccount(account);
+        }
       },
 
       savePlan: (plan) => {

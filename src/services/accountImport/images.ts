@@ -12,6 +12,9 @@ export interface ImportImage {
   height: number;
   /** Web: the original File (lets OCR read it without re-encoding). */
   file?: Blob;
+  /** MIME type and size, when the platform reports them (validated before reading). */
+  type?: string | null;
+  bytes?: number | null;
 }
 
 export const MAX_IMAGES = 5;
@@ -44,6 +47,8 @@ export async function pickImages(source: 'library' | 'camera', limit = MAX_IMAGE
         name: a.fileName ?? `Screenshot ${i + 1}`,
         width: a.width,
         height: a.height,
+        type: a.mimeType ?? a.file?.type ?? null,
+        bytes: a.fileSize ?? a.file?.size ?? null,
         ...(a.file ? { file: a.file } : {}),
       })),
     };

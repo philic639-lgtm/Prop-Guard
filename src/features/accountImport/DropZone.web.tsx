@@ -8,7 +8,8 @@ export const DROP_SUPPORTED = true;
 
 async function toImages(files: File[]): Promise<ImportImage[]> {
   const out: ImportImage[] = [];
-  for (const f of files.filter((x) => x.type.startsWith('image/'))) {
+  // Every dropped/pasted file is passed on; unsupported ones are rejected with a reason by the session.
+  for (const f of files) {
     const uri = URL.createObjectURL(f);
     const dims = await new Promise<{ w: number; h: number }>((resolve) => {
       const img = new Image();
@@ -16,7 +17,7 @@ async function toImages(files: File[]): Promise<ImportImage[]> {
       img.onerror = () => resolve({ w: 0, h: 0 });
       img.src = uri;
     });
-    out.push({ id: imageId(), uri, name: f.name || 'Pasted screenshot', width: dims.w, height: dims.h, file: f });
+    out.push({ id: imageId(), uri, name: f.name || 'Pasted screenshot', width: dims.w, height: dims.h, file: f, type: f.type || null, bytes: f.size });
   }
   return out;
 }
@@ -27,7 +28,7 @@ export function DropZone({ children, onFiles }: { children: ReactNode; onFiles: 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const files = Array.from(e.clipboardData?.files ?? []);
-      if (files.some((f) => f.type.startsWith('image/'))) {
+      if (files.length) {
         e.preventDefault();
         void toImages(files).then(onFiles);
       }

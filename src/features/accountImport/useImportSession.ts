@@ -5,6 +5,7 @@ import { extractPage, visionToPage, type FieldKey, type PageExtraction } from '@
 import { aiService } from '@/services/ai';
 import { MAX_IMAGES, releaseImages, type ImportImage } from '@/services/accountImport/images';
 import { disposeOcr, ocrAvailable, recognize, redactImage } from '@/services/accountImport/ocr';
+import { rejectReason } from '@/services/accountImport/validate';
 
 /**
  * One screenshot-import session (in memory only — cleared when the import
@@ -27,7 +28,7 @@ interface State {
   reading: boolean;
   /** Trader edits: a value, or null = "not present / clear it". */
   edits: Partial<Record<FieldKey, number | string | null>>;
-  add: (images: (ImportImage & { sample?: boolean })[]) => { added: number; skipped: number };
+  add: (images: (ImportImage & { sample?: boolean })[]) => { added: number; skipped: number; rejected: string[] };
   remove: (id: string) => void;
   readAll: (db: FirmRulesDatabase) => Promise<void>;
   readWithVision: (id: string, db: FirmRulesDatabase) => Promise<void>;
@@ -50,11 +51,17 @@ export const useImportSession = create<State>((set, get) => ({
   add: (incoming) => {
     const cur = get().images;
     const room = Math.max(0, MAX_IMAGES - cur.length);
-    const fresh = incoming.filter((i) => !cur.some((c) => c.image.name === i.name && c.image.width === i.width && c.image.height === i.height));
+    const rejected: string[] = [];
+    const valid = incoming.filter((i) => {
+      const why = rejectReason({ name: i.name, type: i.type, bytes: i.bytes, width: i.width, height: i.height });
+      if (why) rejected.push(why);
+      return !why;
+    });
+    const fresh = valid.filter((i) => !cur.some((c) => c.image.name === i.name && c.image.width === i.width && c.image.height === i.height));
     const take = fresh.slice(0, room);
     releaseImages(incoming.filter((i) => !take.includes(i)));
     set({ images: [...cur, ...take.map((image) => ({ image, status: 'queued' as const, progress: 0, page: null, error: null, reader: null }))] });
-    return { added: take.length, skipped: incoming.length - take.length };
+    return { added: take.length, skipped: valid.length - take.length, rejected };
   },
 
   remove: (id) => {
