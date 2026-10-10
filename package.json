@@ -71,7 +71,8 @@
     "firm-rules:publish": "tsx --env-file-if-exists=.env.server scripts/firm-rules.ts publish",
     "firm-rules:sources": "tsx scripts/firm-rules.ts sources",
     "shared:sync": "tsx scripts/sync-setup-check-shared.ts",
-    "ocr:assets": "node scripts/ocr-assets.mjs"
+    "ocr:assets": "node scripts/ocr-assets.mjs",
+    "trade-shot:eval": "tsx scripts/trade-screenshot-eval.ts"
   },
   "private": true
 }

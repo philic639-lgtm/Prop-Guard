@@ -21,13 +21,13 @@ import {
   ToggleRow,
 } from '@/components/ui';
 import { colors, spacing } from '@/constants/theme';
-import { ChartImport } from '@/features/analyze/ChartImport';
+import { TradeScreenshotReview } from '@/features/journal/TradeScreenshotReview';
 import { useActiveAccount } from '@/hooks/useAppData';
-import { instrumentOptions, pointsToDollars, realizedPnl, realizedR } from '@/lib/engines';
+import { calculateTradeRisk, instrumentOptions, pointsToDollars, realizedPnl, realizedR } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { Direction, Emotion, InstrumentSymbol, Trade } from '@/types/domain';
 import { addDays } from '@/utils/dates';
-import { money, parseNum, points } from '@/utils/format';
+import { money, parseNum, points, rr } from '@/utils/format';
 import { uuid } from '@/utils/id';
 
 const EMOTIONS: { value: Emotion; label: string }[] = [
@@ -54,6 +54,8 @@ export default function JournalNew() {
   const [entry, setEntry] = useState('');
   const [exit, setExit] = useState('');
   const [stop, setStop] = useState('');
+  const [target, setTarget] = useState('');
+  const [shot, setShot] = useState<{ shownPnl: number | null; kind: string } | null>(null);
   const [contracts, setContracts] = useState(1);
   const [strategyId, setStrategyId] = useState<string>(activeStrategyId ?? 'none');
   const [emotion, setEmotion] = useState<Emotion>('calm');
@@ -69,8 +71,12 @@ export default function JournalNew() {
   const st = parseNum(stop);
   const pnl = e != null && x != null ? realizedPnl(instrument, direction, e, x, contracts) : null;
   const pts = e != null && x != null ? (direction === 'long' ? x - e : e - x) : null;
+  const tg = parseNum(target);
   const stopValid = st == null || (direction === 'long' ? st < (e ?? Infinity) : st > (e ?? -Infinity));
-  const canSave = !!account && e != null && x != null && e > 0 && x > 0 && followed != null && stopValid && confirmed;
+  const targetValid = tg == null || (direction === 'long' ? tg > (e ?? -Infinity) : tg < (e ?? Infinity));
+  // Planned risk / reward from the instrument catalog (deterministic — never from the AI).
+  const plan = e != null && st != null && stopValid && targetValid ? calculateTradeRisk({ instrument, direction, entry: e, stop: st, target: tg, contracts }) : null;
+  const canSave = !!account && e != null && x != null && e > 0 && x > 0 && followed != null && stopValid && targetValid && confirmed;
 
   const save = () => {
     if (!account || e == null || x == null || pnl == null) return;
@@ -88,12 +94,12 @@ export default function JournalNew() {
       entryPrice: e,
       stopPrice: st ?? e,
       originalStopPrice: st ?? e,
-      targetPrice: null,
+      targetPrice: tg,
       exitPrice: x,
       contracts,
       riskDollars,
-      rewardDollars: null,
-      rMultiple: null,
+      rewardDollars: plan?.valid ? plan.rewardDollars : null,
+      rMultiple: plan?.valid ? plan.rr : null,
       realizedR: riskDollars > 0 ? realizedR(pnl, riskDollars) : null,
       pnl,
       points: pts != null ? Math.round(pts * 100) / 100 : null,
@@ -183,16 +189,20 @@ export default function JournalNew() {
               </View>
             ))}
           </Card>
-          <ChartImport
-            cta="Review extracted trade"
+          <TradeScreenshotReview
+            onManual={() => setMode('manual')}
             onUse={(v) => {
               setInstrument(v.instrument);
               setDirection(v.direction);
               setEntry(v.entry);
+              setExit(v.exit);
               setStop(v.stop);
-              setExit(v.target);
+              setTarget(v.target);
+              if (v.contracts) setContracts(v.contracts);
+              setShot({ shownPnl: v.shownPnl, kind: v.kind });
               setFromShot(v.imageUri);
-              setConfirmed(false);
+              // Confirmed on the review screen; the trader can still edit here before saving.
+              setConfirmed(true);
               setMode('manual');
             }}
           />
@@ -203,7 +213,11 @@ export default function JournalNew() {
             <Card tone="accent">
               <StatusBadge label="Extracted from screenshot" tone="accent" icon="scan" size="sm" />
               <AppText variant="caption" style={{ marginTop: spacing.sm }}>
-                Exit was read from the chart&apos;s target/exit level. Edit anything that doesn&apos;t match your fill.
+                {shot?.kind === 'open_position' ? 'The position was still open on the screenshot — enter your exit fill. ' : ''}
+                Values you confirmed from the screenshot. Edit anything that doesn&apos;t match your fills.
+                {shot?.shownPnl != null && pnl != null && Math.abs(shot.shownPnl - pnl) >= 0.01
+                  ? ` The screenshot showed ${money(shot.shownPnl, { sign: true, cents: true })} realized; prices × contracts give ${money(pnl, { sign: true, cents: true })} (difference: commissions/fees or a partial fill).`
+                  : ''}
               </AppText>
               <ToggleRow label="These values match my fill" value={confirmed} onChange={setConfirmed} />
             </Card>
@@ -229,6 +243,7 @@ export default function JournalNew() {
             <FieldRow label="Entry" value={entry} onChangeText={setEntry} placeholder="Price" />
             <FieldRow label="Exit" value={exit} onChangeText={setExit} placeholder="Price" />
             <FieldRow label="Stop (optional)" value={stop} onChangeText={setStop} placeholder="For R multiple" error={stopValid ? null : 'Stop is on the wrong side of entry'} />
+            <FieldRow label="Target (optional)" value={target} onChangeText={setTarget} placeholder="Planned take-profit" error={targetValid ? null : 'Target is on the wrong side of entry'} />
             <FieldRow label="Contracts" control={<Stepper label="Contracts" value={contracts} onChange={setContracts} />} />
             <View style={styles.pnlRow}>
               <AppText variant="body">P&L</AppText>
@@ -236,6 +251,12 @@ export default function JournalNew() {
                 {pnl == null ? '—' : `${money(pnl, { sign: true })} · ${points(pts, true)}`}
               </AppText>
             </View>
+            {plan?.valid ? (
+              <AppText variant="caption" tone="secondary">
+                Planned risk {money(plan.riskDollars, { cents: true })}
+                {plan.rr != null ? ` · reward ${money(plan.rewardDollars, { cents: true })} · R:R ${rr(plan.rr)}` : ''}
+              </AppText>
+            ) : null}
           </Card>
 
           <Card>
@@ -276,7 +297,11 @@ export default function JournalNew() {
             />
           </Card>
           <Input label="Notes (optional)" value={notes} onChangeText={setNotes} multiline placeholder="Clean breakout after 9:50. Good execution." />
-          {followed == null ? (
+          {!account ? (
+            <AppText variant="caption" tone="tertiary" align="center">
+              Add a trading account first — every journal trade belongs to an account.
+            </AppText>
+          ) : followed == null ? (
             <AppText variant="caption" tone="tertiary" align="center">
               Answer “Followed plan?” to save — it feeds your Discipline Score.
             </AppText>

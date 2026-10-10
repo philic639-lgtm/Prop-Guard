@@ -129,6 +129,24 @@ npx supabase secrets set OPENAI_API_KEY=sk-...           # server-side only
 # optional: OPENAI_VISION_MODEL (default gpt-6-sol), SETUP_CHECK_RATE_PER_HOUR (30), SETUP_CHECK_TIMEOUT_MS (30000)
 ```
 
+### Journal screenshot reading (`trade-screenshot`)
+
+**Journal → Upload Screenshot** sends the image to the authenticated `trade-screenshot` Edge Function, which calls the OpenAI Responses API with a strict JSON schema (`src/lib/engines/tradeScreenshot`, synced to `_shared`). The model only reads what is visible: platform, instrument, direction, entry, exit (completed trades only), stop, target, contracts, realized P&L, balance / drawdown and marked chart levels, each with confidence, evidence and source; anything not clearly visible is `null`. A deterministic layer then maps the symbol to the instrument catalog, drops low-confidence values, flags chart annotations / text notes, off-tick prices and stops on the wrong side, cross-checks the P&L, and masks account numbers / emails. The trader reviews every value, ticks "These values match my screenshot", and the journal form is filled; risk, reward and R:R come from `calculateTradeRisk` (instrument catalog), never from the model. Pending orders, chart-only and dashboard screenshots are labelled and never become trades. Any failure (not configured, signed out, network, rate limit, timeout, unreadable image) shows a message and **Enter manually** still works.
+
+Does not depend on `EXPO_PUBLIC_AI_MODE` — it needs a configured Supabase project, a signed-in user and the deployed function.
+
+```bash
+npm run shared:sync                                    # after engine edits
+npx supabase db push                                   # 20261021000000_trade_screenshot.sql (rate-log kind)
+npx supabase functions deploy trade-screenshot
+npx supabase secrets set OPENAI_API_KEY=sk-... OPENAI_VISION_MODEL=<vision-capable model id>   # required, server-side only
+# optional: TRADE_SCREENSHOT_RATE_PER_MINUTE (6), _HOUR (30), _DAY (100), TRADE_SCREENSHOT_TIMEOUT_MS (30000), OPENAI_BASE_URL
+# accuracy check against the fixtures (TEST account only; real API calls):
+SUPABASE_URL=... SUPABASE_ANON_KEY=... TEST_USER_EMAIL=... TEST_USER_PASSWORD=... npm run trade-shot:eval
+```
+
+Without `OPENAI_API_KEY` **and** `OPENAI_VISION_MODEL` the function answers `not_configured` and the app falls back to manual entry. Images are sent to OpenAI with `store: false`, are never written to storage or logs, and each call is logged only as user / kind / model / status in `setup_validation_requests` (used for the per-user limits).
+
 Safety design:
 - **Provider-independent.** Screens call `aiService` (`src/services/ai`), which implements `AIProvider`: `analyzeTradeSetup`, `analyzeScreenshot`, `generateSessionReview`, `recommendStrategies` and `generateDailyCoach`.
 - **The grade is never AI-generated.** `strategyEngine.evaluateSetup` decides A+ / Valid / Caution / Rule Violation / No Trade deterministically. The model only explains the result.

@@ -25,7 +25,7 @@ import {
   YesNo,
 } from '@/components/ui';
 import { colors, spacing } from '@/constants/theme';
-import { ChartImport } from '@/features/analyze/ChartImport';
+import { TradeScreenshotReview } from '@/features/journal/TradeScreenshotReview';
 import { useStrategy } from '@/hooks/useAppData';
 import { completePendingTrade, OUTCOME_LABEL, tradeOutcome, type TradeResultInput } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
@@ -207,15 +207,17 @@ function CompleteForm({ pending: p }: { pending: PendingTrade }) {
       />
 
       {mode === 'screenshot' ? (
-        <ChartImport
-          cta="Use exit from screenshot"
+        <TradeScreenshotReview
+          onManual={() => setMode('result')}
           onUse={(v) => {
             const mismatches = [v.instrument !== p.instrument ? `instrument ${v.instrument}` : null, v.direction !== p.direction ? v.direction : null].filter(Boolean);
             setMismatch(mismatches.length ? `The screenshot shows ${mismatches.join(' / ')}, but this plan is ${p.instrument} ${p.direction}. Check it's the right trade.` : null);
             if (v.entry) setEntryFill(v.entry);
-            if (v.target) {
+            if (v.contracts) setContracts(v.contracts);
+            // Only a completed trade's actual exit fill — never a target or stop line.
+            if (v.exit) {
               setKind('exit');
-              setExit(v.target);
+              setExit(v.exit);
             }
             setShot(v.imageUri);
             setConfirmed(false);
@@ -228,7 +230,7 @@ function CompleteForm({ pending: p }: { pending: PendingTrade }) {
             <Card tone="accent">
               <StatusBadge label="Read from screenshot" tone="accent" icon="scan" size="sm" />
               <AppText variant="caption" style={{ marginTop: spacing.sm }}>
-                The exit was read from the chart&apos;s exit/target level. Edit anything that doesn&apos;t match your fill.
+                Values were read from the screenshot. If the trade was still open, there is no exit yet — enter it once you close. Edit anything that doesn&apos;t match your fill.
               </AppText>
               {mismatch ? (
                 <AppText variant="caption" tone="warning" style={{ marginTop: spacing.xs }}>
