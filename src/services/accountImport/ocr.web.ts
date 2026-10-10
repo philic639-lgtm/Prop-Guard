@@ -19,6 +19,33 @@ interface TData { confidence: number; blocks: { paragraphs: { lines: { text: str
 type CreateWorker = (lang: string, oem: number, options: object) => Promise<TWorker>;
 let workerP: Promise<TWorker> | null = null;
 let progressCb: ((p: number) => void) | null = null;
+/** Last sign of life from the OCR worker (download / recognition progress). */
+let lastActivity = 0;
+
+/** Failure reasons the import screen can explain (and retry). */
+export type OcrErrorCode = 'load_failed' | 'load_timeout' | 'read_timeout' | 'image_failed';
+export class OcrError extends Error {
+  constructor(
+    readonly code: OcrErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'OcrError';
+  }
+}
+const MESSAGES: Record<OcrErrorCode, string> = {
+  load_failed: 'The text reader could not be downloaded. Check your connection and try again.',
+  load_timeout: 'The text reader took too long to download (about 7 MB, first use only). Try again, ideally on Wi-Fi.',
+  read_timeout: 'Reading this screenshot took too long. Try again, or crop it to the account panel.',
+  image_failed: 'This file could not be opened as an image.',
+};
+const fail = (code: OcrErrorCode) => new OcrError(code, MESSAGES[code]);
+
+/** Download + start-up (~7 MB on first use; the download itself reports no progress). */
+const LOAD_MS = 90_000;
+/** Recognition of one prepared image; it reports progress, so a silent worker is stuck. */
+const READ_MS = 90_000;
+const STALL_MS = 30_000;
 
 export function ocrAvailable(): boolean {
   return typeof document !== 'undefined' && typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
@@ -40,23 +67,69 @@ function assetOptions() {
   return out;
 }
 
+/** Diagnostics in the browser console: stage names, timings and counts only — never screenshot text or values. */
+export function ocrLog(event: string, detail: Record<string, string | number | boolean> = {}) {
+  console.info(`[account-import] ${event}`, JSON.stringify(detail));
+}
+
+/**
+ * Reject when `p` does not settle in `totalMs`, or when the worker shows no
+ * activity for `stallMs`. Never leaves the caller waiting forever.
+ */
+function guard<T>(p: Promise<T>, totalMs: number, stallMs: number, code: OcrErrorCode): Promise<T> {
+  lastActivity = Date.now();
+  const started = Date.now();
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const watchdog = new Promise<never>((_, reject) => {
+    timer = setInterval(() => {
+      const now = Date.now();
+      if (now - started > totalMs || now - lastActivity > stallMs) reject(fail(code));
+    }, 1000);
+  });
+  return Promise.race([p, watchdog]).finally(() => clearInterval(timer));
+}
+
+/** Drop a broken or stuck worker so the next attempt starts clean. */
+function dropWorker() {
+  const w = workerP;
+  workerP = null;
+  if (w) void w.then((x) => x.terminate()).catch(() => undefined);
+}
+
 async function getWorker(): Promise<TWorker> {
   if (!workerP) {
-    workerP = (async () => {
+    const t0 = Date.now();
+    ocrLog('engine: loading');
+    const T = Tesseract as unknown as { createWorker?: CreateWorker; default?: { createWorker: CreateWorker } };
+    const createWorker = (T.createWorker ?? T.default!.createWorker) as CreateWorker;
+    let created: Promise<TWorker>;
+    try {
       // The JS wrapper is small (~18 KB); the WASM engine and model load here, on first use.
-      const T = Tesseract as unknown as { createWorker?: CreateWorker; default?: { createWorker: CreateWorker } };
-      const createWorker = (T.createWorker ?? T.default!.createWorker) as CreateWorker;
-      return createWorker('eng', 1, {
+      created = createWorker('eng', 1, {
         ...assetOptions(),
         logger: (m: { status: string; progress: number }) => {
+          lastActivity = Date.now();
           if (m.status === 'recognizing text') progressCb?.(0.3 + m.progress * 0.7);
           else if (m.status.startsWith('loading')) progressCb?.(Math.min(0.3, m.progress * 0.3));
         },
+        // Worker-level errors after start-up: surface them instead of hanging.
+        errorHandler: () => dropWorker(),
       });
-    })();
-    workerP.catch(() => {
-      workerP = null;
+    } catch {
+      throw fail('load_failed'); // e.g. workers blocked by the page's security policy
+    }
+    const p = guard(created, LOAD_MS, LOAD_MS, 'load_timeout').catch((e) => {
+      void created.then((w) => w.terminate()).catch(() => undefined);
+      throw e instanceof OcrError ? e : fail('load_failed');
     });
+    workerP = p;
+    p.then(
+      () => ocrLog('engine: ready', { ms: Date.now() - t0 }),
+      (e: OcrError) => {
+        ocrLog('engine: failed', { code: e.code, ms: Date.now() - t0 });
+        if (workerP === p) workerP = null;
+      },
+    );
   }
   return workerP;
 }
@@ -65,19 +138,34 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('This file could not be opened as an image.'));
+    img.onerror = () => reject(fail('image_failed'));
     img.src = src;
   });
 }
 
+/** Most pixels we hand to OCR (memory on phones, time on slow devices). */
+const MAX_PIXELS = 10_000_000;
+
 /**
- * Prepare for OCR: upscale small screenshots, grayscale, invert dark themes
+ * Upscale factor. Desktop screenshots at normal resolution have ~11–13 px
+ * labels, too small for Tesseract — double them. Retina / 4K captures and
+ * phone screenshots (already 2–3× pixels) stay at native size.
+ */
+export function ocrScale(w: number, h: number): number {
+  const portrait = h > w * 1.3;
+  let s = w >= 2400 || (portrait && w >= 900) ? 1 : w <= 1000 ? 2.5 : 2;
+  s = Math.min(s, Math.sqrt(MAX_PIXELS / Math.max(1, w * h)));
+  return Math.max(0.5, Math.round(s * 100) / 100);
+}
+
+/**
+ * Prepare for OCR: rescale (see `ocrScale`), grayscale, invert dark themes
  * (dark dashboards read better as dark-on-light) and stretch contrast.
  */
-function preprocess(img: HTMLImageElement): { canvas: HTMLCanvasElement; scale: number } {
+function preprocess(img: HTMLImageElement): { canvas: HTMLCanvasElement; scale: number; dark: boolean } {
   const w0 = img.naturalWidth || img.width;
   const h0 = img.naturalHeight || img.height;
-  const scale = w0 < 1400 ? Math.min(2.5, 2000 / Math.max(1, w0)) : Math.min(1, 3000 / w0);
+  const scale = ocrScale(w0, h0);
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(w0 * scale);
   canvas.height = Math.round(h0 * scale);
@@ -91,7 +179,8 @@ function preprocess(img: HTMLImageElement): { canvas: HTMLCanvasElement; scale: 
   let hi = 0;
   const gray = new Uint8ClampedArray(px.length / 4);
   for (let i = 0, j = 0; i < px.length; i += 4, j++) {
-    const g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    // Max channel keeps coloured text (green / red P&L) as bright as white text on dark themes.
+    const g = Math.max(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2], 0.85 * Math.max(px[i], px[i + 1], px[i + 2]));
     gray[j] = g;
     sum += g;
   }
@@ -108,33 +197,48 @@ function preprocess(img: HTMLImageElement): { canvas: HTMLCanvasElement; scale: 
     px[i] = px[i + 1] = px[i + 2] = v;
   }
   ctx.putImageData(data, 0, 0);
-  return { canvas, scale };
+  return { canvas, scale, dark };
 }
 
 const unscale = (b: OcrBox, s: number): OcrBox => ({ x0: Math.round(b.x0 / s), y0: Math.round(b.y0 / s), x1: Math.round(b.x1 / s), y1: Math.round(b.y1 / s) });
 
 export async function recognize(image: ImportImage, onProgress?: (p: number) => void): Promise<OcrPage> {
+  const t0 = Date.now();
   progressCb = onProgress ?? null;
-  const img = await loadImage(image.uri);
-  const { canvas, scale } = preprocess(img);
-  const worker = await getWorker();
-  const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Reading this screenshot took too long.')), 60_000));
-  const { data } = await Promise.race([worker.recognize(canvas, {}, { blocks: true, text: false }), timeout]);
-  progressCb = null;
-  const lines: OcrLine[] = [];
-  for (const b of data.blocks ?? [])
-    for (const p of b.paragraphs)
-      for (const l of p.lines) {
-        const words = l.words.filter((w) => w.text.trim()).map((w) => ({ text: w.text.trim(), confidence: Math.round(w.confidence), bbox: unscale(w.bbox, scale) }));
-        if (words.length) lines.push({ text: l.text.trim(), confidence: Math.round(l.confidence), bbox: unscale(l.bbox, scale), words });
-      }
-  return { width: img.naturalWidth, height: img.naturalHeight, confidence: Math.round(data.confidence), lines };
+  try {
+    const img = await loadImage(image.uri);
+    const { canvas, scale, dark } = preprocess(img);
+    ocrLog('image: prepared', { width: img.naturalWidth, height: img.naturalHeight, scale, dark });
+    const worker = await getWorker();
+    const t1 = Date.now();
+    let data: TData;
+    try {
+      ({ data } = await guard(worker.recognize(canvas, {}, { blocks: true, text: false }), READ_MS, STALL_MS, 'read_timeout'));
+    } catch (e) {
+      // A stuck or crashed worker would block every later read: start fresh next time.
+      dropWorker();
+      throw e instanceof OcrError ? e : fail('read_timeout');
+    }
+    const lines: OcrLine[] = [];
+    for (const b of data.blocks ?? [])
+      for (const p of b.paragraphs)
+        for (const l of p.lines) {
+          const words = l.words.filter((w) => w.text.trim()).map((w) => ({ text: w.text.trim(), confidence: Math.round(w.confidence), bbox: unscale(w.bbox, scale) }));
+          if (words.length) lines.push({ text: l.text.trim(), confidence: Math.round(l.confidence), bbox: unscale(l.bbox, scale), words });
+        }
+    const words = lines.reduce((n, l) => n + l.words.length, 0);
+    ocrLog('image: read', { ms: Date.now() - t1, totalMs: Date.now() - t0, lines: lines.length, words, confidence: Math.round(data.confidence) });
+    return { width: img.naturalWidth, height: img.naturalHeight, confidence: Math.round(data.confidence), lines };
+  } catch (e) {
+    ocrLog('image: failed', { code: e instanceof OcrError ? e.code : 'unknown', ms: Date.now() - t0 });
+    throw e;
+  } finally {
+    progressCb = null;
+  }
 }
 
 export async function disposeOcr(): Promise<void> {
-  const w = workerP;
-  workerP = null;
-  if (w) await (await w).terminate().catch(() => undefined);
+  dropWorker();
 }
 
 /** Black out regions on a copy of the image (account numbers, emails) before preview or sending. */

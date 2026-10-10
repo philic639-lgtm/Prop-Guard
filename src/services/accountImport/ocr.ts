@@ -10,6 +10,22 @@ import type { ImportImage } from './images';
  */
 export const OCR_ENGINE = { id: 'none' as const, label: 'Not available on this device', free: true };
 
+export type OcrErrorCode = 'load_failed' | 'load_timeout' | 'read_timeout' | 'image_failed';
+export class OcrError extends Error {
+  constructor(
+    readonly code: OcrErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'OcrError';
+  }
+}
+
+/** Diagnostics in the browser console: stage names, timings and counts only — never screenshot text or values. */
+export function ocrLog(event: string, detail: Record<string, string | number | boolean> = {}) {
+  console.info(`[account-import] ${event}`, JSON.stringify(detail));
+}
+
 export function ocrAvailable(): boolean {
   return false;
 }

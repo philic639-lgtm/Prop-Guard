@@ -137,6 +137,8 @@ export interface PageExtraction {
   quality: 'good' | 'fair' | 'poor';
   ocrConfidence: number;
   wordCount: number;
+  /** Account labels recognised on the page (diagnostics: 0 with many words = layout not understood). */
+  labelsFound?: number;
 }
 
 export interface Extraction {

@@ -41,7 +41,7 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   { target: 'program', phrases: ['plan', 'program', 'account type', 'product', 'plan name', 'account plan'], weight: 0.95 },
   { target: 'stage', phrases: ['stage', 'phase', 'account stage'], weight: 0.95 },
   { target: 'status', phrases: ['status', 'account status'], weight: 0.95 },
-  { target: 'startDate', phrases: ['purchase date', 'start date', 'date purchased', 'activation date', 'created', 'started', 'opened'], weight: 0.95 },
+  { target: 'startDate', phrases: ['purchase date', 'start date', 'date purchased', 'purchased on', 'purchased', 'activation date', 'activated', 'created', 'started', 'opened'], weight: 0.95 },
   { target: 'statementDate', phrases: ['last updated', 'updated', 'as of', 'statement date'], weight: 0.95 },
   // Look-alikes: not balance / P&L / target / drawdown values.
   {
@@ -71,7 +71,8 @@ const DATES = new Set<FieldKey>(['startDate', 'statementDate']);
 /** Lower-case label form of an OCR word ("P/L" / "PnL" → "p&l", trailing ":" removed). */
 export function normWord(t: string): string {
   const w = t.toLowerCase().replace(/[:;|]+$/g, '').replace(/^[|]+/, '');
-  if (w === 'pnl' || w === 'p/l' || w === 'p&amp;l' || w === 'p+l') return 'p&l';
+  // OCR often reads the "&" in P&L as "A", "8", "%", "$" or drops it.
+  if (w === 'pnl' || w === 'p/l' || w === 'p&amp;l' || w === 'p+l' || /^p[&a8%$]?l$/.test(w)) return 'p&l';
   return w.replace(/’/g, "'");
 }
 
@@ -183,19 +184,67 @@ interface LabelHit {
   bbox: OcrBox;
 }
 
+/** One edit (insert / delete / substitute) apart — "Profi" ~ "profit", "Daly" ~ "daily". */
+export function oneEditApart(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+      continue;
+    }
+    if (++edits > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else {
+      i++;
+      j++;
+    }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
+/**
+ * A label word read with one OCR slip still counts, but only inside a
+ * multi-word label where another word matched exactly (never a lone word:
+ * "trader" must not become "trades"), and only for words of 4+ letters.
+ */
+const fuzzyWord = (token: string, part: string) => part.length >= 4 && /^[a-z']+$/.test(token) && token[0] === part[0] && oneEditApart(token, part);
+
+/** Column headers of trade / order tables: their "P&L" or "Balance" columns are not account values. */
+const TABLE_WORDS = new Set(['date', 'time', 'symbol', 'instrument', 'contract', 'side', 'qty', 'quantity', 'entry', 'exit', 'price', 'fill', 'b/s', 'buy/sell', 'direction', 'duration', 'commission', 'opened', 'closed']);
+export function isTableHeader(line: OcrLine): boolean {
+  return line.words.filter((w) => TABLE_WORDS.has(normWord(w.text))).length >= 3;
+}
+/** A row of such a table: a date or a futures contract symbol (MNQZ6, ESZ26). */
+const ROW_TOKEN = /^(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}|M?[A-Z]{1,3}[FGHJKMNQUVXZ]\d{1,2})$/;
+const isTableRow = (line: OcrLine) => line.words.some((w) => ROW_TOKEN.test(w.text.replace(/[,;]+$/, '')));
+
 function findLabels(line: OcrLine, li: number): LabelHit[] {
+  if (isTableHeader(line)) return [];
   const tokens = line.words.map((w) => normWord(w.text));
   const used = new Array(tokens.length).fill(false);
   const hits: LabelHit[] = [];
+  // Longest phrase first, slips allowed inside it: "Daly Loss Limit" must not be read as "Loss Limit".
   for (const l of COMPILED) {
     const n = l.words;
     const parts = l.phrase.split(' ');
     for (let i = 0; i + n <= tokens.length; i++) {
       let ok = true;
-      for (let k = 0; k < n; k++) if (used[i + k] || tokens[i + k] !== parts[k]) ok = false;
-      if (!ok) continue;
+      let exact = 0;
+      for (let k = 0; k < n && ok; k++) {
+        if (used[i + k]) ok = false;
+        else if (tokens[i + k] === parts[k]) exact++;
+        else if (n < 2 || !fuzzyWord(tokens[i + k], parts[k])) ok = false;
+      }
+      if (!ok || exact === 0) continue;
       for (let k = 0; k < n; k++) used[i + k] = true;
-      hits.push({ target: l.target, phrase: l.phrase, weight: l.weight, line: li, w0: i, w1: i + n, bbox: unionBox(line.words.slice(i, i + n)) });
+      // A slip in the label makes the reading "check this", never high confidence.
+      hits.push({ target: l.target, phrase: l.phrase, weight: exact < n ? l.weight * 0.88 : l.weight, line: li, w0: i, w1: i + n, bbox: unionBox(line.words.slice(i, i + n)) });
     }
   }
   return hits.sort((a, b) => a.w0 - b.w0);
@@ -208,7 +257,11 @@ export interface ExtractOptions {
   firms?: { id: string; name: string; aliases: string[] }[];
 }
 
+/** Sidebar / menu words OCR merges into neighbouring lines. */
+const NAV_WORDS = new Set(['dashboard', 'accounts', 'payouts', 'billing', 'settings', 'home', 'overview', 'help', 'center', 'support', 'menu', 'profile', 'logout']);
 const CONNECTORS = new Set(['', '$', 'usd', ':', '-', '—', '=', '|']);
+/** Separators and "ⓘ" info icons, which OCR reads as "(©", "@", "(0", "®"… */
+const isFiller = (t: string) => CONNECTORS.has(normWord(t)) || /^[(\[{]?[©@®ⓘ*][)\]}]?$/.test(t) || /^[(\[{][0oOi]?[)\]}]?$/.test(t);
 
 export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions = {}): PageExtraction {
   const fields: FieldMap = {};
@@ -244,7 +297,7 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     const hits = labels[li];
     hits.forEach((h, hi) => {
       const end = hi + 1 < hits.length ? hits[hi + 1].w0 : line.words.length;
-      let words = line.words.slice(h.w1, end).filter((w) => !CONNECTORS.has(normWord(w.text)));
+      let words = line.words.slice(h.w1, end).filter((w) => !isFiller(w.text));
       // "$ 51,240.50" → join a lone "$".
       const startIdx = line.words.findIndex((w) => w === words[0]);
       if (h.target === 'sensitive:account_id') {
@@ -297,7 +350,7 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
   });
 
   // Pass 2 — card / grid layouts: value in the same column on a nearby label-free line.
-  const valueLines = page.lines.map((_, i) => labels[i].length === 0);
+  const valueLines = page.lines.map((l, i) => labels[i].length === 0 && !isTableHeader(l) && !isTableRow(l));
   for (const h of pending) {
     if (!MONEY.has(h.target as FieldKey) && h.target !== 'ignore') continue;
     const key = h.target as MoneyField | 'ignore';
@@ -358,20 +411,32 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     });
   });
   // Title line: holds a plan size ("50K") and/or a stage word, and no money value.
+  // Several lines can (breadcrumbs, menus): take the most title-like one.
+  let title: { line: OcrLine; sizeWord: OcrWord | undefined; stage: ReturnType<typeof stageFrom>; score: number } | null = null;
   for (const [li, line] of page.lines.entries()) {
-    if (labels[li].some((h) => MONEY.has(h.target as FieldKey))) continue;
+    if (labels[li].some((h) => MONEY.has(h.target as FieldKey)) || isTableRow(line) || isTableHeader(line)) continue;
     const sizeWord = line.words.find((w) => /^\$?\d{2,3}(\.\d)?[kK]$/.test(w.text.replace(/[,;:]+$/, '')));
     const stage = stageFrom(line.text);
     if (!sizeWord && !stage) continue;
     if (line.words.some((w) => parseMoney(w.text) != null && !/[kK]$/.test(w.text))) continue;
+    const crumbs = /[>›»]|@/.test(line.text) ? 1.5 : 0;
+    const score = (sizeWord ? 1 : 0) + (stage ? 1 : 0) - crumbs - Math.max(0, line.words.length - 7) * 0.2;
+    if (!title || score > title.score) title = { line, sizeWord, stage, score };
+  }
+  if (title) {
+    const { line, sizeWord, stage } = title;
     const kept = line.words.filter((w) => !looksLikeAccountId(w.text) && !/^(account|id|#|\||status:?|active|acct)$/i.test(w.text.replace(/[:]+$/, '')));
     const cut = kept.findIndex((w, i) => i > 0 && /^(account|status)/i.test(w.text));
-    const title = (cut > 0 ? kept.slice(0, cut) : kept).map((w) => w.text).join(' ').replace(/\s*\|\s*$/, '').trim();
-    const conf = kept.length ? Math.min(...kept.map((w) => w.confidence)) / 100 : 0.5;
+    let words = cut > 0 ? kept.slice(0, cut) : kept;
+    // Menu words merged in from a sidebar, and stray OCR specks ("a", "|") at the start.
+    while (words.length > 1 && (NAV_WORDS.has(normWord(words[0].text)) || !/[a-z0-9]{2}/i.test(words[0].text))) words = words.slice(1);
+    const name = words.map((w) => w.text).join(' ').replace(/\s*\|\s*$/, '').trim();
+    const conf = words.length ? Math.min(...words.map((w) => w.confidence)) / 100 : 0.5;
     if (sizeWord) put('accountSize', parseMoney(sizeWord.text.replace(/[,;:]+$/, ''), true)!, (sizeWord.confidence / 100) * 0.9, `“${redactText(line.text)}”`);
     if (stage) put('stage', stage, conf * 0.8, `“${redactText(line.text)}”`);
-    if (title && /[a-z]{3}/i.test(title)) put('program', title, conf * 0.72, `“${redactText(line.text)}”`);
-    break;
+    // A bare stage word ("Funded") is the stage, not a program name.
+    const named = words.some((w) => /[a-z]{3}/i.test(w.text) && !stageFrom(w.text));
+    if (name && named) put('program', name, conf * 0.72, `“${redactText(line.text)}”`);
   }
   if (!fields.status) {
     const s = page.lines.find((l) => /\bstatus\b/i.test(l.text));
@@ -396,7 +461,8 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     fields[key] = best;
   }
 
-  return { page: pageIndex, fields, sensitive, quality, ocrConfidence: Math.round(page.confidence), wordCount };
+  const labelsFound = labels.flat().filter((h) => h.target !== 'ignore' && !h.target.startsWith('sensitive:')).length;
+  return { page: pageIndex, fields, sensitive, quality, ocrConfidence: Math.round(page.confidence), wordCount, labelsFound };
 }
 
 export type { ExtractedField, TextField };

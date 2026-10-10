@@ -284,19 +284,42 @@ export default function AccountScreenshotImport() {
       }>
       {reading || images.some((i) => i.status === 'reading') ? (
         <Card style={styles.gap}>
-          <AppText variant="bodyStrong">Reading your screenshots…</AppText>
+          <AppText variant="bodyStrong">
+            Reading {images.length > 1 ? `screenshot ${Math.min(images.length, images.findIndex((i) => i.status === 'reading' || i.status === 'queued') + 1 || images.length)} of ${images.length}` : 'your screenshot'}…
+          </AppText>
           <RiskProgress value={progress} tone="accent" label="Reading progress" />
-          <AppText variant="caption">The first read downloads the text reader (about 4 MB, once).</AppText>
+          <AppText variant="caption">The first read downloads the text reader (about 7 MB, once). If it stalls, it stops by itself and you can try again.</AppText>
         </Card>
       ) : null}
 
-      {images.map((i, n) =>
-        i.status === 'error' || i.page?.quality === 'poor' || (i.error && i.status === 'done') ? (
-          <Card key={i.image.id} tone="warning" style={styles.gap}>
-            <AppText variant="bodyStrong">Screenshot {n + 1}: {i.status === 'error' ? 'could not be read' : i.error ? 'advanced reader unavailable' : 'hard to read'}</AppText>
-            <AppText variant="caption" tone="secondary">
-              {i.error ?? 'The image looks blurry or too small. Retake it straight-on and closer, upload the original screenshot, or type the values below.'}
+      {!reading && images.some((i) => i.status !== 'queued') ? (
+        <Card style={styles.gap}>
+          {images.map((i, n) => (
+            <AppText key={i.image.id} variant="caption" tone={i.status === 'error' ? 'warning' : 'secondary'}>
+              Screenshot {n + 1}: {i.status === 'error' ? 'not read' : i.page ? `${Object.keys(i.page.fields).length} value${Object.keys(i.page.fields).length === 1 ? '' : 's'} found · ${i.page.wordCount} words read, ${i.page.ocrConfidence}% clear` : 'waiting'}
             </AppText>
+          ))}
+        </Card>
+      ) : null}
+
+      {images.map((i, n) => {
+        // Text was read fine, but none of it looked like an account panel we know.
+        const unrecognised = i.status === 'done' && i.page && i.page.quality !== 'poor' && !i.error && Object.keys(i.page.fields).length === 0;
+        if (!(i.status === 'error' || i.page?.quality === 'poor' || (i.error && i.status === 'done') || unrecognised)) return null;
+        return (
+          <Card key={i.image.id} tone="warning" style={styles.gap}>
+            <AppText variant="bodyStrong">
+              Screenshot {n + 1}: {i.status === 'error' ? 'could not be read' : i.error ? 'advanced reader unavailable' : unrecognised ? 'no account values recognised' : 'hard to read'}
+            </AppText>
+            <AppText variant="caption" tone="secondary">
+              {i.error ??
+                (unrecognised
+                  ? `The text was read (${i.page!.wordCount} words), but no labels like “Balance”, “Drawdown” or “Profit target” were found next to values. Upload the account overview page, or type the values below.`
+                  : 'The image looks blurry or too small. Retake it straight-on and closer, upload the original screenshot, or type the values below.')}
+            </AppText>
+            {i.status === 'error' && i.reader !== 'vision' && ocrAvailable() ? (
+              <Button label="Try again" variant="secondary" icon="refresh" disabled={reading} onPress={() => void session.retry(i.image.id, db)} />
+            ) : null}
             {aiIsLive && i.reader !== 'vision' ? (
               <Button label="Try the advanced reader" variant="secondary" icon="sparkles-outline" onPress={() => void session.readWithVision(i.image.id, db)} />
             ) : null}
@@ -306,8 +329,8 @@ export default function AccountScreenshotImport() {
               </AppText>
             ) : null}
           </Card>
-        ) : null,
-      )}
+        );
+      })}
 
       {/* Match */}
       {match.firm || match.program ? (

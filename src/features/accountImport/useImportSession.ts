@@ -4,7 +4,7 @@ import type { FirmRulesDatabase } from '@/data/propFirms/types';
 import { extractPage, visionToPage, type FieldKey, type PageExtraction } from '@/lib/engines/accountImport';
 import { aiService } from '@/services/ai';
 import { MAX_IMAGES, releaseImages, type ImportImage } from '@/services/accountImport/images';
-import { disposeOcr, ocrAvailable, recognize, redactImage } from '@/services/accountImport/ocr';
+import { disposeOcr, OcrError, ocrAvailable, ocrLog, recognize, redactImage } from '@/services/accountImport/ocr';
 import { rejectReason } from '@/services/accountImport/validate';
 
 /**
@@ -31,6 +31,8 @@ interface State {
   add: (images: (ImportImage & { sample?: boolean })[]) => { added: number; skipped: number; rejected: string[] };
   remove: (id: string) => void;
   readAll: (db: FirmRulesDatabase) => Promise<void>;
+  /** Read one failed screenshot again (fresh OCR worker). */
+  retry: (id: string, db: FirmRulesDatabase) => Promise<void>;
   readWithVision: (id: string, db: FirmRulesDatabase) => Promise<void>;
   setEdit: (k: FieldKey, v: number | string | null) => void;
   resetEdit: (k: FieldKey) => void;
@@ -39,9 +41,12 @@ interface State {
 
 const patch = (images: SessionImage[], id: string, p: Partial<SessionImage>) => images.map((i) => (i.image.id === id ? { ...i, ...p } : i));
 const friendly = (e: unknown) => {
+  if (e instanceof OcrError) return e.message;
   const m = (e as Error)?.message ?? String(e);
-  return /network|fetch|load/i.test(m) ? 'The text reader could not load. Check your connection and try again.' : m;
+  return /network|fetch|load/i.test(m) ? 'The text reader could not load. Check your connection and try again.' : 'This screenshot could not be read. Try again, or enter the values manually.';
 };
+/** Bumped by reset(): a read still running from a closed import never writes into a new one. */
+let generation = 0;
 
 export const useImportSession = create<State>((set, get) => ({
   images: [],
@@ -72,9 +77,11 @@ export const useImportSession = create<State>((set, get) => ({
 
   readAll: async (db) => {
     if (get().reading) return;
+    const gen = generation;
     set({ reading: true });
     try {
       for (const item of get().images) {
+        if (gen !== generation) return;
         if (item.status === 'done') continue;
         const id = item.image.id;
         if (!ocrAvailable()) {
@@ -83,18 +90,28 @@ export const useImportSession = create<State>((set, get) => ({
         }
         set({ images: patch(get().images, id, { status: 'reading', progress: 0.02, error: null }) });
         try {
-          const ocr = await recognize(item.image, (p) => set({ images: patch(get().images, id, { progress: p }) }));
+          const ocr = await recognize(item.image, (p) => gen === generation && set({ images: patch(get().images, id, { progress: p }) }));
+          if (gen !== generation) return;
           const index = get().images.findIndex((i) => i.image.id === id);
           if (index < 0) continue; // removed while reading
           const page = extractPage(ocr, index, { firms: db.firms });
+          // Counts only — never the screenshot's text or values.
+          ocrLog('page: parsed', { words: page.wordCount, confidence: page.ocrConfidence, quality: page.quality, labels: page.labelsFound ?? 0, fields: Object.keys(page.fields).length });
           set({ images: patch(get().images, id, { status: 'done', progress: 1, page, reader: 'ocr' }) });
         } catch (e) {
-          set({ images: patch(get().images, id, { status: 'error', error: friendly(e) }) });
+          if (gen !== generation) return;
+          set({ images: patch(get().images, id, { status: 'error', progress: 0, error: friendly(e) }) });
         }
       }
     } finally {
-      set({ reading: false });
+      if (gen === generation) set({ reading: false });
     }
+  },
+
+  retry: async (id, db) => {
+    if (get().reading) return;
+    set({ images: patch(get().images, id, { status: 'queued', progress: 0, page: null, error: null, reader: null }) });
+    await get().readAll(db);
   },
 
   readWithVision: async (id, db) => {
@@ -127,6 +144,7 @@ export const useImportSession = create<State>((set, get) => ({
   },
 
   reset: () => {
+    generation++;
     releaseImages(get().images.map((i) => i.image));
     set({ images: [], reading: false, edits: {} });
     void disposeOcr();

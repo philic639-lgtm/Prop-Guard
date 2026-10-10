@@ -11,6 +11,8 @@ import {
   maskId,
   matchImport,
   parseDate,
+  isTableHeader,
+  oneEditApart,
   parseMoney,
   reconcile,
   type Extraction,
@@ -21,15 +23,19 @@ import { drawdownBuffer, drawdownFloor } from '../propRuleEngine';
 
 import blurry from './fixtures/accountScreenshots/blurry.json';
 import generic from './fixtures/accountScreenshots/generic.json';
+import lucidDesktop from './fixtures/accountScreenshots/lucid-desktop.json';
 import lucidDetails from './fixtures/accountScreenshots/lucid-details.json';
 import lucid from './fixtures/accountScreenshots/lucid.json';
+import topstepRetina from './fixtures/accountScreenshots/topstep-retina.json';
 import topstep from './fixtures/accountScreenshots/topstep.json';
 
 /**
  * Fixtures are REAL Tesseract (tesseract.js, eng best_int) output for
  * synthetic dashboard layouts: Lucid-style card grid, a Lucid-style details
  * table, a Topstep-style table, a generic "net liq / trailing drawdown"
- * layout, and a blurry, low-resolution photo.
+ * layout, and a blurry, low-resolution photo. `lucid-desktop` / `topstep-retina`
+ * are full browser windows (sidebar, chart, trade table, 12 px labels with ⓘ
+ * icons; 1440×900 and 2880×1800) read with the current preprocessing.
  */
 const db = FIRM_RULES_SEED;
 const firms = db.firms;
@@ -378,5 +384,77 @@ describe('audit: real-OCR layout variants', () => {
     const x = run(textPage(['Balance $50,500.00', 'Max Drawdown $2,000.00', 'Liquidation Threshold $48,500.00'], 55));
     expect(x.pages[0].quality).toBe('poor');
     for (const f of Object.values(x.fields)) expect(f!.confidence).toBeLessThan(0.7);
+  });
+});
+
+describe('full-window desktop dashboards (real OCR of synthetic 1440×900 / retina captures)', () => {
+  it('Lucid-style desktop: every visible account value, nothing from the trade table', () => {
+    const x = run(lucidDesktop as OcrPage);
+    expect(v(x, 'balance')).toBe(51240.5);
+    expect(v(x, 'netPnl')).toBe(1240.5);
+    expect(v(x, 'dailyPnl')).toBe(-212);
+    expect(v(x, 'profitTarget')).toBe(3000);
+    expect(v(x, 'maxDrawdown')).toBe(2000);
+    expect(v(x, 'drawdownThreshold')).toBe(49340);
+    expect(v(x, 'drawdownRemaining')).toBe(1900.5);
+    expect(v(x, 'dailyLossLimit')).toBe(1200);
+    expect(v(x, 'startDate')).toBe('2026-09-15'); // "Purchased Sep 15, 2026"
+    expect(v(x, 'accountSize')).toBe(50000);
+    expect(v(x, 'stage')).toBe('evaluation');
+    // The title, not the breadcrumb ("Lucid Trading Accounts > LucidFlex 50K …").
+    expect(v(x, 'program')).toBe('LucidFlex 50K Evaluation');
+    const values = Object.values(x.fields).map((f) => f!.value);
+    for (const tableValue of [74, 48.75, 109, 21512.25]) expect(values).not.toContain(tableValue);
+  });
+
+  it('Topstep-style retina: "Realized P&L" card, never the trade table\'s P&L column; MLL Balance is the threshold', () => {
+    const x = run(topstepRetina as OcrPage);
+    expect(v(x, 'balance')).toBe(50812.25);
+    expect(v(x, 'netPnl')).toBe(812.25);
+    expect(x.fields.netPnl?.alternatives).toBeUndefined();
+    expect(v(x, 'maxDrawdown')).toBe(2000);
+    expect(v(x, 'drawdownThreshold')).toBe(49000);
+    expect(v(x, 'dailyLossLimit')).toBe(1000);
+    expect(v(x, 'profitTarget')).toBe(3000);
+    // Unrealized P&L and Buying Power are look-alikes, not account values.
+    expect(Object.values(x.fields).map((f) => f!.value)).not.toContain(12500);
+  });
+
+  it('small-text OCR slips ("Profi Target", "Daly Loss Limit", "Net PAL") still find the field — as "check this"', () => {
+    const clean = run(lucidDesktop as OcrPage);
+    const x = run(swap(lucidDesktop, ['Profit', 'Profi'], ['Daily', 'Daly'], ['Net P&L', 'Net PAL']));
+    expect(v(x, 'profitTarget')).toBe(3000);
+    expect(v(x, 'dailyLossLimit')).toBe(1200);
+    expect(v(x, 'netPnl')).toBe(1240.5);
+    expect(x.fields.profitTarget!.confidence).toBeLessThan(clean.fields.profitTarget!.confidence);
+  });
+
+  it('a lone label word with a slip is not guessed ("Balanse" → balance not detected)', () => {
+    const x = run(swap(topstepRetina, ['Balance', 'Balanse']));
+    expect(x.fields.balance).toBeUndefined();
+    // Multi-word "MLL Balanse" still reads, because "MLL" matched exactly.
+    expect(v(x, 'drawdownThreshold')).toBe(49000);
+  });
+
+  it('a page with text but no account labels yields nothing (no invented values) and reports 0 labels', () => {
+    const page = extractPage({ width: 800, height: 400, confidence: 90, lines: textPage(['NQ1! 15 CME', 'Long Position 21,500.00', 'Risk/Reward Ratio 3.0', '21,480.00 21,560.00'], 90).lines }, 0, { firms });
+    expect(page.fields).toEqual({});
+    expect(page.labelsFound).toBe(0);
+  });
+});
+
+describe('OCR helpers', () => {
+  it('oneEditApart', () => {
+    expect(oneEditApart('profi', 'profit')).toBe(true);
+    expect(oneEditApart('daly', 'daily')).toBe(true);
+    expect(oneEditApart('limlt', 'limit')).toBe(true);
+    expect(oneEditApart('realized', 'unrealized')).toBe(false);
+  });
+
+  it('table headers are recognised (their P&L column is not a label)', () => {
+    const [header] = textPage(['Date Symbol Side Qty Entry Exit P&L'], 90).lines;
+    expect(isTableHeader(header)).toBe(true);
+    const [card] = textPage(['Account Balance Net P&L Profit Target'], 90).lines;
+    expect(isTableHeader(card)).toBe(false);
   });
 });
