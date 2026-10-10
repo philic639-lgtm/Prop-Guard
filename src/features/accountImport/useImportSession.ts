@@ -4,7 +4,7 @@ import type { FirmRulesDatabase } from '@/data/propFirms/types';
 import { extractPage, redactText, visionToPage, type FieldKey, type PageExtraction } from '@/lib/engines/accountImport';
 import { aiService } from '@/services/ai';
 import { MAX_IMAGES, releaseImages, type ImportImage } from '@/services/accountImport/images';
-import { disposeOcr, OcrError, ocrAvailable, ocrLog, recognize, redactImage } from '@/services/accountImport/ocr';
+import { disposeOcr, OcrError, ocrAvailable, ocrLog, recognize, redactImage, sanitizeDetail, type OcrProgress } from '@/services/accountImport/ocr';
 import { rejectReason } from '@/services/accountImport/validate';
 
 /**
@@ -14,12 +14,20 @@ import { rejectReason } from '@/services/accountImport/validate';
  */
 export type ImageStatus = 'queued' | 'reading' | 'done' | 'error';
 
+/** What is happening to one screenshot right now (real numbers only, never estimates). */
+export type ImportStep = OcrProgress | { stage: 'extracting' };
+
 export interface SessionImage {
   image: ImportImage & { sample?: boolean };
   status: ImageStatus;
-  progress: number;
+  /** Current stage while reading; null when queued, done or failed. */
+  step: ImportStep | null;
   page: PageExtraction | null;
   error: string | null;
+  /** Sanitised technical cause of a failure ("HTTP 404", "no progress for 30 s"). */
+  errorDetail: string | null;
+  /** Read attempt this image belongs to: results of an older attempt are dropped. */
+  run: number;
   reader: 'ocr' | 'vision' | null;
   /** Debug builds only: the recognised text (account numbers / emails masked), in memory only. */
   ocrText?: string[];
@@ -50,8 +58,11 @@ const friendly = (e: unknown) => {
   const m = (e as Error)?.message ?? String(e);
   return /network|fetch|load/i.test(m) ? 'The text reader could not load. Check your connection and try again.' : 'This screenshot could not be read. Try again, or enter the values manually.';
 };
+const detailOf = (e: unknown) => (e instanceof OcrError ? e.detail : sanitizeDetail(e));
 /** Bumped by reset(): a read still running from a closed import never writes into a new one. */
 let generation = 0;
+/** Bumped for every read attempt of an image (first read, retry). */
+let runSeq = 0;
 
 export const useImportSession = create<State>((set, get) => ({
   images: [],
@@ -70,7 +81,7 @@ export const useImportSession = create<State>((set, get) => ({
     const fresh = valid.filter((i) => !cur.some((c) => c.image.name === i.name && c.image.width === i.width && c.image.height === i.height));
     const take = fresh.slice(0, room);
     releaseImages(incoming.filter((i) => !take.includes(i)));
-    set({ images: [...cur, ...take.map((image) => ({ image, status: 'queued' as const, progress: 0, page: null, error: null, reader: null }))] });
+    set({ images: [...cur, ...take.map((image) => ({ image, status: 'queued' as const, step: null, page: null, error: null, errorDetail: null, run: 0, reader: null }))] });
     return { added: take.length, skipped: valid.length - take.length, rejected };
   },
 
@@ -90,23 +101,29 @@ export const useImportSession = create<State>((set, get) => ({
         if (item.status === 'done') continue;
         const id = item.image.id;
         if (!ocrAvailable()) {
-          set({ images: patch(get().images, id, { status: 'error', error: 'On-device text reading is not available on this device.' }) });
+          set({ images: patch(get().images, id, { status: 'error', step: null, error: 'On-device text reading is not available on this device.', errorDetail: null }) });
           continue;
         }
-        set({ images: patch(get().images, id, { status: 'reading', progress: 0.02, error: null }) });
+        const run = ++runSeq;
+        // Only this attempt may write this image (a newer retry / reset wins).
+        const current = () => gen === generation && get().images.some((i) => i.image.id === id && i.run === run);
+        const update = (p: Partial<SessionImage>) => current() && set({ images: patch(get().images, id, p) });
+        set({ images: patch(get().images, id, { status: 'reading', step: { stage: 'loading_engine' }, error: null, errorDetail: null, run }) });
         try {
-          const ocr = await recognize(item.image, (p) => gen === generation && set({ images: patch(get().images, id, { progress: p }) }));
-          if (gen !== generation) return;
+          const ocr = await recognize(item.image, (step) => update({ step }));
+          if (!current()) continue;
+          update({ step: { stage: 'extracting' } });
           const index = get().images.findIndex((i) => i.image.id === id);
-          if (index < 0) continue; // removed while reading
           const page = extractPage(ocr, index, { firms: db.firms });
           // Counts only — never the screenshot's text or values.
           ocrLog('page: parsed', { words: page.wordCount, confidence: page.ocrConfidence, quality: page.quality, labels: page.labelsFound ?? 0, fields: Object.keys(page.fields).length });
           const ocrText = IMPORT_DEBUG ? ocr.lines.map((l) => `${l.confidence}% | ${redactText(l.text)}`) : undefined;
-          set({ images: patch(get().images, id, { status: 'done', progress: 1, page, reader: 'ocr', ...(ocrText ? { ocrText } : {}) }) });
+          update({ status: 'done', step: null, page, reader: 'ocr', ...(ocrText ? { ocrText } : {}) });
         } catch (e) {
-          if (gen !== generation) return;
-          set({ images: patch(get().images, id, { status: 'error', progress: 0, error: friendly(e) }) });
+          update({ status: 'error', step: null, error: friendly(e), errorDetail: detailOf(e) });
+        } finally {
+          // Whatever happened (incl. an unexpected throw in extraction), this image is no longer "reading".
+          if (current() && get().images.find((i) => i.image.id === id)?.status === 'reading') update({ status: 'error', step: null, error: friendly(null), errorDetail: null });
         }
       }
     } finally {
@@ -116,14 +133,14 @@ export const useImportSession = create<State>((set, get) => ({
 
   retry: async (id, db) => {
     if (get().reading) return;
-    set({ images: patch(get().images, id, { status: 'queued', progress: 0, page: null, error: null, reader: null }) });
+    set({ images: patch(get().images, id, { status: 'queued', step: null, page: null, error: null, errorDetail: null, reader: null }) });
     await get().readAll(db);
   },
 
   readWithVision: async (id, db) => {
     const item = get().images.find((i) => i.image.id === id);
     if (!item) return;
-    set({ images: patch(get().images, id, { status: 'reading', progress: 0.3, error: null }) });
+    set({ images: patch(get().images, id, { status: 'reading', step: null, error: null, errorDetail: null }) });
     try {
       // Black out account numbers / emails found by OCR before the image leaves the device (web).
       const boxes = (item.page?.sensitive ?? []).map((s) => s.bbox).filter((b): b is NonNullable<typeof b> => !!b);
@@ -135,9 +152,9 @@ export const useImportSession = create<State>((set, get) => ({
       const page = visionToPage(reading, index);
       // Keep sensitive-item detection from OCR (the reader never returns identifiers).
       if (item.page) page.sensitive = item.page.sensitive;
-      set({ images: patch(get().images, id, { status: 'done', progress: 1, page, reader: 'vision' }) });
+      set({ images: patch(get().images, id, { status: 'done', step: null, page, reader: 'vision' }) });
     } catch (e) {
-      set({ images: patch(get().images, id, { status: item.page ? 'done' : 'error', progress: 1, error: friendly(e) }) });
+      set({ images: patch(get().images, id, { status: item.page ? 'done' : 'error', step: null, error: friendly(e), errorDetail: detailOf(e) }) });
     }
     void db;
   },

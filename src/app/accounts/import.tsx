@@ -11,7 +11,7 @@ import { DROP_SUPPORTED, DropZone } from '@/features/accountImport/DropZone';
 import { displayValue, ImportFieldRow } from '@/features/accountImport/ImportFieldRow';
 import { SAMPLE_SETS, sampleImages } from '@/features/accountImport/samples';
 import { useImportReview } from '@/features/accountImport/useImportReview';
-import { IMPORT_DEBUG, useImportSession } from '@/features/accountImport/useImportSession';
+import { IMPORT_DEBUG, useImportSession, type ImportStep } from '@/features/accountImport/useImportSession';
 import { usePendingImport } from '@/features/accountImport/usePendingImport';
 import { applyImport, confirmImport, FIELD_LABEL, LOW_CONFIDENCE, lockedRuleFields, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
 import { drawdownBuffer } from '@/lib/engines/propRuleEngine';
@@ -256,7 +256,6 @@ export default function AccountScreenshotImport() {
   }
 
   // ── Review
-  const progress = images.length ? images.reduce((s, i) => s + (i.status === 'done' || i.status === 'error' ? 1 : i.progress), 0) / images.length : 1;
   const ruleNote = (k: FieldKey): string | undefined => {
     if (!(RULE_KEYS as readonly string[]).includes(k)) return undefined;
     const rk = k as RuleKey;
@@ -287,8 +286,18 @@ export default function AccountScreenshotImport() {
           <AppText variant="bodyStrong">
             Reading {images.length > 1 ? `screenshot ${Math.min(images.length, images.findIndex((i) => i.status === 'reading' || i.status === 'queued') + 1 || images.length)} of ${images.length}` : 'your screenshot'}…
           </AppText>
-          <RiskProgress value={progress} tone="accent" label="Reading progress" />
-          <AppText variant="caption">The first read downloads the text reader (about 7 MB, once). If it stalls, it stops by itself and you can try again.</AppText>
+          {images.map((i, n) =>
+            i.status === 'reading' ? (
+              <View key={i.image.id} style={styles.gap}>
+                <AppText variant="caption" tone="secondary">
+                  {images.length > 1 ? `Screenshot ${n + 1}: ` : ''}
+                  {stepLabel(i.step)}
+                </AppText>
+                {stepFraction(i.step) != null ? <RiskProgress value={stepFraction(i.step)!} tone="accent" label="Progress of this step" /> : null}
+              </View>
+            ) : null,
+          )}
+          <AppText variant="caption">The first read downloads the text reader (about 7 MB, once). If a step stalls, it stops by itself and you can try again.</AppText>
         </Card>
       ) : null}
 
@@ -313,6 +322,11 @@ export default function AccountScreenshotImport() {
             <AppText variant="bodyStrong">
               Screenshot {n + 1}: {i.status === 'error' ? 'could not be read' : i.error ? 'advanced reader unavailable' : unrecognised ? 'no account values recognised' : 'hard to read'}
             </AppText>
+            {i.status === 'error' && i.errorDetail ? (
+              <AppText variant="caption" tone="tertiary" selectable>
+                Details: {i.errorDetail}
+              </AppText>
+            ) : null}
             <AppText variant="caption" tone="secondary">
               {i.error ??
                 (unrecognised
@@ -501,4 +515,28 @@ function OcrDebugPanel({ images }: { images: { image: { id: string }; ocrText?: 
         : null}
     </Card>
   );
+}
+
+const mb = (bytes: number) => (bytes / 1_048_576).toFixed(1);
+/** Plain-language name of the current step, with real numbers only. */
+function stepLabel(step: ImportStep | null): string {
+  switch (step?.stage) {
+    case 'loading_engine':
+      return 'Starting the text reader…';
+    case 'downloading_model':
+      return step.total ? `Downloading the text reader: ${mb(step.received)} of ${mb(step.total)} MB` : `Downloading the text reader: ${mb(step.received)} MB`;
+    case 'starting_engine':
+      return 'Preparing the text reader…';
+    case 'recognizing':
+      return step.fraction != null ? `Recognising text: ${Math.round(step.fraction * 100)}%` : 'Recognising text…';
+    case 'extracting':
+      return 'Finding account values…';
+    default:
+      return 'Waiting…';
+  }
+}
+function stepFraction(step: ImportStep | null): number | null {
+  if (step?.stage === 'downloading_model') return step.total ? Math.min(1, step.received / step.total) : null;
+  if (step?.stage === 'recognizing') return step.fraction;
+  return null;
 }
