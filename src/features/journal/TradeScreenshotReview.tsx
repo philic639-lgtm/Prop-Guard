@@ -91,7 +91,7 @@ export function TradeScreenshotReview({ onUse, onManual }: { onUse: (v: Confirme
     const r = await pickScreenshot(source);
     if (r.status === 'cancelled') return;
     if (r.status !== 'ok') {
-      setMessage(r.status === 'denied' ? (source === 'camera' ? 'Camera access is needed to take a photo.' : 'Photo access is needed to choose a screenshot.') : r.message);
+      setMessage(r.status === 'denied' ? (source === 'camera' ? 'Camera access was denied. Allow it in Settings, or choose a screenshot instead.' : 'Photo access was denied. Allow it in Settings to add a screenshot.') : r.message);
       return;
     }
     setImageUri(r.image.uri);

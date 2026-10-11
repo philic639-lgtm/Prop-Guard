@@ -1,5 +1,5 @@
 import type { ReactNode, RefObject } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
+import { KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, GUTTER, spacing, TAB_BAR_HEIGHT } from '@/constants/theme';
@@ -26,7 +26,9 @@ export function Screen({ children, header, footer, scroll = true, tabBar, conten
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {header}
-      {scroll ? (
+      {/* iOS: the keyboard covers the window, so lift the content and the footer buttons above it (Android resizes the window itself). */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+        {scroll ? (
         <ScrollView
           ref={scrollRef}
           style={styles.flex}
@@ -44,7 +46,8 @@ export function Screen({ children, header, footer, scroll = true, tabBar, conten
       ) : (
         <View style={[styles.flex, styles.content, contentStyle]}>{children}</View>
       )}
-      {footer ? <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>{footer}</View> : null}
+        {footer ? <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>{footer}</View> : null}
+      </KeyboardAvoidingView>
     </View>
   );
 }

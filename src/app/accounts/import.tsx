@@ -102,7 +102,7 @@ function ImportFlow() {
     setError(null);
     const r = await pickImages(source, MAX_IMAGES - images.length);
     if (r.status === 'ok') add(r.images);
-    else if (r.status === 'denied') setError(source === 'camera' ? 'Camera access is needed to take a photo.' : 'Photo access is needed to choose screenshots.');
+    else if (r.status === 'denied') setError(source === 'camera' ? 'Camera access was denied. Allow it in Settings, or choose a screenshot instead.' : 'Photo access was denied. Allow it in Settings, or enter the values manually.');
     else if (r.status === 'error') setError(r.message);
   };
   const read = async () => {

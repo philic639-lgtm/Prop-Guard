@@ -12,8 +12,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.propguard.app",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Prop Guard uses your photo library so you can attach chart screenshots to trades and analyze setups.",
-        "NSCameraUsageDescription": "Prop Guard uses the camera so you can capture chart screenshots for setup analysis."
+        "NSPhotoLibraryUsageDescription": "Prop Guard uses your photo library so you can import account dashboard screenshots and attach chart screenshots to trades. Images are read on your device.",
+        "NSCameraUsageDescription": "Prop Guard uses the camera so you can photograph your account dashboard or a chart for analysis."
       }
     },
     "android": {
@@ -32,7 +32,12 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -50,7 +55,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Prop Guard uses your photo library so you can attach chart screenshots to trades and analyze setups."
+          "photosPermission": "Prop Guard uses your photo library so you can import account dashboard screenshots and attach chart screenshots to trades. Images are read on your device.",
+          "cameraPermission": "Prop Guard uses the camera so you can photograph your account dashboard or a chart for analysis.",
+          "microphonePermission": false
         }
       ]
     ],
