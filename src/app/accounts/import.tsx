@@ -8,12 +8,14 @@ import { AppHeader, AppText, Button, Card, Chip, DetailTable, RiskProgress, Scre
 import { isDemoMode } from '@/config/env';
 import { colors, radius, spacing } from '@/constants/theme';
 import { DROP_SUPPORTED, DropZone } from '@/features/accountImport/DropZone';
+import { ExampleScreenshotGuide, SensitiveInfoWarning } from '@/features/accountImport/ExampleScreenshotGuide';
+import { GUIDE_FIELDS, guidePageFor, type GuidePage } from '@/features/accountImport/exampleGuide';
 import { displayValue, ImportFieldRow } from '@/features/accountImport/ImportFieldRow';
 import { SAMPLE_SETS, sampleImages } from '@/features/accountImport/samples';
 import { useImportReview } from '@/features/accountImport/useImportReview';
 import { IMPORT_DEBUG, useImportSession, type ImportStep } from '@/features/accountImport/useImportSession';
 import { usePendingImport } from '@/features/accountImport/usePendingImport';
-import { applyImport, confirmImport, FIELD_LABEL, LOW_CONFIDENCE, lockedRuleFields, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
+import { applyImport, confirmImport, FIELD_LABEL, LOW_CONFIDENCE, lockedRuleFields, type ApplyResult, type ExtractedField, type FieldKey } from '@/lib/engines/accountImport';
 import { drawdownBuffer } from '@/lib/engines/propRuleEngine';
 import { aiIsLive } from '@/services/ai';
 import { MAX_IMAGES, pickImages, type ImportImage } from '@/services/accountImport/images';
@@ -61,6 +63,7 @@ export default function AccountScreenshotImport() {
   const [rememberAccount, setRememberAccount] = useState(true);
   const [differentAccount, setDifferentAccount] = useState(false);
   const [result, setResult] = useState<ApplyResult | null>(null);
+  const [guide, setGuide] = useState<GuidePage | null>(null);
 
   // Session lives only while this screen is open.
   useEffect(() => () => useImportSession.getState().reset(), []);
@@ -104,6 +107,8 @@ export default function AccountScreenshotImport() {
   const canConfirm = confirmed && unresolved === 0 && hasValues && !duplicateHard && (!duplicateSoft || differentAccount) && !reading;
   const engine = images.some((i) => i.image.sample) ? 'sample' : images.some((i) => i.reader === 'vision') ? 'vision' : images.some((i) => i.page) ? 'ocr' : 'manual';
   const idItem = extraction.sensitive.find((s) => s.kind === 'account_id');
+  // Not asked for in the "still to check" list: rules that come from a verified program, and the identity of an account being updated.
+  const skipFields = new Set<FieldKey>([...(verifiedProgram ? RULE_KEYS : []), ...locked, ...(mode === 'update' ? (['program', 'accountSize', 'stage'] as FieldKey[]) : [])]);
 
   const ruleUpdates = () => {
     const out: Partial<Record<RuleKey, number>> = {};
@@ -207,6 +212,8 @@ export default function AccountScreenshotImport() {
             </View>
           </Card>
         </DropZone>
+        <Button label="See example screenshots" icon="help-circle-outline" variant="secondary" onPress={() => setGuide('overview')} />
+        <SensitiveInfoWarning compact />
         {error ? (
           <AppText variant="caption" tone="danger">
             {error}
@@ -251,6 +258,7 @@ export default function AccountScreenshotImport() {
           <AppText variant="caption">• Account numbers and emails are detected and hidden. Prop Guard never asks for trading passwords or API keys.</AppText>
           <AppText variant="caption">• Nothing is saved until you review and confirm every value.</AppText>
         </Card>
+        <ExampleScreenshotGuide key={guide ?? 'closed'} visible={guide != null} initial={guide ?? 'overview'} onClose={() => setGuide(null)} />
       </Screen>
     );
   }
@@ -347,6 +355,8 @@ export default function AccountScreenshotImport() {
           </Card>
         );
       })}
+
+      {!reading && images.some((i) => i.page) ? <StillToCheck fields={fields} skip={skipFields} onShow={setGuide} /> : null}
 
       {/* Match */}
       {match.firm || match.program ? (
@@ -471,6 +481,7 @@ export default function AccountScreenshotImport() {
                 : 'Fills the new account form; the account is saved when you tap Save.'}
         </AppText>
       </Card>
+      <ExampleScreenshotGuide key={guide ?? 'closed'} visible={guide != null} initial={guide ?? 'overview'} onClose={() => setGuide(null)} />
     </Screen>
   );
 }
@@ -539,4 +550,47 @@ function stepFraction(step: ImportStep | null): number | null {
   if (step?.stage === 'downloading_model') return step.total ? Math.min(1, step.received / step.total) : null;
   if (step?.stage === 'recognizing') return step.fraction;
   return null;
+}
+
+/** Values the guide asks for that are missing or uncertain — each with the example page showing where to find it. */
+function StillToCheck({ fields, skip, onShow }: { fields: Partial<Record<FieldKey, ExtractedField>>; skip: Set<FieldKey>; onShow: (p: GuidePage) => void }) {
+  const wanted = GUIDE_FIELDS.filter((g) => !skip.has(g.field));
+  const missing = wanted.filter((g) => !fields[g.field]);
+  const uncertain = wanted.filter((g) => {
+    const f = fields[g.field];
+    return f && f.source !== 'user' && (f.confidence < LOW_CONFIDENCE || !!f.alternatives?.length);
+  });
+  if (!missing.length && !uncertain.length) {
+    return (
+      <Card tone="positive" style={styles.gap}>
+        <AppText variant="bodyStrong">Every value from the example pages was found</AppText>
+        <AppText variant="caption">Still check each one against your dashboard below before confirming.</AppText>
+      </Card>
+    );
+  }
+  const pages = [...new Set(missing.map((m) => m.page))];
+  return (
+    <Card style={styles.gap}>
+      <AppText variant="bodyStrong">Still to check</AppText>
+      {uncertain.length ? (
+        <AppText variant="caption" tone="warning">
+          Uncertain — compare with your dashboard: {uncertain.map((u) => FIELD_LABEL[u.field]).join(', ')}.
+        </AppText>
+      ) : null}
+      {pages.map((p) => {
+        const g = guidePageFor(missing.find((m) => m.page === p)!.field)!;
+        return (
+          <View key={p} style={styles.gap}>
+            <AppText variant="caption">
+              Not found: {missing.filter((m) => m.page === p).map((m) => FIELD_LABEL[m.field]).join(', ')} — usually on the {g.title} page. Add that screenshot, or type the values below.
+            </AppText>
+            <Button label={`See the ${g.title} example`} icon="help-circle-outline" variant="ghost" size="md" onPress={() => onShow(p)} />
+          </View>
+        );
+      })}
+      <AppText variant="caption" tone="tertiary">
+        Missing values stay empty — Prop Guard never fills them in for you.
+      </AppText>
+    </Card>
+  );
 }

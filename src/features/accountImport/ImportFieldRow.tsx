@@ -112,8 +112,8 @@ export function ImportFieldRow({ k, field, edited, onChange, onReset, note }: Pr
           <AppText variant="caption" tone="warning">
             Screenshots disagree — pick one:
           </AppText>
-          {[field.value, ...field.alternatives.map((a) => a.value)].map((v) => (
-            <Chip key={String(v)} label={displayValue(k, v)} onPress={() => onChange(v)} />
+          {[{ value: field.value, page: field.page }, ...field.alternatives].map((a) => (
+            <Chip key={String(a.value)} label={`${displayValue(k, a.value)}${a.page >= 0 ? ` · screenshot ${a.page + 1}` : ''}`} onPress={() => onChange(a.value)} />
           ))}
         </View>
       ) : null}
