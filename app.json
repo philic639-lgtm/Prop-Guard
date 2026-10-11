@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "propguard",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#090B0F",
+    "backgroundColor": "#060B1A",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.propguard.app",
@@ -19,7 +19,7 @@
     "android": {
       "package": "com.propguard.app",
       "adaptiveIcon": {
-        "backgroundColor": "#090B0F",
+        "backgroundColor": "#060B1A",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -36,9 +36,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#090B0F",
+          "backgroundColor": "#060B1A",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 140
         }
       ],
       [

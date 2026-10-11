@@ -53,7 +53,7 @@ function TradeCardBase({ trade, strategyName, onPress }: TradeCardProps) {
       <View style={styles.footer}>
         {trade.origin === 'copied' ? (
           <View style={[styles.flex, styles.copied]}>
-            <Ionicons name="layers-outline" size={13} color={colors.accentBright} />
+            <Ionicons name="copy-outline" size={13} color={colors.accentBright} />
             <AppText variant="caption" numberOfLines={1} style={[styles.flex, { color: colors.accentBright }]}>
               Copied · {trade.sourceTraderName ?? 'source trader'}
             </AppText>

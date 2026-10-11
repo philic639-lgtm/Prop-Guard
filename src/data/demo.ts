@@ -19,7 +19,7 @@ import type {
 import { addDays, addMinutes, dayKey, startOfDay } from '@/utils/dates';
 
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
-import type { CopyTrade, SourceTrader } from '@/types/copyTrade';
+import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
 
 import { STRATEGY_LIBRARY, checklistFromLabels } from './strategyLibrary';
 
@@ -52,6 +52,8 @@ export interface AppData {
   /** Copy Trade: traders the user copies (with their copy settings) and the copy log. */
   sourceTraders: SourceTrader[];
   copyTrades: CopyTrade[];
+  /** Account copier setups (master → followers). */
+  copyGroups: CopyGroup[];
 }
 
 export const DEFAULT_TRADING_RULES: TradingRules = {
@@ -108,6 +110,7 @@ export const EMPTY_DATA: AppData = {
   alerts: [],
   sourceTraders: [],
   copyTrades: [],
+  copyGroups: [],
 };
 
 function mulberry32(seed: number) {
@@ -536,6 +539,7 @@ export function createDemoData(now = new Date()): AppData {
     setupChecks: [],
     sourceTraders: [],
     copyTrades: [],
+    copyGroups: [],
     alerts,
     accounts: [account25k, account50k],
     strategies: [orb, vwap],

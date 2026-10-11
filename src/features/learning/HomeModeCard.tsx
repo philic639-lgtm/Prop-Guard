@@ -38,17 +38,17 @@ export function HomeModeCard() {
   const todo = quick.filter((i) => !i.done);
   if (!todo.length) return null;
   const done = quick.length - todo.length;
+  // A slim strip: present until setup is done, never the biggest thing on the dashboard.
   return (
-    <Card tone="accent" style={styles.card} onPress={() => router.push('/start')} accessibilityLabel="Quick start">
-      <View style={styles.row}>
-        <Ionicons name="flash-outline" size={20} color={colors.accentBright} />
-        <AppText variant="label" style={styles.flex}>
-          Quick start · {done}/{quick.length}
+    <Card style={styles.strip} onPress={() => router.push('/start')} accessibilityLabel={`Quick start, ${done} of ${quick.length} done. Next: ${todo[0].title}`}>
+      <Ionicons name="flash-outline" size={18} color={colors.accentBright} />
+      <View style={styles.flex}>
+        <AppText variant="caption" tone="secondary" numberOfLines={1}>
+          Quick start {done}/{quick.length} · <AppText variant="caption" tone="primary">Next: {todo[0].title}</AppText>
         </AppText>
-        <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+        <RiskProgress value={done / quick.length} tone="positive" height={4} label="Quick start progress" />
       </View>
-      <AppText variant="heading">Next: {todo[0].title}</AppText>
-      <AppText variant="caption">{todo[0].detail}</AppText>
+      <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
     </Card>
   );
 }
@@ -56,5 +56,6 @@ export function HomeModeCard() {
 const styles = StyleSheet.create({
   card: { gap: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  flex: { flex: 1 },
+  flex: { flex: 1, gap: 6 },
+  strip: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
 });

@@ -27,7 +27,7 @@ export default function CopyTradeDetail() {
   if (!copy || !result) {
     return (
       <Screen header={<AppHeader title="Copy trade" back />}>
-        <EmptyState illustration="copy" title="Copy not found" message="It may have been deleted." actionLabel="Back to Copy Trade" onAction={() => router.replace('/copy')} />
+        <EmptyState illustration="copy" title="Copy not found" message="It may have been deleted." actionLabel="Back to Copy Trade" onAction={() => router.replace({ pathname: '/copy', params: { section: 'follow' } })} />
       </Screen>
     );
   }
@@ -134,7 +134,7 @@ export default function CopyTradeDetail() {
         variant="ghost"
         onPress={() => {
           remove(copy.id);
-          router.replace('/copy');
+          router.replace({ pathname: '/copy', params: { section: 'follow' } });
         }}
       />
       {copy.mode === 'live' ? (

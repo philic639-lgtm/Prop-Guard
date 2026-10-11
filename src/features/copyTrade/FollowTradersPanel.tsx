@@ -3,20 +3,20 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Button, Card, Chip, EmptyState, Illustration, Screen, SectionHeader, StatusBadge } from '@/components/ui';
+import { AppText, Button, Card, Chip, EmptyState, Illustration, SectionHeader, StatusBadge } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
-import { VERDICT_UI, MODE_LABEL } from '@/features/copyTrade/copyUi';
-import { SourceTraderCard } from '@/features/copyTrade/SourceTraderCard';
-import { useCopyAnalytics, useSourceTraders } from '@/features/copyTrade/useCopyTrade';
+import { MODE_LABEL, VERDICT_UI } from './copyUi';
+import { SourceTraderCard } from './SourceTraderCard';
+import { useCopyAnalytics, useSourceTraders } from './useCopyTrade';
 import { copyResult, FOLLOW_MIN_SAMPLE, VERDICT_LABEL } from '@/lib/engines/copyTradeEngine';
 import { useAppStore } from '@/store/useAppStore';
 import { money } from '@/utils/format';
 
 /**
- * Copy Trade hub: who you copy, how copying them is going, and the copy log.
- * An assistant — Prop Guard never places or mirrors trades.
+ * Follow Traders (Copy Trade tab): who you copy, how copying them is going,
+ * and the copy log. An assistant — Prop Guard never places or mirrors trades.
  */
-export default function CopyTradeHub() {
+export function FollowTradersPanel() {
   const [showArchived, setShowArchived] = useState(false);
   const traders = useSourceTraders(showArchived);
   const archivedCount = useAppStore((s) => s.sourceTraders.filter((t) => t.archived).length);
@@ -28,11 +28,9 @@ export default function CopyTradeHub() {
   const recent = useMemo(() => [...copies].sort((x, y) => Date.parse(y.at) - Date.parse(x.at)).slice(0, 8), [copies]);
   const cmp = a.copiedVsOwn;
 
-  const header = <AppHeader title="Copy Trade" subtitle="Copy smarter, not bigger" back right={<Button label="Add trader" icon="person-add-outline" variant="ghost" size="md" onPress={() => router.push('/copy/trader/new')} />} />;
-
   if (traders.length === 0 && !showArchived && archivedCount === 0) {
     return (
-      <Screen header={header}>
+      <>
         <Card accent="accent" style={styles.hero}>
           <Illustration kind="copy" size={88} />
           <AppText variant="title" align="center">
@@ -51,12 +49,16 @@ export default function CopyTradeHub() {
         <AppText variant="caption" tone="tertiary" align="center">
           Prop Guard does not place, mirror or execute trades. It checks the copy against your own rules before you act.
         </AppText>
-      </Screen>
+      </>
     );
   }
 
   return (
-    <Screen header={header} footer={<Button label="Log Copy Trade" icon="add-circle-outline" onPress={() => router.push('/copy/log')} disabled={!traders.some((t) => !t.archived)} />}>
+    <>
+      <View style={styles.actions}>
+        <Button label="Log Copy Trade" icon="add-circle-outline" size="md" style={styles.flex} onPress={() => router.push('/copy/log')} disabled={!traders.some((t) => !t.archived)} />
+        <Button label="Add trader" icon="person-add-outline" variant="secondary" size="md" style={styles.flex} onPress={() => router.push('/copy/trader/new')} />
+      </View>
       <View style={styles.summary}>
         <Summary icon="people-outline" label="Active traders" value={String(a.activeTraders)} />
         <Summary icon="today-outline" label="Copied today" value={String(a.copiedToday)} />
@@ -122,7 +124,7 @@ export default function CopyTradeHub() {
       <View style={styles.chips}>
         <Chip label="All copied trades in Journal" icon="book-outline" onPress={() => router.push({ pathname: '/journal', params: { origin: 'copied' } })} />
       </View>
-    </Screen>
+    </>
   );
 }
 
@@ -168,6 +170,7 @@ function Insight({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap;
 }
 
 const styles = StyleSheet.create({
+  actions: { flexDirection: 'row', gap: spacing.sm },
   hero: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xxl },
   steps: { alignSelf: 'stretch', gap: spacing.sm, marginVertical: spacing.sm },
   step: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },

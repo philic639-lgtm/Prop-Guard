@@ -1,6 +1,6 @@
 import type { AppData } from '@/data/demo';
 import type { Account, DisciplineEvent, PendingTrade, PracticeRun, SetupCheck, Strategy, Trade, TradePlan, TradingSession } from '@/types/domain';
-import type { CopyTrade, SourceTrader } from '@/types/copyTrade';
+import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 
 import { supabase } from './supabase/client';
@@ -87,6 +87,7 @@ class SyncService {
   upsertSetupCheck = (c: SetupCheck) => this.enqueue('setup check', (r) => r.upsertSetupCheck(c));
   upsertSourceTrader = (t: SourceTrader) => this.enqueue('source trader', (r) => r.upsertSourceTrader(t));
   upsertCopyTrade = (c: CopyTrade) => this.enqueue('copy trade', (r) => r.upsertCopyTrade(c));
+  upsertCopyGroup = (g: CopyGroup) => this.enqueue('copy group', (r) => r.upsertCopyGroup(g));
   insertPracticeRun = (p: PracticeRun) => this.enqueue('practice', (r) => r.insertPracticeRun(p));
   savePreferences = (s: Pick<AppData, 'preferences' | 'tradingRules' | 'activeAccountId' | 'activeStrategyId'>) =>
     this.enqueue('preferences', (r) =>
@@ -113,6 +114,7 @@ class SyncService {
     (data.setupChecks ?? []).forEach(this.upsertSetupCheck);
     (data.sourceTraders ?? []).forEach(this.upsertSourceTrader);
     (data.copyTrades ?? []).forEach(this.upsertCopyTrade);
+    (data.copyGroups ?? []).forEach(this.upsertCopyGroup);
     data.pendingTrades.forEach(this.upsertPendingTrade);
     this.savePreferences(data);
   }

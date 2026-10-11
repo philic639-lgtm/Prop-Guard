@@ -13,7 +13,7 @@ import type {
   UserPreferences,
 } from '@/types/domain';
 import { DEFAULT_COPY_SETTINGS } from '@/lib/engines/copyTradeEngine';
-import type { CopyTrade, SourceTrader } from '@/types/copyTrade';
+import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 
 /**
@@ -805,6 +805,35 @@ export function rowToCopyTrade(r: Row): CopyTrade {
     tradeId: (r.trade_id as string | null) ?? null,
     outcome: (r.outcome as CopyTrade['outcome']) ?? null,
     lesson: str(r.lesson),
+    createdAt: str(r.created_at),
+    updatedAt: str(r.updated_at),
+  };
+}
+
+export function copyGroupToRow(g: CopyGroup, userId: string) {
+  return {
+    id: g.id,
+    user_id: userId,
+    name: g.name,
+    master_account_id: g.masterAccountId,
+    followers: g.followers,
+    // A broker-less copier can never be stored as running.
+    state: g.state,
+    activity: g.activity,
+    created_at: g.createdAt,
+    updated_at: g.updatedAt,
+  };
+}
+
+export function rowToCopyGroup(r: Row): CopyGroup {
+  const state = r.state === 'paused' || r.state === 'stopped' || r.state === 'running' ? r.state : 'setup';
+  return {
+    id: str(r.id),
+    name: str(r.name),
+    masterAccountId: (r.master_account_id as string | null) ?? null,
+    followers: Array.isArray(r.followers) ? (r.followers as CopyGroup['followers']) : [],
+    state,
+    activity: Array.isArray(r.activity) ? (r.activity as CopyGroup['activity']) : [],
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
   };

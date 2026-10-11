@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { colors, radius, spacing } from '@/constants/theme';
 
 import { AppText } from './AppText';
-import { BrandMark } from './Illustration';
+import { BRAND, BrandMark } from './Illustration';
 
 /** Prop Guard wordmark: shield + "PropGuard". */
 export function Logo({ size = 'md', tagline = false }: { size?: 'md' | 'lg' | 'xl'; /** Show the slogan under the wordmark. */ tagline?: boolean }) {
@@ -11,12 +11,12 @@ export function Logo({ size = 'md', tagline = false }: { size?: 'md' | 'lg' | 'x
     return (
       <View style={styles.xl} accessibilityRole="header" accessibilityLabel="Prop Guard">
         <View style={styles.badge}>
-          <BrandMark size={60} />
+          <BrandMark size={72} />
         </View>
         <AppText style={styles.xlText}>
-          Prop<AppText style={[styles.xlText, { color: colors.accentBright }]}>Guard</AppText>
+          Prop<AppText style={[styles.xlText, { color: BRAND.blueLight }]}>Guard</AppText>
         </AppText>
-        <AppText style={styles.tagline}>PLAN YOUR TRADE.</AppText>
+        <AppText style={[styles.tagline, styles.taglineXl]}>PLAN YOUR TRADE.</AppText>
       </View>
     );
   }
@@ -26,7 +26,7 @@ export function Logo({ size = 'md', tagline = false }: { size?: 'md' | 'lg' | 'x
       <BrandMark size={big ? 34 : 28} />
       <View>
         <AppText style={[styles.text, big && { fontSize: 26 }]}>
-          Prop<AppText style={[styles.text, big && { fontSize: 26 }, { color: colors.accentBright }]}>Guard</AppText>
+          Prop<AppText style={[styles.text, big && { fontSize: 26 }, { color: BRAND.blueLight }]}>Guard</AppText>
         </AppText>
         {tagline ? <AppText style={styles.tagline}>PLAN YOUR TRADE.</AppText> : null}
       </View>
@@ -37,7 +37,8 @@ export function Logo({ size = 'md', tagline = false }: { size?: 'md' | 'lg' | 'x
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   text: { fontSize: 21, fontWeight: '800', color: colors.text, letterSpacing: -0.4, lineHeight: 24 },
-  tagline: { fontSize: 9.5, fontWeight: '700', letterSpacing: 2.2, color: colors.textTertiary, marginTop: 1 },
+  tagline: { fontSize: 9.5, fontWeight: '700', letterSpacing: 2.2, color: BRAND.emerald, marginTop: 1 },
+  taglineXl: { fontSize: 12, letterSpacing: 3 },
   xl: { alignItems: 'center', gap: spacing.md },
   badge: {
     width: 104,
@@ -45,9 +46,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl + 6,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentMuted,
+    backgroundColor: BRAND.navyDeep,
     borderWidth: 1,
-    borderColor: colors.accentBright + '44',
+    borderColor: BRAND.blueLight + '44',
   },
   xlText: { fontSize: 38, fontWeight: '800', color: colors.text, letterSpacing: -1 },
 });

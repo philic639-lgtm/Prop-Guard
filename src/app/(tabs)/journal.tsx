@@ -147,7 +147,7 @@ export default function JournalScreen() {
       {copiedSources.length || origin !== 'all' ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
           {(['all', 'self', 'copied'] as OriginFilter[]).map((o) => (
-            <Chip key={o} label={o === 'all' ? 'All trades' : o === 'self' ? 'My trades' : 'Copied'} icon={o === 'copied' ? 'layers-outline' : o === 'self' ? 'person-outline' : undefined} selected={origin === o} onPress={() => setOrigin(o)} />
+            <Chip key={o} label={o === 'all' ? 'All trades' : o === 'self' ? 'My trades' : 'Copied'} icon={o === 'copied' ? 'copy-outline' : o === 'self' ? 'person-outline' : undefined} selected={origin === o} onPress={() => setOrigin(o)} />
           ))}
           {origin === 'copied'
             ? copiedSources.map(([id, name]) => <Chip key={id} label={name} selected={sourceTraderId === id} onPress={() => setSourceTraderId(sourceTraderId === id ? null : id)} />)

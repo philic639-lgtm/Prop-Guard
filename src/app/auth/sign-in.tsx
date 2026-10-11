@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 
-import { AppHeader, AppText, Screen } from '@/components/ui';
+import { AppHeader, AppText, Logo, Screen } from '@/components/ui';
 import { isDemoMode } from '@/config/env';
 import { AuthForm, type AuthValues } from '@/features/onboarding/AuthForm';
 import { CloudNotConfigured } from '@/features/onboarding/CloudNotConfigured';
@@ -24,6 +24,7 @@ export default function SignIn() {
 
   return (
     <Screen header={<AppHeader title="Sign in" back />}>
+      <Logo size="lg" tagline />
       <AppText variant="title">Welcome back.</AppText>
       {isDemoMode ? (
         <CloudNotConfigured />

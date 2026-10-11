@@ -5,7 +5,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { createDemoData, DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES, EMPTY_DATA, type AppData } from '@/data/demo';
 import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
 import type { BrokerImportAction } from '@/lib/engines/journalEngine';
-import type { CopyTrade, SourceTrader } from '@/types/copyTrade';
+import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 import { realizedPnl, realizedR } from '@/lib/engines/riskEngine';
 import { syncService } from '@/services/syncService';
@@ -117,6 +117,9 @@ export interface AppState extends AppData {
   logCopyTrade: (copy: CopyTrade, trade: Trade | null) => void;
   updateCopyTrade: (id: string, patch: Partial<CopyTrade>) => void;
   deleteCopyTrade: (id: string) => void;
+  /** Save an account-copier setup (master, followers, state, activity). Never executes anything. */
+  upsertCopyGroup: (group: CopyGroup) => void;
+  deleteCopyGroup: (id: string) => void;
 
   // automatic journaling
   /** Create or refresh the pending journal entry for a checked trade. */
@@ -493,6 +496,15 @@ export const useAppStore = create<AppState>()(
         syncService.remove('copy_trades', id);
       },
 
+      upsertCopyGroup: (group) => {
+        set((s) => ({ copyGroups: [group, ...s.copyGroups.filter((g) => g.id !== group.id)] }));
+        syncService.upsertCopyGroup(group);
+      },
+      deleteCopyGroup: (id) => {
+        set((s) => ({ copyGroups: s.copyGroups.filter((g) => g.id !== id) }));
+        syncService.remove('copy_groups', id);
+      },
+
       addJournalTrade: (input) => {
         const trade = withStrategyName(input, get().strategies);
         set((s) => ({
@@ -567,7 +579,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'prop-guard-store',
-      version: 7,
+      version: 8,
       migrate: (persisted, version) => {
         const st = (persisted ?? {}) as Partial<AppState>;
         if (version < 3) {
@@ -582,6 +594,7 @@ export const useAppStore = create<AppState>()(
             alerts: st.alerts ?? [],
             sourceTraders: st.sourceTraders ?? [],
             copyTrades: st.copyTrades ?? [],
+            copyGroups: st.copyGroups ?? [],
             preferences: {
               ...DEFAULT_PREFERENCES,
               ...(st.preferences ?? {}),
@@ -592,7 +605,8 @@ export const useAppStore = create<AppState>()(
           } as AppState;
         }
         // v7: Copy Trade collections (added empty to every older state).
-        const copy = { sourceTraders: st.sourceTraders ?? [], copyTrades: st.copyTrades ?? [] };
+        // v8: account copier groups.
+        const copy = { sourceTraders: st.sourceTraders ?? [], copyTrades: st.copyTrades ?? [], copyGroups: st.copyGroups ?? [] };
         if (version < 4) return { ...st, ...copy, pendingTrades: st.pendingTrades ?? [], setupChecks: st.setupChecks ?? [] } as AppState;
         if (version < 5) return { ...st, ...copy, setupChecks: st.setupChecks ?? [] } as AppState;
         // v6: Setup Check engine replaced — earlier (v1) checks used a different scoring model and are dropped.
@@ -619,6 +633,7 @@ export const useAppStore = create<AppState>()(
         alerts: s.alerts,
         sourceTraders: s.sourceTraders,
         copyTrades: s.copyTrades,
+        copyGroups: s.copyGroups,
         recentTemplateIds: s.recentTemplateIds,
         mode: s.mode,
         user: s.user,

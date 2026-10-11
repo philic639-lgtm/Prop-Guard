@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { AppData } from '@/data/demo';
 import { DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES } from '@/data/demo';
-import type { CopyTrade, SourceTrader } from '@/types/copyTrade';
+import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 import type { Account, DisciplineEvent, PendingTrade, PracticeRun, SetupCheck, Strategy, Trade, TradePlan, TradingSession, UserPreferences } from '@/types/domain';
 
@@ -17,6 +17,8 @@ import {
   rowToPracticeLesson,
   rowToSetupCheck,
   rowToCopyTrade,
+  rowToCopyGroup,
+  copyGroupToRow,
   rowToSourceTrader,
   copyTradeToRow,
   sourceTraderToRow,
@@ -46,7 +48,7 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
   return res.data;
 }
 
-export type RemovableTable = 'accounts' | 'strategies' | 'trades' | 'practice_lessons' | 'setup_checks' | 'copy_trades';
+export type RemovableTable = 'accounts' | 'strategies' | 'trades' | 'practice_lessons' | 'setup_checks' | 'copy_trades' | 'copy_groups';
 
 export class SupabaseRepository {
   constructor(
@@ -56,7 +58,7 @@ export class SupabaseRepository {
 
   async loadAll(): Promise<Partial<AppData>> {
     const db = this.db;
-    const [plans, practice, pending, attempts, lessons, checks, sources, copies] = await Promise.all([
+    const [plans, practice, pending, attempts, lessons, checks, sources, copies, groups] = await Promise.all([
       db.from('trade_plans').select('*').order('created_at', { ascending: false }).limit(200),
       db.from('practice_runs').select('*').order('created_at', { ascending: false }).limit(100),
       db.from('pending_trades').select('*').order('created_at', { ascending: false }).limit(200),
@@ -65,6 +67,7 @@ export class SupabaseRepository {
       db.from('setup_checks').select('*').order('created_at', { ascending: false }).limit(500),
       db.from('source_traders').select('*').order('updated_at', { ascending: false }).limit(200),
       db.from('copy_trades').select('*').order('idea_at', { ascending: false }).limit(2000),
+      db.from('copy_groups').select('*').order('updated_at', { ascending: false }).limit(50),
     ]);
     const [accounts, rules, strategies, items, sessions, trades, events, prefs, profile] = await Promise.all([
       db.from('accounts').select('*').order('created_at'),
@@ -129,6 +132,7 @@ export class SupabaseRepository {
       setupChecks: checks.error ? [] : ((checks.data ?? []) as Row[]).map(rowToSetupCheck),
       sourceTraders: sources.error ? [] : ((sources.data ?? []) as Row[]).map(rowToSourceTrader),
       copyTrades: copies.error ? [] : ((copies.data ?? []) as Row[]).map(rowToCopyTrade),
+      copyGroups: groups.error ? [] : ((groups.data ?? []) as Row[]).map(rowToCopyGroup),
     };
   }
 
@@ -186,6 +190,10 @@ export class SupabaseRepository {
 
   async upsertSourceTrader(t: SourceTrader) {
     check(await this.db.from('source_traders').upsert(sourceTraderToRow(t, this.userId)));
+  }
+
+  async upsertCopyGroup(g: CopyGroup) {
+    check(await this.db.from('copy_groups').upsert(copyGroupToRow(g, this.userId)));
   }
 
   async upsertCopyTrade(c: CopyTrade) {

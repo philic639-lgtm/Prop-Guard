@@ -10,7 +10,10 @@ import { computeDailyGuard } from '@/lib/engines/dailyGuardEngine';
 import { useAppStore } from '@/store/useAppStore';
 import { makeAccount, makeRules } from '@/test/fixtures';
 
-import { CopyTradeHomeCard } from '../CopyTradeHomeCard';
+import { TAB_ITEMS } from '@/components/domain/TabBar';
+import { newCopyGroup } from '@/lib/engines/accountCopierEngine';
+
+import { AccountCopierPanel } from '../AccountCopierPanel';
 import { CopyVerdictCard } from '../CopyVerdictCard';
 
 // Icon fonts load asynchronously; a static stand-in keeps renders synchronous.
@@ -33,15 +36,23 @@ afterEach(() => act(() => mounted.splice(0).forEach((r) => r.unmount())));
 describe('Copy Trade UI', () => {
   beforeEach(() => useAppStore.getState().startFresh('local'));
 
-  it('13: dashboard card — intro before any trader, summary + Log Copy Trade after', () => {
-    expect(text(render(<CopyTradeHomeCard />))).toContain('Follow other traders without oversizing');
+  it('14: the five primary destinations, in order, with labels', () => {
+    expect(Object.values(TAB_ITEMS).map((t) => t.label)).toEqual(['Home', 'Strategies', 'Copy Trade', 'Journal', 'More']);
+  });
+
+  it('trade copier: needs two accounts; setup-only banner; live start disabled with the reason', () => {
+    expect(text(render(<AccountCopierPanel />))).toContain('Link two or more accounts');
     act(() => {
-      useAppStore.getState().upsertSourceTrader({ id: 's1', name: 'Alpha', platform: 'discord', assetClass: 'futures', instruments: ['MNQ'], style: null, notes: '', trustRating: null, isActive: true, archived: false, settings: DEFAULT_COPY_SETTINGS, createdAt: '2026-10-12T00:00:00Z', updatedAt: '2026-10-12T00:00:00Z' });
+      useAppStore.getState().upsertAccount(makeAccount({ id: 'm', name: 'Master 50K' }));
+      useAppStore.getState().upsertAccount(makeAccount({ id: 'f', name: 'Follower 25K' }));
+      useAppStore.getState().upsertCopyGroup({ ...newCopyGroup('g1', '2026-10-12T00:00:00Z'), masterAccountId: 'm', followers: [{ accountId: 'f', multiplier: 0.5, maxContracts: 2, dailyLossLimit: 300, enabled: true }] });
     });
-    const t = text(render(<CopyTradeHomeCard />));
-    expect(t).toContain('Active traders');
-    expect(t).toContain('Copied today');
-    expect(t).toContain('Log Copy Trade');
+    const t = text(render(<AccountCopierPanel />));
+    expect(t).toContain('Setup & preview only');
+    expect(t).toContain('Start live copying');
+    expect(t).toContain('Live copying needs a connected, supported broker');
+    expect(t).toContain('Not connected');
+    expect(t).toContain('Follower 25K');
   });
 
   it('review card shows verdict, size, risk and the reduced-size suggestion', () => {

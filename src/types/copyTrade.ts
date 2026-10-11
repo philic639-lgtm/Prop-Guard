@@ -123,3 +123,46 @@ export interface CopyTrade {
   createdAt: string;
   updatedAt: string;
 }
+
+// ───────────────────────────── Account copier (setup) ─────────────────────────────
+
+/**
+ * Account copier: one master account whose trades would be mirrored to
+ * follower accounts at a multiplier, within each follower's own limits.
+ * Live execution needs a connected, supported broker — none ships yet — so a
+ * group can only be set up, previewed, paused or stopped. `running` is never
+ * set without a connected broker.
+ */
+export type CopierState = 'setup' | 'running' | 'paused' | 'stopped';
+
+export interface FollowerLink {
+  accountId: string;
+  /** Follower contracts = master contracts × multiplier (rounded down). */
+  multiplier: number;
+  /** Per-account caps (in addition to the account's own rules). */
+  maxContracts: number | null;
+  /** Per-account daily loss limit for copied trades. */
+  dailyLossLimit: number | null;
+  enabled: boolean;
+}
+
+export type CopierEventKind = 'created' | 'master' | 'linked' | 'unlinked' | 'settings' | 'paused' | 'resumed' | 'stopped' | 'start_refused' | 'preview';
+
+export interface CopierEvent {
+  id: string;
+  at: string;
+  kind: CopierEventKind;
+  detail: string;
+}
+
+export interface CopyGroup {
+  id: string;
+  name: string;
+  masterAccountId: string | null;
+  followers: FollowerLink[];
+  state: CopierState;
+  /** Newest first, capped. */
+  activity: CopierEvent[];
+  createdAt: string;
+  updatedAt: string;
+}

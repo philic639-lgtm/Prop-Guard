@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- PropGuard mark: shield + ascending candlesticks. Navy / electric blue / emerald. -->
+  <defs>
+    <linearGradient id="pg-shield" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4DA3FF"/>
+      <stop offset="1" stop-color="#1F6BFF"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 5 L53 12.5 V29.5 C53 44 43.8 54.2 32 59 C20.2 54.2 11 44 11 29.5 V12.5 Z" fill="url(#pg-shield)"/>
+  <path d="M32 9.6 L49 15.6 V29.6 C49 41.6 41.6 50.2 32 54.4 C22.4 50.2 15 41.6 15 29.6 V15.6 Z" fill="#0B1733" fill-opacity="0.92"/>
+  <g stroke-linecap="round">
+    <line x1="22" y1="33" x2="22" y2="45" stroke="#93A9D6" stroke-width="1.8"/>
+    <rect x="19.5" y="36" width="5" height="6.5" rx="1.2" fill="#93A9D6"/>
+    <line x1="32" y1="26" x2="32" y2="41" stroke="#4DA3FF" stroke-width="1.8"/>
+    <rect x="29.5" y="29" width="5" height="9" rx="1.2" fill="#4DA3FF"/>
+    <line x1="42" y1="17.5" x2="42" y2="35" stroke="#22C55E" stroke-width="1.8"/>
+    <rect x="39.5" y="20.5" width="5" height="11" rx="1.2" fill="#22C55E"/>
+  </g>
+</svg>

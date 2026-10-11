@@ -25,7 +25,7 @@ import {
 } from '@/components/ui';
 import { colors, GUTTER, radius, spacing, toneColor } from '@/constants/theme';
 import { CoachCard } from '@/features/home/CoachCard';
-import { CopyTradeHomeCard } from '@/features/copyTrade/CopyTradeHomeCard';
+import { useCopyAnalytics } from '@/features/copyTrade/useCopyTrade';
 import { screenshotLabel } from '@/features/accountImport/ScreenshotStatus';
 import { FIELD_LABEL, type FieldKey } from '@/lib/engines/accountImport';
 import { drawdownFloor } from '@/lib/engines/propRuleEngine';
@@ -52,6 +52,8 @@ export default function HomeScreen() {
   const openTrade = useOpenTrade();
   const pending = usePendingTrades();
   const { score } = useDiscipline(30);
+  const copyGroups = useAppStore((s) => s.copyGroups);
+  const copyStats = useCopyAnalytics();
 
   const recent = useMemo(() => trades.slice(0, 3), [trades]);
   const names = useMemo(() => new Map(strategies.map((s) => [s.id, s.name])), [strategies]);
@@ -65,7 +67,6 @@ export default function HomeScreen() {
     <View style={styles.header}>
       <Logo tagline />
       <View style={styles.headerRight}>
-        <HeaderIconButton icon="layers-outline" label="Copy Trade" onPress={() => router.push('/copy')} />
         <HeaderIconButton icon="notifications-outline" label="Alerts" badge={unread} onPress={() => router.push('/alerts')} />
         <HeaderIconButton icon="settings-outline" label="Profile and settings" onPress={() => router.push('/profile')} />
       </View>
@@ -84,6 +85,12 @@ export default function HomeScreen() {
   }
 
   const progress = evaluation?.targetProgress ?? null;
+  const copier = copyGroups[0];
+  const copyLine = copier
+    ? `Copier: ${copier.state === 'paused' ? 'paused' : copier.state === 'stopped' ? 'stopped' : 'setup only'} · ${copier.followers.length} follower${copier.followers.length === 1 ? '' : 's'}`
+    : copyStats.activeTraders
+      ? `${copyStats.copiedToday} copied today`
+      : 'Link accounts or follow traders';
   const profit = account.balance - account.cycleStartBalance;
   const consistency = evaluation?.rules.find((r) => r.id === 'consistency');
   const ui = guard ? GUARD_UI[guard.status] : null;
@@ -91,58 +98,68 @@ export default function HomeScreen() {
   return (
     <Screen tabBar header={header}>
       <DemoBanner />
-      <HomeModeCard />
 
-      <Card accent="accent" onPress={() => router.push({ pathname: '/accounts/[id]', params: { id: account.id } })} accessibilityLabel={`${account.name}, ${CONNECTION_LABEL[connection]}`}>
-        <View style={styles.accountRow}>
-          <View style={styles.avatar}>
-            <AppText variant="heading" style={{ color: colors.text }}>
-              {(account.firm || account.name).charAt(0).toUpperCase()}
-            </AppText>
-          </View>
-          <View style={styles.flex}>
-            <AppText variant="heading" numberOfLines={1}>
-              {account.name}
-            </AppText>
-            <View style={styles.connRow}>
-              <View style={[styles.connDot, { backgroundColor: connection === 'connected' ? colors.positive : colors.accentBright }]} />
-              <AppText variant="caption" style={{ color: connection === 'connected' ? colors.positive : colors.accentBright }}>
-                {account.importState?.reported ? `Snapshot-based — not live verified · ${screenshotLabel(account.importState.reported.at)}` : CONNECTION_LABEL[connection]}
-              </AppText>
-            </View>
-            {account.importState?.reported?.missing?.length ? (
-              <AppText variant="caption" tone="tertiary" numberOfLines={2}>
-                Not in the snapshot: {account.importState.reported.missing.map((k) => FIELD_LABEL[k as FieldKey] ?? k).join(', ')}
-              </AppText>
-            ) : null}
-          </View>
-          <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+      {/* Account overview: who / where the numbers come from. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${account.name}, ${CONNECTION_LABEL[connection]}`}
+        onPress={() => router.push({ pathname: '/accounts/[id]', params: { id: account.id } })}
+        style={({ pressed }) => [styles.overview, pressed && styles.pressed]}>
+        <View style={styles.avatar}>
+          <AppText variant="heading" style={{ color: colors.text }}>
+            {(account.firm || account.name).charAt(0).toUpperCase()}
+          </AppText>
         </View>
-        {progress != null && account.rules.profitTarget ? (
-          <View style={styles.progress}>
-            <View style={styles.progressHead}>
-              <AppText variant="bodyStrong">Account progress</AppText>
-              <AppText variant="bodyStrong" tone="positive">
-                {pct(progress)}
-              </AppText>
-            </View>
-            <RiskProgress value={progress} tone="positive" label="Profit target progress" />
-            <AppText variant="caption">
-              <AppText variant="bodyStrong" tone={profit >= 0 ? 'primary' : 'danger'} style={{ fontSize: 14 }}>
-                {money(profit)}
-              </AppText>{' '}
-              / {money(account.rules.profitTarget)} profit target
+        <View style={styles.flex}>
+          <AppText variant="heading" numberOfLines={1}>
+            {account.name}
+          </AppText>
+          <View style={styles.connRow}>
+            <View style={[styles.connDot, { backgroundColor: connection === 'connected' ? colors.positive : colors.accentBright }]} />
+            <AppText variant="caption" numberOfLines={1} style={[styles.flex, { color: connection === 'connected' ? colors.positive : colors.accentBright }]}>
+              {account.importState?.reported ? `Snapshot-based — not live verified · ${screenshotLabel(account.importState.reported.at)}` : CONNECTION_LABEL[connection]}
             </AppText>
           </View>
-        ) : null}
-      </Card>
+          {account.importState?.reported?.missing?.length ? (
+            <AppText variant="caption" tone="tertiary" numberOfLines={2}>
+              Not in the snapshot: {account.importState.reported.missing.map((k) => FIELD_LABEL[k as FieldKey] ?? k).join(', ')}
+            </AppText>
+          ) : null}
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+      </Pressable>
+
+      {/* The four numbers that matter: balance, profit target, daily risk, drawdown. */}
+      {guard ? (
+        <TileGrid>
+          <MetricTile label="Account balance" value={money(account.balance)} icon="wallet-outline" sub={profit !== 0 ? `${money(profit, { sign: true })} this cycle` : undefined} />
+          <MetricTile label="Profit target" icon="flag-outline" value={account.rules.profitTarget && progress != null ? pct(progress) : 'Not set'} sub={account.rules.profitTarget ? `${money(profit)} / ${money(account.rules.profitTarget)}` : 'Add it on the account'}>
+            {account.rules.profitTarget && progress != null ? <RiskProgress value={progress} tone="positive" height={5} label="Profit target progress" /> : null}
+          </MetricTile>
+          <MetricTile
+            label="Daily risk left"
+            icon="speedometer-outline"
+            value={guard.dailyLimit > 0 ? money(guard.riskRemaining) : 'Not set'}
+            sub={guard.dailyLimit > 0 ? `of ${money(guard.dailyLimit)} today` : 'Set a daily stop'}
+            tone={guard.dailyLimit > 0 && guard.riskUsedPct >= 0.6 ? 'warning' : 'primary'}>
+            {guard.dailyLimit > 0 ? <RiskProgress value={guard.riskUsedPct} height={5} label="Daily risk used" /> : null}
+          </MetricTile>
+          <MetricTile
+            label="Drawdown left"
+            icon="trending-down-outline"
+            value={guard.drawdownUnknown ? 'Unknown' : money(guard.drawdownBuffer)}
+            sub={guard.drawdownUnknown ? 'Additional account information required' : drawdownFloor(account) != null ? `Floor ${money(drawdownFloor(account))}` : undefined}
+            tone={guard.drawdownUnknown || (guard.drawdownBuffer != null && guard.drawdownBuffer < 500) ? 'warning' : 'primary'}
+          />
+        </TileGrid>
+      ) : null}
 
       {guard && ui ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Daily Guard: ${guard.headline}`}
-          onPress={() => router.push('/analyze')}
-          style={[styles.guard, { backgroundColor: toneColor[ui.tone].bg, borderColor: toneColor[ui.tone].fg + '66' }]}>
+          onPress={() => router.push('/risk')}
+          style={[styles.guard, { backgroundColor: toneColor[ui.tone].bg, borderColor: toneColor[ui.tone].fg + '44' }]}>
           <StatusBadge label={guard.status === 'CAUTION' ? guard.headline : ui.label} tone={ui.tone} icon={ui.icon} />
           <AppText variant="caption" style={[styles.flex, { color: colors.text }]} numberOfLines={1}>
             {guard.cooldown.active ? `Cooldown ${formatDuration(guard.cooldown.remainingMs)}` : (guard.reasons[0] ?? `${money(guard.riskRemaining)} risk left today`)}
@@ -151,40 +168,50 @@ export default function HomeScreen() {
         </Pressable>
       ) : null}
 
+      {/* Actions — separate from the account numbers above. */}
+      <Button label="Check Trade" icon="shield-checkmark" variant="success" onPress={() => router.push('/analyze')} />
+      <View style={styles.actions}>
+        <ActionCard icon="copy-outline" title="Copy Trade" subtitle={copyLine} onPress={() => router.push('/copy')} />
+        <ActionCard icon="shield-half-outline" title="Risk Manager" subtitle={guard ? (guard.dailyLimit > 0 ? `${money(guard.riskRemaining)} risk left` : 'Set your limits') : 'Rules & sizing'} onPress={() => router.push('/risk')} tone="positive" />
+      </View>
+      <View style={styles.actions}>
+        <ActionCard icon="scan-outline" title="Setup Check" subtitle="Chart vs your rules" onPress={() => router.push('/setup-check')} compact />
+        <ActionCard icon="book-outline" title="Journal" subtitle={pending.length ? `${pending.length} awaiting result` : 'Your trades'} onPress={() => router.push('/journal')} compact />
+      </View>
+      <HomeModeCard />
+
       {guard ? (
-        <TileGrid>
-          <MetricTile label="Account balance" value={money(account.balance)} />
-          <MetricTile
-            label="Drawdown remaining"
-            value={guard.drawdownUnknown ? 'Unknown' : money(guard.drawdownBuffer)}
-            sub={guard.drawdownUnknown ? 'Additional account information required' : drawdownFloor(account) != null ? `Floor ${money(drawdownFloor(account))}` : undefined}
-            tone={guard.drawdownUnknown || (guard.drawdownBuffer != null && guard.drawdownBuffer < 500) ? 'warning' : 'primary'}
-          />
-          {guard.dailyPnlSource === 'unknown' ? (
-            <MetricTile label="Daily P&L" value="Unknown" sub="Not in the snapshot" />
-          ) : (
-            <MetricTile label="Daily P&L" value={money(guard.realizedPnlToday, { sign: true })} sub={guard.snapshot ? 'Journaled trades' : undefined} tone={guard.realizedPnlToday > 0 ? 'positive' : guard.realizedPnlToday < 0 ? 'danger' : 'primary'} />
-          )}
-          <MetricTile
-            label="Firm daily loss limit"
-            value={guard.firmDailyLimit != null ? money(guard.firmDailyLimit) : 'Not set'}
-            sub={guard.firmDailyLimit != null ? (guard.dailyPnlSource === 'unknown' ? "Today's use unknown" : `${money(guard.firmDailyRoom)} left`) : undefined}
-          />
-          <MetricTile
-            label="Your daily budget"
-            value={guard.personalRoom != null ? money(guard.personalRoom) : 'Not set'}
-            sub={guard.personalDailyStop != null ? `left of ${money(guard.personalDailyStop)} (your plan)` : undefined}
-            tone={guard.personalRoom != null && guard.personalRoom <= 0 ? 'danger' : 'primary'}
-          />
-          <MetricTile label="Trades remaining" value={`${guard.tradesRemaining} / ${guard.maxTrades}`} tone={guard.tradesRemaining === 0 ? 'danger' : 'primary'} />
-          <MetricTile
-            label={consistency ? 'Consistency' : 'Discipline'}
-            value={consistency ? (consistency.status === 'warning' || consistency.status === 'breached' ? 'Watch' : 'On Track') : String(score.score)}
-            icon={consistency ? (consistency.status === 'warning' ? 'alert-circle' : 'checkmark-circle') : undefined}
-            tone={consistency ? (consistency.status === 'warning' ? 'warning' : 'positive') : score.tone}
-            onPress={() => router.push('/discipline')}
-          />
-        </TileGrid>
+        <>
+          <SectionHeader title="Today" />
+          <TileGrid>
+            {guard.dailyPnlSource === 'unknown' ? (
+              <MetricTile label="Daily P&L" value="Unknown" sub="Not in the snapshot" />
+            ) : (
+              <MetricTile label="Daily P&L" value={money(guard.realizedPnlToday, { sign: true })} sub={guard.snapshot ? 'Journaled trades' : undefined} tone={guard.realizedPnlToday > 0 ? 'positive' : guard.realizedPnlToday < 0 ? 'danger' : 'primary'} />
+            )}
+            <MetricTile
+              label="Firm daily loss limit"
+              value={guard.firmDailyLimit != null ? money(guard.firmDailyLimit) : 'Not set'}
+              sub={guard.firmDailyLimit != null ? (guard.dailyPnlSource === 'unknown' ? "Today's use unknown" : `${money(guard.firmDailyRoom)} left`) : undefined}
+            />
+            <MetricTile
+              label="Your daily budget"
+              value={guard.personalRoom != null ? money(guard.personalRoom) : 'Not set'}
+              sub={guard.personalDailyStop != null ? `left of ${money(guard.personalDailyStop)} (your plan)` : undefined}
+              tone={guard.personalRoom != null && guard.personalRoom <= 0 ? 'danger' : 'primary'}
+            />
+            <MetricTile label="Trades remaining" value={`${guard.tradesRemaining} / ${guard.maxTrades}`} tone={guard.tradesRemaining === 0 ? 'danger' : 'primary'} />
+            {consistency ? (
+              <MetricTile
+                label="Consistency"
+                value={consistency.status === 'warning' || consistency.status === 'breached' ? 'Watch' : 'On Track'}
+                icon={consistency.status === 'warning' ? 'alert-circle' : 'checkmark-circle'}
+                tone={consistency.status === 'warning' ? 'warning' : 'positive'}
+                onPress={() => router.push('/discipline')}
+              />
+            ) : null}
+          </TileGrid>
+        </>
       ) : null}
 
       {openTrade ? (
@@ -227,15 +254,7 @@ export default function HomeScreen() {
         </Card>
       )}
 
-      <Button label="Check Trade" icon="shield-checkmark" variant="success" onPress={() => router.push('/analyze')} />
       {strategy ? <Button label="Today's Plan" icon="list-outline" variant="secondary" onPress={() => router.push('/session/today')} /> : null}
-      <View style={styles.quick}>
-        <QuickAction icon="scan-outline" label="Analyze Setup" onPress={() => router.push('/setup-check')} />
-        <QuickAction icon="calculator-outline" label="Risk Calc" onPress={() => router.push('/calculator')} />
-        <QuickAction icon="layers-outline" label="Copy Trade" onPress={() => router.push('/copy')} />
-        <QuickAction icon="book-outline" label="Journal" onPress={() => router.push('/journal')} />
-      </View>
-      <CopyTradeHomeCard />
 
       {todaysPlan ? (
         <Card onPress={() => router.push('/analyze')} tone="accent">
@@ -298,29 +317,38 @@ export default function HomeScreen() {
   );
 }
 
-/** Icon tile for the dashboard's quick actions (consistent icon + label, one tap). */
-function QuickAction({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+/** A dashboard action: icon, title, one line of context. Each action is its own card. */
+function ActionCard({ icon, title, subtitle, onPress, tone = 'accent', compact }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string; onPress: () => void; tone?: 'accent' | 'positive'; compact?: boolean }) {
+  const c = toneColor[tone];
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.qa, pressed && styles.qaPressed]}>
-      <View style={styles.qaIcon}>
-        <Ionicons name={icon} size={20} color={colors.accentBright} />
+    <Pressable accessibilityRole="button" accessibilityLabel={`${title}. ${subtitle}`} onPress={onPress} style={({ pressed }) => [styles.action, compact && styles.actionCompact, pressed && styles.pressed]}>
+      <View style={[styles.actionIcon, compact && styles.actionIconSm, { backgroundColor: c.bg }]}>
+        <Ionicons name={icon} size={compact ? 18 : 20} color={tone === 'positive' ? colors.positive : colors.accentBright} />
       </View>
-      <AppText variant="caption" tone="primary" numberOfLines={1} style={styles.qaLabel}>
-        {label}
-      </AppText>
+      <View style={compact ? styles.flex : styles.actionText}>
+        <AppText variant="bodyStrong" numberOfLines={1}>
+          {title}
+        </AppText>
+        <AppText variant="caption" tone="secondary" numberOfLines={compact ? 1 : 2}>
+          {subtitle}
+        </AppText>
+      </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  quick: { flexDirection: 'row', gap: spacing.sm },
-  qa: { flex: 1, minWidth: 0, alignItems: 'center', gap: spacing.xs + 2, paddingVertical: spacing.md, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  qaPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
-  qaIcon: { width: 38, height: 38, borderRadius: radius.md, backgroundColor: colors.accentMuted, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.accentBright + '33' },
-  qaLabel: { fontSize: 12, fontWeight: '600' },
+  overview: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xs },
+  pressed: { opacity: 0.8 },
+  actions: { flexDirection: 'row', gap: spacing.sm },
+  action: { flex: 1, minWidth: 0, gap: 4, padding: spacing.md, minHeight: 112, borderRadius: radius.lg, backgroundColor: colors.card },
+  actionCompact: { minHeight: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
+  actionIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  actionIconSm: { width: 32, height: 32, marginBottom: 0 },
+  actionText: { gap: 2 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: GUTTER, paddingVertical: spacing.md },
   headerRight: { flexDirection: 'row', gap: spacing.sm },
-  flex: { flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   accountRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   avatar: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },

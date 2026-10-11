@@ -12,7 +12,7 @@ const TOOLS: { label: string; sub: string; icon: keyof typeof Ionicons.glyphMap;
   { label: 'Setup Check', sub: 'Chart vs your strategy', icon: 'scan-outline', route: '/setup-check' },
   { label: 'Risk calculator', sub: 'Size from your stop', icon: 'calculator-outline', route: '/calculator' },
   { label: 'Import strategy', sub: 'In your own words', icon: 'create-outline', route: '/strategy/describe' },
-  { label: 'Copy Trade', sub: 'Copy others, sized to you', icon: 'layers-outline', route: '/copy' },
+  { label: 'Copy Trade', sub: 'Copy others, sized to you', icon: 'copy-outline', route: '/copy' },
   { label: 'Practice', sub: 'Replay scenarios', icon: 'flask-outline', route: '/practice' },
   { label: 'Performance', sub: 'From your journal', icon: 'stats-chart-outline', route: '/performance' },
 ];

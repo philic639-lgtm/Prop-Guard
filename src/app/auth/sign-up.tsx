@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 
-import { AppHeader, AppText, Card, Screen } from '@/components/ui';
+import { AppHeader, AppText, Card, Logo, Screen } from '@/components/ui';
 import { isDemoMode } from '@/config/env';
 import { AuthForm, type AuthValues } from '@/features/onboarding/AuthForm';
 import { CloudNotConfigured } from '@/features/onboarding/CloudNotConfigured';
@@ -27,6 +27,7 @@ export default function SignUp() {
 
   return (
     <Screen header={<AppHeader title="Create account" back />}>
+      <Logo size="lg" tagline />
       <AppText variant="title">Protect every account.</AppText>
       {isDemoMode ? (
         <CloudNotConfigured next={next} />

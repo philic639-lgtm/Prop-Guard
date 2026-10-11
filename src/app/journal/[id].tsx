@@ -126,7 +126,7 @@ export default function TradeDetail() {
           accessibilityLabel={`Copied from ${trade.sourceTraderName ?? 'a source trader'}`}
           onPress={() => (trade.copyTradeId ? router.push({ pathname: '/copy/[id]', params: { id: trade.copyTradeId } }) : router.push('/copy'))}
           style={styles.copied}>
-          <Ionicons name="layers-outline" size={16} color={colors.accentBright} />
+          <Ionicons name="copy-outline" size={16} color={colors.accentBright} />
           <AppText variant="caption" tone="accent" style={{ flex: 1 }}>
             Copied from {trade.sourceTraderName ?? 'a source trader'} — view the copy check
           </AppText>

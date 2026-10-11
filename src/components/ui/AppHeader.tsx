@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, GUTTER, spacing } from '@/constants/theme';
 
 import { AppText } from './AppText';
+import { BrandMark } from './Illustration';
 
 interface AppHeaderProps {
   title?: string;
@@ -34,7 +35,7 @@ export function AppHeader({ title, subtitle, back, onBack, right, brand }: AppHe
         <View style={styles.titles}>
           {brand ? (
             <View style={styles.brand}>
-              <Ionicons name="shield-checkmark" size={18} color={colors.accent} />
+              <BrandMark size={20} />
               <AppText variant="label" tone="primary" style={styles.brandText}>
                 {title ?? 'PROP GUARD'}
               </AppText>

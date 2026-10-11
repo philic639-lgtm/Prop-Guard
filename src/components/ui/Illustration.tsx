@@ -93,19 +93,33 @@ export function Illustration({ kind, size = 80 }: { kind: IllustrationKind; size
   );
 }
 
-/** The Prop Guard mark: a gradient shield with a check. */
+/**
+ * The PropGuard mark: a shield with ascending candlesticks (navy field,
+ * electric blue shield, emerald breakout candle). Same geometry as
+ * `assets/brand/propguard-mark.svg`, from which the app icon, favicon and
+ * splash are rendered.
+ */
 export function BrandMark({ size = 28 }: { size?: number }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
   return (
-    <Svg width={size} height={size} viewBox="0 0 32 32" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <Svg width={size} height={size} viewBox="0 0 64 64" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       <Defs>
         <LinearGradient id={`s${id}`} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0" stopColor={colors.accentBright} />
-          <Stop offset="1" stopColor={colors.accent} />
+          <Stop offset="0" stopColor={BRAND.blueLight} />
+          <Stop offset="1" stopColor={BRAND.blue} />
         </LinearGradient>
       </Defs>
-      <Path d="M16 2.5 L27 6.6 V15 C27 22.2 22.3 27.6 16 30 C9.7 27.6 5 22.2 5 15 V6.6 Z" fill={`url(#s${id})`} />
-      <Path d="M10.8 16 L14.6 19.8 L21.6 12.4" stroke="#FFFFFF" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Path d="M32 5 L53 12.5 V29.5 C53 44 43.8 54.2 32 59 C20.2 54.2 11 44 11 29.5 V12.5 Z" fill={`url(#s${id})`} />
+      <Path d="M32 9.6 L49 15.6 V29.6 C49 41.6 41.6 50.2 32 54.4 C22.4 50.2 15 41.6 15 29.6 V15.6 Z" fill={BRAND.navy} fillOpacity={0.92} />
+      <Path d="M22 33 V45 M32 26 V41 M42 17.5 V35" strokeWidth={1.8} strokeLinecap="round" stroke={BRAND.slate} />
+      <Rect x={19.5} y={36} width={5} height={6.5} rx={1.2} fill={BRAND.slate} />
+      <Path d="M32 26 V41" strokeWidth={1.8} strokeLinecap="round" stroke={BRAND.blueLight} />
+      <Rect x={29.5} y={29} width={5} height={9} rx={1.2} fill={BRAND.blueLight} />
+      <Path d="M42 17.5 V35" strokeWidth={1.8} strokeLinecap="round" stroke={BRAND.emerald} />
+      <Rect x={39.5} y={20.5} width={5} height={11} rx={1.2} fill={BRAND.emerald} />
     </Svg>
   );
 }
+
+/** Brand palette (deep navy, electric blue, emerald). */
+export const BRAND = { navy: '#0B1733', navyDeep: '#060B1A', blue: '#1F6BFF', blueLight: '#4DA3FF', emerald: '#22C55E', slate: '#93A9D6' } as const;

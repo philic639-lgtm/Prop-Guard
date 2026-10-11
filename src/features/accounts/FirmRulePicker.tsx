@@ -216,7 +216,7 @@ export function ProgramPicker({
     <View style={styles.gap}>
       <Select
         label="Program"
-        icon="layers-outline"
+        icon="copy-outline"
         value={line?.line ?? null}
         placeholder={`Select a ${firm.name} program`}
         sub={line ? `${line.stages.map((f) => STAGE_LABEL[f.stage]).join(' · ')} · ${line.stages.some(familyVerified) ? 'Verified rules' : 'Rules not yet verified'}` : null}
