@@ -33,6 +33,8 @@ export function ScreenshotStatus({ account }: { account: Account }) {
   const fromRules = ruleFloor(account);
   const floorDiff = rep.drawdownThreshold != null && fromRules != null && Math.abs(rep.drawdownThreshold - fromRules) > 1;
   const maxLoss = maxDrawdownAmount(account);
+  // Where a confirmed value came from: read on the screenshot, or typed by the trader during the import.
+  const enteredByYou = (k: string) => st?.history[0]?.fields.find((f) => f.key === k)?.source === 'user';
   const dll = dailyLossLimitFor(account);
   const target = account.rules.profitTarget;
   return (
@@ -49,8 +51,8 @@ export function ScreenshotStatus({ account }: { account: Account }) {
       </AppText>
       <DetailTable
         rows={[
-          ...(rep.balance != null ? [{ label: 'Balance on screenshot', value: money(rep.balance) }] : []),
-          ...(rep.drawdownThreshold != null ? [{ label: 'Minimum balance (MLL) on screenshot', value: money(rep.drawdownThreshold) }] : []),
+          ...(rep.balance != null ? [{ label: enteredByYou('balance') ? 'Balance (entered by you)' : 'Balance on screenshot', value: money(rep.balance) }] : []),
+          ...(rep.drawdownThreshold != null ? [{ label: enteredByYou('drawdownThreshold') ? 'Liquidation threshold (entered by you)' : 'Liquidation threshold (MLL) on screenshot', value: money(rep.drawdownThreshold) }] : []),
           { label: 'Current drawdown floor', value: floor != null ? money(floor) : 'Unknown', tone: floorDiff ? 'warning' : 'primary' },
           { label: 'Remaining drawdown now', value: buffer != null ? money(buffer) : 'Unknown', bold: true },
           { label: 'Max loss allowance', value: maxLoss != null ? money(maxLoss) : 'Unknown' },

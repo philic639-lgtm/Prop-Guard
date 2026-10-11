@@ -173,7 +173,8 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
       netPnl: n(c.values.netPnl),
       tradingDays: n(c.values.tradingDays),
       drawdownType: (DRAWDOWN_TYPES as readonly string[]).includes(String(c.values.drawdownType)) ? (c.values.drawdownType as (typeof DRAWDOWN_TYPES)[number]) : null,
-      missing: SNAPSHOT_FIELDS.filter((k) => c.values[k] == null),
+      // Unknown = neither on the screenshot nor known to the account (verified / saved rules are known).
+      missing: SNAPSHOT_FIELDS.filter((k) => c.values[k] == null && !(k === 'maxDrawdown' && maxDd != null) && !(k === 'dailyLossLimit' && (next.rules.dailyLossLimit != null || next.rules.calc?.dailyLossMode === 'none')) && !(k === 'profitTarget' && next.rules.profitTarget != null)),
       ...(c.reset ? { reset: true } : {}),
     },
     history: [record, ...prev.history].slice(0, HISTORY_CAP),

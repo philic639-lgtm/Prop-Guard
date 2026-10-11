@@ -37,9 +37,9 @@ export function useConsumeImport(opts: {
     }
     // Only present when no verified rule version applies and the trader chose to save them.
     for (const [k, v] of Object.entries(pending.rules)) if (v) set(k as keyof AccountFormValues, String(v));
+    // The balance only ever comes from the screenshot or the trader — never the account size.
     const bal = pending.confirmed.values.balance;
     if (typeof bal === 'number') set('balance', String(bal));
-    else if (pending.size) set('balance', String(pending.size));
     usePendingImport.getState().markApplied();
   }, [pending, setValue, loadFromImport]);
 

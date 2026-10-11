@@ -4,3 +4,4 @@ export { crossCheck, mergePages, reconcile } from './reconcile';
 export { detectedSize, matchImport, type ImportConflict, type ImportMatch, type ProgramSuggestion, type RuleComparison } from './match';
 export { visionToPage, type VisionReading } from './vision';
 export { applyImport, confirmImport, lockedRuleFields, type ApplyResult, type ConfirmedImport } from './apply';
+export { buildReview, type ReviewInput, type ReviewIssue, type ReviewModel, type ReviewRow, type ReviewSource, type ReviewStatus } from './review';
