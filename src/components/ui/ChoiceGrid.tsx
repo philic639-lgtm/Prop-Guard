@@ -27,7 +27,7 @@ export function ChoiceGrid<T extends string>({ label, options, value, onChange, 
             <Pressable
               key={o.value}
               accessibilityRole={isSelected ? 'checkbox' : 'radio'}
-              accessibilityState={isSelected ? { checked: on } : { selected: on }}
+              aria-checked={on}
               accessibilityLabel={o.label}
               onPress={() => {
                 if (Platform.OS !== 'web') void Haptics.selectionAsync();

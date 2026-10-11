@@ -30,7 +30,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
             <Pressable
               key={o.value}
               accessibilityRole="radio"
-              accessibilityState={{ selected }}
+              aria-checked={selected}
               accessibilityLabel={o.label}
               onPress={() => {
                 if (Platform.OS !== 'web') void Haptics.selectionAsync();

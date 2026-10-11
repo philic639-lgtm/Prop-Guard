@@ -48,7 +48,7 @@ export function Button({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled: !!inactive, busy: !!loading }}
+      aria-disabled={!!inactive} aria-busy={!!loading}
       disabled={inactive}
       onPress={() => {
         if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

@@ -30,6 +30,7 @@ import { calcAfterOverrides, validateFirmConfiguration, type ConfigIssue } from 
 import { useAppStore } from '@/store/useAppStore';
 import type { AccountStatus, CustomRule } from '@/types/domain';
 import { uuid } from '@/utils/id';
+import { goBack } from '@/utils/navigation';
 
 const STATUS_TONE: Record<RuleStatus, 'positive' | 'warning' | 'danger' | 'neutral'> = {
   ok: 'positive',
@@ -85,7 +86,7 @@ export default function AccountEditor() {
     // A confirmed screenshot import: drawdown tracking from the firm's numbers + history.
     if (!existing) account = imported.finish(account);
     upsert(account);
-    router.back();
+    goBack('/accounts');
   });
 
   return (
@@ -192,6 +193,7 @@ export default function AccountEditor() {
             label="Add"
             size="md"
             variant="secondary"
+            disabled={!newRule.trim()}
             onPress={() => {
               if (!newRule.trim()) return;
               setCustom((c) => [...c, { id: uuid().slice(0, 8), label: newRule.trim() }]);
@@ -228,7 +230,7 @@ export default function AccountEditor() {
         onConfirm={() => {
           if (existing) remove(existing.id);
           setConfirmDelete(false);
-          router.back();
+          goBack('/accounts');
         }}
       />
     </Screen>

@@ -138,3 +138,34 @@ describe('V1 audit: remaining risk respects the drawdown floor and the program d
     expect(g.dailyLimit).toBe(520);
   });
 });
+
+describe('V1 stabilization: personal daily stop and firm daily limit are named, never blurred', () => {
+  it('names the personal stop when it is tighter than the firm limit', () => {
+    const g = computeDailyGuard({ account: makeAccount(), rules: makeRules({ dailyStop: 400 }), trades: [], now: NOW });
+    expect(g.dailyLimitSource).toBe('personal');
+    expect(g.riskRemainingSource).toBe('personal');
+    expect(g.personalDailyStop).toBe(400);
+    expect(g.firmDailyLimit).toBe(500);
+  });
+
+  it('names the firm limit when it is tighter (or equal) and says so when it stops the day', () => {
+    const rules = makeRules({ dailyStop: 800 });
+    expect(computeDailyGuard({ account: makeAccount(), rules, trades: [], now: NOW }).dailyLimitSource).toBe('firm');
+    const t = makeTrade({ pnl: -500, openedAt: minutesAgo(60), closedAt: minutesAgo(50) });
+    const g = computeDailyGuard({ account: makeAccount(), rules, trades: [t], now: NOW });
+    expect(g.status).toBe('STOP');
+    expect(g.reasons).toContain("You've reached the firm's daily loss limit.");
+  });
+
+  it('reports the drawdown floor when it leaves less room than the daily budget', () => {
+    const account = makeAccount({ balance: 23700 }); // 200 above the 23,500 floor
+    const g = computeDailyGuard({ account, rules: makeRules(), trades: [], now: NOW });
+    expect(g.riskRemaining).toBe(200);
+    expect(g.riskRemainingSource).toBe('drawdown');
+  });
+
+  it('with no daily limit at all the source is none', () => {
+    const g = computeDailyGuard({ account: makeAccount({ rules: { ...makeAccount().rules, dailyLossLimit: null } }), rules: makeRules({ dailyStop: 0 }), trades: [], now: NOW });
+    expect(g.dailyLimitSource).toBe('none');
+  });
+});

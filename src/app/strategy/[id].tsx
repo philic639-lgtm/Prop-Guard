@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Controller, useForm, type Control } from 'react-hook-form';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -28,6 +28,7 @@ import { useAppStore } from '@/store/useAppStore';
 import type { ChecklistItem, InstrumentSymbol, Strategy } from '@/types/domain';
 import { numToInput, parseNum } from '@/utils/format';
 import { uuid } from '@/utils/id';
+import { goBack } from '@/utils/navigation';
 
 const clock = z
   .string()
@@ -139,7 +140,7 @@ export default function StrategyBuilder() {
     if (problems.length > 0) return;
     upsert(strategy);
     if (!existing && strategies.length === 0) setActive(strategy.id);
-    router.back();
+    goBack('/strategy');
   });
 
   const toggleMarket = (m: InstrumentSymbol) =>
@@ -239,7 +240,7 @@ export default function StrategyBuilder() {
           <View style={styles.flex}>
             <Input value={newItem} onChangeText={setNewItem} placeholder="e.g. Retest occurred" onSubmitEditing={addItem} returnKeyType="done" />
           </View>
-          <Button label="Add" size="md" variant="secondary" onPress={addItem} />
+          <Button label="Add" size="md" variant="secondary" disabled={!newItem.trim()} onPress={addItem} />
         </View>
       </Card>
 
@@ -272,7 +273,7 @@ export default function StrategyBuilder() {
         onConfirm={() => {
           if (existing) remove(existing.id);
           setConfirmDelete(false);
-          router.back();
+          goBack('/strategy');
         }}
       />
     </Screen>

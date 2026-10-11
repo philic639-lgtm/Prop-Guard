@@ -40,7 +40,7 @@ export function SelectField<T extends string>({ label, value, options, onChange,
             <Pressable
               key={o.value}
               accessibilityRole="button"
-              accessibilityState={{ selected: on }}
+              aria-selected={on}
               onPress={() => {
                 onChange(o.value);
                 setOpen(false);

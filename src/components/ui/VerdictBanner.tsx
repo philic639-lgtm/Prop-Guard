@@ -35,7 +35,7 @@ export function VerdictBanner({ tone, title, subtitle, badge, icon }: VerdictBan
       </View>
       <View style={styles.text}>
         <View style={styles.titleRow}>
-          <AppText style={[styles.title, { color: c.fg }]} numberOfLines={1} adjustsFontSizeToFit>
+          <AppText style={[styles.title, { color: c.fg }]} numberOfLines={2}>
             {title}
           </AppText>
           {badge ? (
@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1.5 },
   icon: { width: 56, height: 56, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1, gap: 2 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   title: { fontSize: 24, fontWeight: '800', letterSpacing: 0.3, flexShrink: 1, textTransform: 'uppercase' },
   badge: { borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3, marginLeft: 'auto' },
 });

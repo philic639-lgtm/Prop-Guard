@@ -24,6 +24,7 @@ import { allRules, effectiveFields, improvedChecklist, improvedTexts, originalCh
 import { aiService } from '@/services/ai';
 import { useAppStore } from '@/store/useAppStore';
 import { uuid } from '@/utils/id';
+import { goBack } from '@/utils/navigation';
 
 const STEP_MS = 420;
 
@@ -101,7 +102,7 @@ export default function StrategyAnalysisScreen() {
     // Progress is persisted with the analysis; an already-saved strategy is updated too.
     if (savedId) save();
     setOpenId(null);
-    router.back();
+    goBack('/strategy');
   };
 
   return (

@@ -18,6 +18,10 @@ export interface DailyGuard {
   balance: number;
   /** Effective daily loss budget: the tighter of account limit and personal daily stop. */
   dailyLimit: number;
+  /** Which limit sets `dailyLimit`: the trader's own daily stop or the firm's daily loss limit (ties count as the firm's). */
+  dailyLimitSource: 'personal' | 'firm' | 'none';
+  /** What bounds `riskRemaining`: the daily budget above, or the room left above the drawdown floor. */
+  riskRemainingSource: 'personal' | 'firm' | 'drawdown' | 'none';
   realizedPnlToday: number;
   /** Realized loss today plus risk on open positions. */
   riskUsed: number;
@@ -44,6 +48,22 @@ export interface DailyGuard {
   /** Prop account whose drawdown floor is not known — no buffer is shown or used. */
   drawdownUnknown: boolean;
 }
+
+/** Plain-language name of the limit behind a Daily Guard number, so personal and firm limits are never blurred. */
+export const LIMIT_SOURCE_LABEL: Record<DailyGuard['riskRemainingSource'], string> = {
+  personal: 'your daily stop',
+  firm: "firm's daily loss limit",
+  drawdown: 'room above drawdown floor',
+  none: 'no daily limit set',
+};
+
+/** Short form for small tiles. */
+export const LIMIT_SOURCE_SHORT: Record<DailyGuard['riskRemainingSource'], string> = {
+  personal: 'your stop',
+  firm: 'firm DLL',
+  drawdown: 'drawdown',
+  none: 'not set',
+};
 
 export interface DailyGuardInput {
   account: Account;
@@ -102,6 +122,8 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
     (v): v is number => typeof v === 'number' && v > 0,
   );
   const dailyLimit = limits.length > 0 ? Math.min(...limits) : 0;
+  const dailyLimitSource: DailyGuard['dailyLimitSource'] =
+    dailyLimit <= 0 ? 'none' : accountDaily != null && accountDaily > 0 && accountDaily <= dailyLimit ? 'firm' : 'personal';
 
   const realizedPnlToday = todaysClosed.reduce((s, t) => s + (t.pnl ?? 0), 0);
   const openRisk = open.reduce((s, t) => s + t.riskDollars, 0);
@@ -112,6 +134,8 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
   const dailyRoom = Math.max(0, dailyLimit - riskUsed);
   const drawdownRoom = buffer != null ? Math.max(0, buffer - openRisk) : null;
   const riskRemaining = dailyLimit > 0 ? (drawdownRoom != null ? Math.min(dailyRoom, drawdownRoom) : dailyRoom) : (drawdownRoom ?? 0);
+  const riskRemainingSource: DailyGuard['riskRemainingSource'] =
+    dailyLimit > 0 ? (drawdownRoom != null && drawdownRoom < dailyRoom ? 'drawdown' : dailyLimitSource) : drawdownRoom != null ? 'drawdown' : 'none';
   const riskUsedPct = dailyLimit > 0 ? Math.min(1, riskUsed / dailyLimit) : 0;
 
   const tradesTaken = todays.length;
@@ -125,7 +149,7 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
   const cautionReasons: string[] = [];
 
   if (account.status === 'failed') stopReasons.push('This account is marked as failed.');
-  if (dailyLimit > 0 && dailyRoom <= 0) stopReasons.push("You've reached your daily loss limit.");
+  if (dailyLimit > 0 && dailyRoom <= 0) stopReasons.push(dailyLimitSource === 'firm' ? "You've reached the firm's daily loss limit." : "You've reached your personal daily stop.");
   if (maxTrades > 0 && tradesTaken >= maxTrades) stopReasons.push("You've reached your maximum trades for today.");
   if (rules.maxConsecutiveLosses > 0 && losses >= rules.maxConsecutiveLosses) {
     stopReasons.push(`${losses} consecutive losses. Your rules say the session is over.`);
@@ -182,6 +206,8 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
     reasons: status === 'STOP' ? stopReasons : cautionReasons,
     balance: account.balance,
     dailyLimit,
+    dailyLimitSource,
+    riskRemainingSource,
     realizedPnlToday,
     riskUsed,
     riskRemaining,

@@ -18,7 +18,7 @@ function InstrumentRowBase({ spec, selected, onToggle }: Props) {
   return (
     <Pressable
       accessibilityRole="checkbox"
-      accessibilityState={{ checked: selected }}
+      aria-checked={selected}
       accessibilityLabel={`${spec.symbol}, ${spec.name}${spec.isMicro ? ', micro' : ''}`}
       onPress={() => onToggle(spec.symbol)}
       style={({ pressed }) => [styles.row, selected && styles.on, pressed && { opacity: 0.85 }]}>

@@ -20,7 +20,7 @@ export function TabSwitch<T extends string>({ options, value, onChange }: TabSwi
           <Pressable
             key={o.value}
             accessibilityRole="tab"
-            accessibilityState={{ selected: on }}
+            aria-selected={on}
             accessibilityLabel={o.label}
             onPress={() => onChange(o.value)}
             style={[styles.tab, on && styles.on]}>

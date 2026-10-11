@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -9,6 +8,7 @@ import { DISCLAIMER } from '@/constants/legal';
 import { colors, radius, spacing } from '@/constants/theme';
 import { subscriptionService, type Offering } from '@/services/subscriptionService';
 import { useSubscriptionStore } from '@/store/useSubscriptionStore';
+import { goBack } from '@/utils/navigation';
 
 type Cell = boolean | string;
 
@@ -59,7 +59,7 @@ export default function Paywall() {
       header={<AppHeader title="Prop Guard Pro" back />}
       footer={
         plan === 'pro' ? (
-          <Button label="You're on Pro" variant="secondary" icon="checkmark-circle" onPress={() => router.back()} />
+          <Button label="You're on Pro" variant="secondary" icon="checkmark-circle" onPress={() => goBack()} />
         ) : (
           <>
             <Button
@@ -69,7 +69,7 @@ export default function Paywall() {
                 setBusy(true);
                 const r = await purchase(offering?.id ?? 'pro_monthly');
                 setBusy(false);
-                if (r.ok) router.back();
+                if (r.ok) goBack();
               }}
             />
             <Button label="Restore purchases" variant="ghost" onPress={() => void restore()} />

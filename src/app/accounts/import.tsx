@@ -26,6 +26,7 @@ import { ocrAvailable } from '@/services/accountImport/ocr';
 import { useAppStore } from '@/store/useAppStore';
 import { money } from '@/utils/format';
 import { uuid } from '@/utils/id';
+import { goBack } from '@/utils/navigation';
 
 /** Every field, for "More details" (full editing; the review card shows only the essentials). */
 const GROUPS: { title: string; keys: FieldKey[] }[] = [
@@ -222,7 +223,7 @@ export default function AccountScreenshotImport() {
         startDate: typeof fields.startDate?.value === 'string' ? fields.startDate.value : null,
         rules: c.ruleUpdates,
       });
-      router.back();
+      goBack('/onboarding/account');
       return;
     }
     const created = createAccountFromImport({ db, id: uuid(), name, firmName, programId: program?.id ?? null, options: program ? options : {}, ruleDate: match.ruleDate, confirmed: c, now: new Date() });
@@ -237,6 +238,8 @@ export default function AccountScreenshotImport() {
     useImportSession.getState().reset();
   };
 
+  // Opened directly (e.g. from More) there may be no screen to go back to.
+  const leave = () => goBack('/accounts');
   const header = <AppHeader title={mode === 'update' ? `Update ${target?.name ?? 'account'}` : 'Import account'} subtitle="From a dashboard screenshot" back />;
 
   // ── Done
@@ -244,7 +247,7 @@ export default function AccountScreenshotImport() {
     const floor = drawdownFloor(result.account);
     const buffer = drawdownBuffer(result.account);
     return (
-      <Screen header={header} footer={<Button label="Done" icon="checkmark" onPress={() => router.back()} />}>
+      <Screen header={header} footer={<Button label="Done" icon="checkmark" onPress={() => (mode === 'new' ? router.replace('/accounts') : leave())} />}>
         <Card tone="positive" style={styles.gap}>
           <StatusBadge label={mode === 'update' ? 'Account updated' : 'Account saved'} tone="positive" icon="checkmark-circle" size="sm" />
           <AppText variant="title">{result.account.name}</AppText>
@@ -271,7 +274,7 @@ export default function AccountScreenshotImport() {
         footer={
           <>
             <Button label={images.length ? `Read ${images.length} screenshot${images.length === 1 ? '' : 's'}` : 'Add a screenshot to continue'} icon="scan-outline" disabled={!images.length} onPress={() => void read()} />
-            <Button label="Enter values manually instead" variant="ghost" onPress={() => (mode === 'update' ? setPhase('review') : router.back())} />
+            <Button label="Enter values manually instead" variant="ghost" onPress={() => (mode === 'update' ? setPhase('review') : params.from ? leave() : router.replace({ pathname: '/accounts/[id]', params: { id: 'new' } }))} />
           </>
         }>
         <DropZone onFiles={add}>
@@ -451,7 +454,7 @@ export default function AccountScreenshotImport() {
             </AppText>
           ) : null}
 
-          <Pressable accessibilityRole="button" accessibilityState={{ expanded: more }} onPress={() => setMore((m) => !m)} style={styles.moreHead}>
+          <Pressable accessibilityRole="button" aria-expanded={more} onPress={() => setMore((m) => !m)} style={styles.moreHead}>
             <AppText variant="bodyStrong" style={styles.flex}>
               Screenshot evidence, all fields & privacy
             </AppText>
@@ -588,7 +591,7 @@ function OcrDebugPanel({ images }: { images: { image: { id: string }; ocrText?: 
   const [open, setOpen] = useState(false);
   return (
     <Card style={styles.gap}>
-      <Pressable onPress={() => setOpen((o) => !o)} accessibilityRole="button" accessibilityState={{ expanded: open }} style={styles.debugHead}>
+      <Pressable onPress={() => setOpen((o) => !o)} accessibilityRole="button" aria-expanded={open} style={styles.debugHead}>
         <AppText variant="label">OCR text (debug)</AppText>
         <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
       </Pressable>

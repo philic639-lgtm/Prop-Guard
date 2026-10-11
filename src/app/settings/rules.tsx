@@ -1,9 +1,9 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
 
 import { AppHeader, AppText, Button, Screen } from '@/components/ui';
 import { draftToRules, rulesToDraft, TradingRulesFields, type RulesDraft } from '@/features/rules/TradingRulesFields';
 import { useAppStore } from '@/store/useAppStore';
+import { goBack } from '@/utils/navigation';
 
 export default function RulesSettings() {
   const rules = useAppStore((s) => s.tradingRules);
@@ -16,7 +16,7 @@ export default function RulesSettings() {
     setErrors(r.errors);
     if (!r.rules) return;
     setRules(r.rules);
-    router.back();
+    goBack('/profile');
   };
 
   return (

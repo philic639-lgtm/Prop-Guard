@@ -1,7 +1,7 @@
-import { router } from 'expo-router';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { goBack } from '@/utils/navigation';
 import { colors, GUTTER, spacing } from '@/constants/theme';
 
 import { Icon, type IconName } from './Icon';
@@ -27,7 +27,7 @@ export function AppHeader({ title, subtitle, back, onBack, right, brand }: AppHe
             accessibilityRole="button"
             accessibilityLabel="Go back"
             hitSlop={12}
-            onPress={onBack ?? (() => (router.canGoBack() ? router.back() : router.replace('/')))}
+            onPress={onBack ?? (() => goBack())}
             style={styles.back}>
             <Icon name="chevron-back" size={22} color={colors.text} />
           </Pressable>

@@ -128,7 +128,7 @@ describe('copy-settings filters and account rules block a copy', () => {
     const lost = [makeTrade({ accountId: 'acc1', status: 'closed', pnl: -650, closedAt: NOW.toISOString(), openedAt: NOW.toISOString() })];
     const t = translateCopyTrade(idea(), ctx({ settings: settings({ fixedRisk: 100 }) }, lost));
     expect(t.verdict).toBe('blocked');
-    expect(t.reasons.join(' ')).toMatch(/Account: You've reached your daily loss limit/);
+    expect(t.reasons.join(' ')).toMatch(/Account: You've reached (your personal daily stop|the firm's daily loss limit)/);
   });
 });
 

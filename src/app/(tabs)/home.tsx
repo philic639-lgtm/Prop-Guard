@@ -28,6 +28,7 @@ import { CoachCard } from '@/features/home/CoachCard';
 import { useCopyAnalytics } from '@/features/copyTrade/useCopyTrade';
 import { screenshotLabel } from '@/features/accountImport/ScreenshotStatus';
 import { FIELD_LABEL, type FieldKey } from '@/lib/engines/accountImport';
+import { LIMIT_SOURCE_SHORT } from '@/lib/engines/dailyGuardEngine';
 import { drawdownFloor } from '@/lib/engines/propRuleEngine';
 import { HomeModeCard } from '@/features/learning/HomeModeCard';
 import { TradingPlanCard } from '@/features/home/TradingPlanCard';
@@ -140,7 +141,7 @@ export default function HomeScreen() {
             label="Daily risk left"
             icon="speedometer-outline"
             value={guard.dailyLimit > 0 ? money(guard.riskRemaining) : 'Not set'}
-            sub={guard.dailyLimit > 0 ? `of ${money(guard.dailyLimit)} today` : 'Set a daily stop'}
+            sub={guard.dailyLimit > 0 ? `of ${money(guard.dailyLimit)} · ${LIMIT_SOURCE_SHORT[guard.riskRemainingSource]}` : 'Set a daily stop'}
             tone={guard.dailyLimit > 0 && guard.riskUsedPct >= 0.6 ? 'warning' : 'primary'}>
             {guard.dailyLimit > 0 ? <RiskProgress value={guard.riskUsedPct} height={5} label="Daily risk used" /> : null}
           </MetricTile>

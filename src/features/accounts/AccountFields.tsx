@@ -251,7 +251,7 @@ export function AccountFields({
       </View>
       <Money control={control} name="payoutThreshold" label="Payout threshold" hint="Optional" {...imp} />
 
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: moreOpen }} onPress={() => setShowMore((v) => !v)} disabled={hasMore} style={styles.toggle}>
+      <Pressable accessibilityRole="button" aria-expanded={moreOpen} onPress={() => setShowMore((v) => !v)} disabled={hasMore} style={styles.toggle}>
         <Icon name={moreOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
         <AppText variant="label">More firm rules{hasMore ? '' : ' (optional)'}</AppText>
       </Pressable>

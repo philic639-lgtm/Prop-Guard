@@ -136,7 +136,7 @@ function Select({ label, value, placeholder, sub, icon, onPress }: { label: stri
 
 function Option({ title, sub, on, onPress }: { title: string; sub?: string; on: boolean; onPress: () => void }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={title} onPress={onPress} style={[styles.option, on && styles.optionOn]}>
+    <Pressable accessibilityRole="button" aria-selected={on} accessibilityLabel={title} onPress={onPress} style={[styles.option, on && styles.optionOn]}>
       <View style={styles.flex}>
         <AppText variant="bodyStrong">{title}</AppText>
         {sub ? <AppText variant="caption">{sub}</AppText> : null}

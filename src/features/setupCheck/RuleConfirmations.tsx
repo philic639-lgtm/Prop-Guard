@@ -20,7 +20,7 @@ export function ConfirmChips({ value, onChange, label }: { value: Status | undef
           <Pressable
             key={c.status}
             accessibilityRole="radio"
-            accessibilityState={{ checked: on }}
+            aria-checked={on}
             accessibilityLabel={`${label}: ${c.label}`}
             onPress={() => onChange(on ? null : c.status)}
             style={[styles.chip, on && { borderColor: c.color, backgroundColor: c.color + '22' }]}>

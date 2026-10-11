@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -9,6 +8,7 @@ import { InstrumentBrowser } from '@/features/instruments/InstrumentBrowser';
 import { instrumentOptions } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { InstrumentSymbol, UserPreferences } from '@/types/domain';
+import { goBack } from '@/utils/navigation';
 
 const TIMEZONES = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'UTC'];
 
@@ -37,7 +37,7 @@ export default function PreferencesSettings() {
           onPress={() => {
             const defaultInstrument = markets.includes(instrument) ? instrument : markets[0];
             setPreferences({ displayName: name.trim(), defaultInstrument, markets, timezone, tradingType });
-            router.back();
+            goBack('/profile');
           }}
         />
       }>

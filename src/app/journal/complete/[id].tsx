@@ -33,6 +33,7 @@ import type { Emotion, PendingTrade } from '@/types/domain';
 import { dayKey } from '@/utils/dates';
 import { longDate, money, parseNum, points, price, rMultiple, rr, time } from '@/utils/format';
 import { uuid } from '@/utils/id';
+import { goBack } from '@/utils/navigation';
 
 type ResultKind = TradeResultInput['kind'];
 
@@ -303,7 +304,7 @@ function CompleteForm({ pending: p }: { pending: PendingTrade }) {
         onConfirm={() => {
           setConfirmDismiss(false);
           setPendingStatus(p.id, 'dismissed');
-          router.back();
+          goBack('/journal');
         }}
       />
     </Screen>

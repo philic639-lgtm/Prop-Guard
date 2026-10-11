@@ -29,7 +29,7 @@ export function OptionChips<T extends string>({ label, value, options, onChange 
         const on = value === o.value;
         const c = TONE[o.tone ?? 'positive'];
         return (
-          <Pressable key={o.value} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={`${label}: ${o.label}`} onPress={() => onChange(on ? null : o.value)} style={[styles.chip, on && { borderColor: c, backgroundColor: `${c}22` }]}>
+          <Pressable key={o.value} accessibilityRole="radio" aria-checked={on} accessibilityLabel={`${label}: ${o.label}`} onPress={() => onChange(on ? null : o.value)} style={[styles.chip, on && { borderColor: c, backgroundColor: `${c}22` }]}>
             <AppText variant="caption" style={{ color: on ? c : colors.textSecondary, fontWeight: '700' }}>
               {o.label}
             </AppText>

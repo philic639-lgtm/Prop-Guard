@@ -1,12 +1,19 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Share } from 'react-native';
 
 import { AppHeader, AppText, Card, ConfirmationSheet, Divider, ListRow, Screen } from '@/components/ui';
 import { useAppStore } from '@/store/useAppStore';
+import { shareOrDownload } from '@/utils/exportFile';
 
 export default function DataSettings() {
   const [confirm, setConfirm] = useState<'none' | 'demo' | 'erase'>('none');
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const run = (label: string, task: () => Promise<void>) => {
+    setStatus(null);
+    task()
+      .then(() => setStatus({ ok: true, text: `${label} ready.` }))
+      .catch(() => setStatus({ ok: false, text: `${label} could not be created on this device. Try again.` }));
+  };
   const trades = useAppStore((s) => s.trades.length);
 
   const exportJson = async () => {
@@ -21,7 +28,7 @@ export default function DataSettings() {
       disciplineEvents: s.events,
       tradingRules: s.tradingRules,
     };
-    await Share.share({ title: 'Prop Guard export', message: JSON.stringify(payload, null, 2) });
+    await shareOrDownload('prop-guard-export.json', 'application/json', JSON.stringify(payload, null, 2));
   };
 
   const exportCsv = async () => {
@@ -35,16 +42,21 @@ export default function DataSettings() {
         .map(esc)
         .join(','),
     );
-    await Share.share({ title: 'Prop Guard trades.csv', message: [header, ...rows].join('\n') });
+    await shareOrDownload('prop-guard-trades.csv', 'text/csv', [header, ...rows].join('\n'));
   };
 
   return (
     <Screen header={<AppHeader title="Data export" back />}>
       <Card padded={false} style={{ paddingHorizontal: 16 }}>
-        <ListRow icon="document-text-outline" iconTone="accent" title="Export trades (CSV)" subtitle={`${trades} trades`} onPress={() => void exportCsv()} />
+        <ListRow icon="document-text-outline" iconTone="accent" title="Export trades (CSV)" subtitle={`${trades} trades`} onPress={() => run('Trades CSV', exportCsv)} />
         <Divider />
-        <ListRow icon="code-download-outline" iconTone="accent" title="Export everything (JSON)" subtitle="Accounts, strategies, trades, sessions, discipline" onPress={() => void exportJson()} />
+        <ListRow icon="code-download-outline" iconTone="accent" title="Export everything (JSON)" subtitle="Accounts, strategies, trades, sessions, discipline" onPress={() => run('Full export', exportJson)} />
       </Card>
+      {status ? (
+        <AppText variant="caption" tone={status.ok ? 'positive' : 'danger'} accessibilityRole="alert">
+          {status.text}
+        </AppText>
+      ) : null}
       <Card padded={false} style={{ paddingHorizontal: 16 }}>
         <ListRow icon="flask-outline" title="Load demo data" subtitle="Replaces data on this device" onPress={() => setConfirm('demo')} />
         <Divider />

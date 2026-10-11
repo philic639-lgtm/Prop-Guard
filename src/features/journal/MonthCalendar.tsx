@@ -58,7 +58,7 @@ function MonthCalendarBase({ month, pnlByDay, selected, onSelect, onMonthChange 
               key={k}
               accessibilityRole="button"
               accessibilityLabel={`${d.toDateString()}${pnl != null ? `, ${pnl >= 0 ? 'profit' : 'loss'} ${Math.abs(Math.round(pnl))} dollars` : ''}`}
-              accessibilityState={{ selected: isSel }}
+              aria-selected={isSel}
               onPress={() => onSelect(isSel ? null : k)}
               style={styles.cell}>
               <View style={[styles.day, { backgroundColor: bg }, isSel && styles.sel, k === today && styles.today]}>

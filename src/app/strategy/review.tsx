@@ -25,6 +25,7 @@ import type { Strategy } from '@/types/domain';
 import { formatClock, parseClock } from '@/utils/dates';
 import { money, parseNum } from '@/utils/format';
 import { uuid } from '@/utils/id';
+import { goBack } from '@/utils/navigation';
 
 const STYLE_LABEL = { scalp: 'Scalp', intraday: 'Intraday', swing: 'Swing' } as const;
 
@@ -113,7 +114,7 @@ export default function ReviewStrategy() {
     if (!isSaved || !activeId) setActive(next.id);
     useStrategyDraftStore.getState().setDraft(null);
     if (advanced) router.replace({ pathname: '/strategy/[id]', params: { id: next.id } });
-    else if (isSaved) router.back();
+    else if (isSaved) goBack('/strategy');
     else router.replace({ pathname: '/strategy/next', params: { id: next.id } });
   };
 
@@ -192,7 +193,7 @@ export default function ReviewStrategy() {
           <View style={styles.flex}>
             <Input value={newCondition} onChangeText={setNewCondition} placeholder="Add a condition, e.g. Volume above average" onSubmitEditing={addCondition} returnKeyType="done" />
           </View>
-          <Button label="Add" size="md" variant="secondary" icon="add" onPress={addCondition} />
+          <Button label="Add" size="md" variant="secondary" icon="add" disabled={!newCondition.trim()} onPress={addCondition} />
         </View>
       </Card>
 

@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, Metric, RiskProgress, StatusBadge } from '@/components/ui';
 import { spacing } from '@/constants/theme';
-import type { DailyGuard } from '@/lib/engines/dailyGuardEngine';
+import { LIMIT_SOURCE_LABEL, type DailyGuard } from '@/lib/engines/dailyGuardEngine';
 import { formatDuration } from '@/utils/dates';
 import { money, pct } from '@/utils/format';
 
@@ -46,6 +46,11 @@ export function DailyGuardCard({ guard, onPress, detailed, contractLabel }: Dail
           {money(guard.riskUsed)}
           <AppText variant="number" tone="tertiary"> / {money(guard.dailyLimit)}</AppText>
         </AppText>
+        {guard.dailyLimitSource !== 'none' ? (
+          <AppText variant="caption" tone="tertiary">
+            Limit: {LIMIT_SOURCE_LABEL[guard.dailyLimitSource]}
+          </AppText>
+        ) : null}
         <RiskProgress value={guard.riskUsedPct} label="Daily risk used" />
       </View>
 

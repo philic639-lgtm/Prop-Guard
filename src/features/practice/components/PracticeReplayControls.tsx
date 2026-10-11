@@ -45,7 +45,7 @@ function Ctrl({ icon, label, onPress, primary, disabled }: { icon: IconName; lab
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
+      aria-disabled={!!disabled}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [styles.ctrl, primary && styles.primary, (pressed || disabled) && { opacity: disabled ? 0.35 : 0.8 }]}>

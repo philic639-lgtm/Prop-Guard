@@ -183,7 +183,7 @@ function Question({ q, picked, onPick }: { q: QuizQuestion; picked: number | und
           <Pressable
             key={c}
             accessibilityRole="radio"
-            accessibilityState={{ checked: chosen, disabled: answered }}
+            aria-checked={chosen} aria-disabled={answered}
             accessibilityLabel={c}
             disabled={answered}
             onPress={() => onPick(i)}

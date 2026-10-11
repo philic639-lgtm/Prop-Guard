@@ -6,6 +6,7 @@ import { IccSetupCard } from '@/features/setupCheck/IccPanels';
 import { Collapsible, SetupDecisionCard } from '@/features/setupCheck/SetupDecisionCard';
 import { SetupCheckResult } from '@/features/setupCheck/SetupCheckResult';
 import { useAppStore } from '@/store/useAppStore';
+import { goBack } from '@/utils/navigation';
 
 /** A saved Setup Check, with its link to the trade taken from it. */
 export default function SavedSetupCheck() {
@@ -92,7 +93,7 @@ export default function SavedSetupCheck() {
         onConfirm={() => {
           remove(check.id);
           setConfirm(false);
-          router.back();
+          goBack('/setup-check/history');
         }}
       />
     </Screen>

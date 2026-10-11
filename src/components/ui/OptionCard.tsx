@@ -20,7 +20,7 @@ export function OptionCard({ title, description, icon, selected, onPress, badge,
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected: !!selected, disabled: !!disabled }}
+      aria-selected={!!selected} aria-disabled={!!disabled}
       accessibilityLabel={`${title}${badge ? `, ${badge}` : ''}`}
       disabled={disabled}
       onPress={onPress}

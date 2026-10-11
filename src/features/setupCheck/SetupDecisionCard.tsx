@@ -28,7 +28,7 @@ function Collapsible({ title, children, initiallyOpen = false }: { title: string
   const [open, setOpen] = useState(initiallyOpen);
   return (
     <Card>
-      <Pressable onPress={() => setOpen((v) => !v)} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={title} style={styles.head}>
+      <Pressable onPress={() => setOpen((v) => !v)} accessibilityRole="button" aria-expanded={open} accessibilityLabel={title} style={styles.head}>
         <AppText variant="label" style={styles.flex}>
           {title}
         </AppText>

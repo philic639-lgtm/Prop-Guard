@@ -353,7 +353,7 @@ function ResolveBody({ item, onResolve, onUnresolve, progress, onNext, onClose }
             const on = selected.includes(o.id) && !writing;
             const isRec = rec?.optionIds.includes(o.id);
             return (
-              <Pressable key={o.id} accessibilityRole={item.multiSelect ? 'checkbox' : 'radio'} accessibilityState={{ checked: on }} accessibilityLabel={o.label} onPress={() => toggle(o.id)} style={[styles.option, on && styles.optionOn]}>
+              <Pressable key={o.id} accessibilityRole={item.multiSelect ? 'checkbox' : 'radio'} aria-checked={on} accessibilityLabel={o.label} onPress={() => toggle(o.id)} style={[styles.option, on && styles.optionOn]}>
                 <Icon name={item.multiSelect ? (on ? 'checkbox' : 'square-outline') : on ? 'radio-button-on' : 'radio-button-off'} size={20} color={on ? colors.accentBright : colors.textTertiary} />
                 <View style={styles.flex}>
                   <View style={[styles.row, styles.wrap]}>
@@ -384,7 +384,7 @@ function ResolveBody({ item, onResolve, onUnresolve, progress, onNext, onClose }
               </View>
             </Pressable>
           ) : null}
-          <Pressable accessibilityRole="radio" accessibilityState={{ checked: writing }} accessibilityLabel="Custom rule" onPress={() => setWriting(true)} style={[styles.option, writing && styles.optionOn]}>
+          <Pressable accessibilityRole="radio" aria-checked={writing} accessibilityLabel="Custom rule" onPress={() => setWriting(true)} style={[styles.option, writing && styles.optionOn]}>
             <Icon name={writing ? 'radio-button-on' : 'radio-button-off'} size={20} color={writing ? colors.accentBright : colors.textTertiary} />
             <View style={styles.flex}>
               <AppText variant="bodyStrong">Custom rule</AppText>

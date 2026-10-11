@@ -56,7 +56,7 @@ export function FieldRow({ label, control, error, prefix, onChangeText, ...rest 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 50 },
   label: { flex: 1, color: colors.text },
-  right: { flex: 1.25 },
+  right: { flex: 1.25, minWidth: 0 },
   box: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -68,6 +68,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     height: 46,
   },
-  input: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'], ...webNoOutline },
+  input: { flex: 1, minWidth: 0, color: colors.text, fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'], ...webNoOutline },
   error: { textAlign: 'right' },
 });

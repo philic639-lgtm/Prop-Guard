@@ -11,6 +11,7 @@ import { useAppStore } from '@/store/useAppStore';
 import type { CopyAssetClass, CopyPlatform, CopySettings, CopySizingMode, SourceTrader } from '@/types/copyTrade';
 import { money, parseNum } from '@/utils/format';
 import { uuid } from '@/utils/id';
+import { goBack } from '@/utils/navigation';
 
 const PLATFORMS = Object.keys(PLATFORM_LABEL) as CopyPlatform[];
 const ASSETS = Object.keys(ASSET_LABEL) as CopyAssetClass[];
@@ -106,7 +107,7 @@ export default function SourceTraderScreen() {
       updatedAt: now,
     };
     upsert(trader);
-    router.back();
+    goBack('/copy');
   };
 
   return (
@@ -264,7 +265,7 @@ export default function SourceTraderScreen() {
             variant="secondary"
             onPress={() => {
               archive(existing.id, !existing.archived);
-              router.back();
+              goBack('/copy');
             }}
           />
           <AppText variant="caption" tone="tertiary" align="center">

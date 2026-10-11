@@ -37,7 +37,7 @@ export function AnalyzerTabBar({ value, onChange }: { value: AnalyzerTab; onChan
       {ANALYZER_TABS.map((t) => {
         const on = t.value === value;
         return (
-          <Pressable key={t.value} accessibilityRole="tab" accessibilityState={{ selected: on }} accessibilityLabel={t.label} onPress={() => onChange(t.value)} style={[styles.tab, on && styles.tabOn]}>
+          <Pressable key={t.value} accessibilityRole="tab" aria-selected={on} accessibilityLabel={t.label} onPress={() => onChange(t.value)} style={[styles.tab, on && styles.tabOn]}>
             <AppText variant="bodyStrong" style={{ fontSize: 13, color: on ? colors.accentOn : colors.textSecondary }}>
               {t.label}
             </AppText>

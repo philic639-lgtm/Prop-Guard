@@ -6,6 +6,7 @@ import { AppHeader, AppText, Button, Card, EmptyState, Screen, StatusBadge } fro
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import { useResolvedStrategy } from '@/features/strategy/useResolvedStrategy';
 import { finalRuleSheet, type SheetOrigin } from '@/lib/engines';
+import { goBack } from '@/utils/navigation';
 
 const ORIGIN_TONE: Record<SheetOrigin, Tone> = {
   'YOUR RULE': 'positive',
@@ -83,7 +84,7 @@ export default function FinalStrategyScreen() {
           Not defined (optional or not part of this plan): {empty.map((s) => s.title).join(', ')}.
         </AppText>
       ) : null}
-      {!readiness.ready ? <Button label="Back to resolve rules" icon="construct-outline" variant="ghost" size="md" onPress={() => router.back()} /> : null}
+      {!readiness.ready ? <Button label="Back to resolve rules" icon="construct-outline" variant="ghost" size="md" onPress={() => goBack('/strategy')} /> : null}
       <AppText variant="caption" tone="tertiary">
         YOUR RULE = your own words · CUSTOM RULE = a definition you wrote while resolving · AI SUGGESTION — APPROVED = a Prop Guard option you chose · AI INTERPRETATION = how Prop Guard reads your wording. Historical Practice shows how these rules behaved on past or simulated data — never a promise of future results.
       </AppText>

@@ -31,6 +31,7 @@ import { pickScreenshot } from '@/services/screenshotService';
 import { useAppStore } from '@/store/useAppStore';
 import type { Emotion, Trade } from '@/types/domain';
 import { longDate, money, points, price, rMultiple, rr, time } from '@/utils/format';
+import { goBack } from '@/utils/navigation';
 
 const EMOTIONS: { value: Emotion; label: string }[] = [
   { value: 'calm', label: 'Calm' },
@@ -204,7 +205,7 @@ export default function TradeDetail() {
         </View>
         <View style={[styles.grid, { marginTop: spacing.lg }]}>
           <Metric label="Reward" value={money(trade.rewardDollars)} compact />
-          <Metric label="Account" value={money(trade.accountBalance)} compact />
+          <Metric label="Balance at plan" value={money(trade.accountBalance)} compact />
           <Metric label="Result" value={outcome ? OUTCOME_LABEL[outcome] : '—'} tone={outcome === 'win' ? 'positive' : outcome === 'loss' ? 'danger' : undefined} compact />
         </View>
       </Card>
@@ -341,7 +342,7 @@ export default function TradeDetail() {
         onConfirm={() => {
           setConfirmDelete(false);
           deleteTrade(trade.id);
-          router.back();
+          goBack('/journal');
         }}
       />
     </Screen>

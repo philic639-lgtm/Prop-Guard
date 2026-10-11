@@ -52,7 +52,7 @@ export function AccountSelector() {
           <Pressable
             key={a.id}
             accessibilityRole="button"
-            accessibilityState={{ selected: a.id === account.id }}
+            aria-selected={a.id === account.id}
             onPress={() => {
               setActive(a.id);
               setOpen(false);

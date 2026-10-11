@@ -32,6 +32,7 @@ import { buildPendingTrade, GRADE_LABEL, maxContractsForRisk, samePendingPlan } 
 import type { DisciplineCategory, DisciplineEventType, SetupGrade, Trade } from '@/types/domain';
 import { uuid } from '@/utils/id';
 import { money, price, rr } from '@/utils/format';
+import { goBack } from '@/utils/navigation';
 
 type ViolationEvent = { type: DisciplineEventType; category: DisciplineCategory; detail: string };
 
@@ -300,7 +301,7 @@ export default function SetupCheckScreen() {
           <Button label={verdict.cta} variant={verdict.button} icon={verdict.ctaIcon} disabled={!canEnter} onPress={onEnterPress} />
           <View style={styles.footerRow}>
             <Button label="Save Plan" variant="secondary" size="md" icon="bookmark-outline" style={styles.flex} disabled={!risk.valid} onPress={() => router.push('/session/plan')} />
-            <Button label="Adjust" variant="secondary" size="md" icon="create-outline" style={styles.flex} onPress={() => router.back()} />
+            <Button label="Adjust" variant="secondary" size="md" icon="create-outline" style={styles.flex} onPress={() => goBack('/analyze')} />
           </View>
         </>
       }>

@@ -26,13 +26,13 @@ export default function CalculatorScreen() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [instrument, setInstrument] = useState<InstrumentSymbol>(defaultInstrument);
   const [direction, setDirection] = useState<Direction>('long');
-  // Sample S&P prices only make sense for S&P contracts; other markets start blank.
-  const sp = defaultInstrument === 'ES' || defaultInstrument === 'MES';
-  const [entry, setEntry] = useState(sp ? '6742.50' : '');
-  const [stop, setStop] = useState(sp ? '6737.50' : '');
-  const [target, setTarget] = useState(sp ? '6752.50' : '');
-  const [contracts, setContracts] = useState(2);
-  const [accountSize, setAccountSize] = useState(String(account?.balance ?? 25000));
+  // Prices start blank: pre-filled sample prices go stale and could be sized by mistake.
+  const [entry, setEntry] = useState('');
+  const [stop, setStop] = useState('');
+  const [target, setTarget] = useState('');
+  const [contracts, setContracts] = useState(1);
+  // The balance comes from the account; without one the trader enters it (never an assumed size).
+  const [accountSize, setAccountSize] = useState(account ? String(account.balance) : '');
   const [maxRisk, setMaxRisk] = useState(String(ruleMaxRisk));
 
   const spec = getInstrument(instrument);

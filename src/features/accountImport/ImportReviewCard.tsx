@@ -322,7 +322,7 @@ export function ImportReviewCard(p: ImportReviewCardProps) {
         </View>
       ) : null}
 
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen((o) => !o)} style={styles.detailsHead}>
+      <Pressable accessibilityRole="button" aria-expanded={open} onPress={() => setOpen((o) => !o)} style={styles.detailsHead}>
         <AppText variant="bodyStrong" style={styles.flex}>
           Additional Account Details
         </AppText>

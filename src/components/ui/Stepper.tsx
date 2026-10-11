@@ -53,7 +53,8 @@ const styles = StyleSheet.create({
     height: 46,
     overflow: 'hidden',
   },
-  input: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '600', paddingHorizontal: spacing.md, fontVariant: ['tabular-nums'], ...webNoOutline },
+  // minWidth 0: a web <input> otherwise keeps its intrinsic width and pushes the − / + buttons out of view.
+  input: { flex: 1, minWidth: 0, color: colors.text, fontSize: 16, fontWeight: '600', paddingHorizontal: spacing.md, fontVariant: ['tabular-nums'], ...webNoOutline },
   btn: { width: 46, alignItems: 'center', justifyContent: 'center' },
   divider: { borderLeftWidth: 1, borderLeftColor: colors.border },
 });

@@ -17,7 +17,7 @@ export function Chip({ label, selected, onPress, icon, large }: ChipProps) {
   return (
     <Pressable
       accessibilityRole={onPress ? 'checkbox' : undefined}
-      accessibilityState={{ checked: !!selected }}
+      aria-checked={!!selected}
       accessibilityLabel={label}
       onPress={onPress}
       style={({ pressed }) => [styles.chip, large && styles.large, selected && styles.selected, pressed && { opacity: 0.8 }]}>
