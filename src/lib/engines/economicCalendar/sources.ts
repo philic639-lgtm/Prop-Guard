@@ -1,0 +1,92 @@
+import { parseBeaSchedule } from './bea';
+import { parseFedCalendar, FED_CALENDAR_URL } from './fed';
+import { BLS_ICS_URL, parseBlsIcs } from './ics';
+import { feedError, type SourceResult } from './sync';
+import type { EconSource } from './types';
+
+/**
+ * Reads one official calendar. Polite by design (public-sector sites, free data):
+ * a descriptive User-Agent with a contact, conditional requests (ETag / Last-Modified),
+ * a timeout, a size cap, and a schedule of a few runs per day — never per user or per view.
+ * `fetchImpl` is injected so the Edge Function, the CLI and tests share this code.
+ */
+export interface SourceConfig {
+  blsUrl: string;
+  /** No default: set ECON_BEA_URL to the BEA release-schedule JSON once confirmed. */
+  beaUrl: string | null;
+  beaTimesAreEastern: boolean;
+  fedUrl: string;
+  /** Human-verified FOMC statement times ("YYYY-MM-DD" → "HH:MM" ET). */
+  fomcVerifiedTimes: Record<string, string>;
+  /** Contact for the User-Agent (e-mail or URL) so a site can reach the operator. */
+  contact: string | null;
+}
+
+export const DEFAULT_SOURCE_CONFIG: SourceConfig = { blsUrl: BLS_ICS_URL, beaUrl: null, beaTimesAreEastern: false, fedUrl: FED_CALENDAR_URL, fomcVerifiedTimes: {}, contact: null };
+
+/** Build the config from environment-style variables (Edge Function secrets / .env.server). */
+export function sourceConfigFromEnv(get: (k: string) => string | undefined): SourceConfig {
+  let verified: Record<string, string> = {};
+  try {
+    const raw = get('ECON_FOMC_VERIFIED_TIMES');
+    if (raw) verified = Object.fromEntries(Object.entries(JSON.parse(raw) as Record<string, unknown>).filter(([d, t]) => /^\d{4}-\d{2}-\d{2}$/.test(d) && typeof t === 'string' && /^\d{2}:\d{2}$/.test(t)) as [string, string][]);
+  } catch {
+    verified = {};
+  }
+  return {
+    blsUrl: get('ECON_BLS_URL') || BLS_ICS_URL,
+    beaUrl: get('ECON_BEA_URL') || null,
+    beaTimesAreEastern: get('ECON_BEA_TIMES_EASTERN') === 'true',
+    fedUrl: get('ECON_FED_URL') || FED_CALENDAR_URL,
+    fomcVerifiedTimes: verified,
+    contact: get('ECON_CONTACT') || null,
+  };
+}
+
+export interface Validators {
+  etag: string | null;
+  lastModified: string | null;
+}
+
+export type FetchLike = (url: string, init: { headers: Record<string, string>; signal?: AbortSignal; redirect?: 'follow' }) => Promise<{ status: number; headers: { get(name: string): string | null }; text(): Promise<string> }>;
+
+const TIMEOUT_MS = 20_000;
+const MAX_BYTES = 3_000_000;
+
+export async function readSource(
+  source: EconSource,
+  cfg: SourceConfig,
+  fetchImpl: FetchLike,
+  prev: Validators,
+  now: Date,
+): Promise<SourceResult & { validators: Validators }> {
+  const url = source === 'bls' ? cfg.blsUrl : source === 'bea' ? cfg.beaUrl : cfg.fedUrl;
+  if (!url) return { source, ok: false, error: 'not configured', validators: prev };
+  const headers: Record<string, string> = {
+    'User-Agent': `PropGuardCalendar/1.0 (scheduled economic-release calendar; refreshes a few times a day${cfg.contact ? `; contact ${cfg.contact}` : ''})`,
+    Accept: source === 'bls' ? 'text/calendar, text/plain;q=0.9' : source === 'bea' ? 'application/json' : 'text/html',
+  };
+  if (prev.etag) headers['If-None-Match'] = prev.etag;
+  if (prev.lastModified) headers['If-Modified-Since'] = prev.lastModified;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = setTimeout(() => controller?.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetchImpl(url, { headers, signal: controller?.signal, redirect: 'follow' });
+    const validators = { etag: res.headers.get('etag') ?? prev.etag, lastModified: res.headers.get('last-modified') ?? prev.lastModified };
+    if (res.status === 304) return { source, ok: true, notModified: true, validators };
+    if (res.status < 200 || res.status >= 300) return { source, ok: false, error: `HTTP ${res.status}`, validators: prev };
+    const body = (await res.text()).slice(0, MAX_BYTES);
+    const at = now.toISOString();
+    const events =
+      source === 'bls'
+        ? parseBlsIcs(body, at)
+        : source === 'bea'
+          ? parseBeaSchedule(JSON.parse(body), at, { timesAreEastern: cfg.beaTimesAreEastern })
+          : parseFedCalendar(body, at, { verifiedTimes: cfg.fomcVerifiedTimes });
+    return { source, ok: true, events, validators };
+  } catch (e) {
+    return { source, ok: false, error: controller?.signal.aborted ? `timeout after ${TIMEOUT_MS / 1000} s` : feedError(e), validators: prev };
+  } finally {
+    clearTimeout(timer);
+  }
+}

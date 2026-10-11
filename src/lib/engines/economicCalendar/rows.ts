@@ -1,0 +1,70 @@
+import type { EconCode, EconomicEvent, EconSource, FeedStatus, TimeStatus } from './types';
+
+/** Database rows (`economic_events`, `economic_feed_status`) ↔ domain objects. */
+type Row = Record<string, unknown>;
+const s = (v: unknown) => (v == null ? null : String(v));
+/** Postgres returns timestamps as "2026-11-13T13:30:00+00:00": keep one ISO spelling. */
+const iso = (v: unknown) => (v == null ? null : new Date(String(v)).toISOString());
+
+export function eventToRow(e: EconomicEvent) {
+  return {
+    id: e.id,
+    source: e.source,
+    source_event_id: e.sourceEventId,
+    title: e.title,
+    name: e.name,
+    code: e.code,
+    date_et: e.dateET,
+    time_et: e.timeET,
+    time_status: e.timeStatus,
+    starts_at: e.startsAt,
+    source_url: e.sourceUrl,
+    retrieved_at: e.retrievedAt,
+    kind: e.kind,
+    active: e.active,
+  };
+}
+
+export function rowToEvent(r: Row): EconomicEvent {
+  return {
+    id: String(r.id),
+    source: String(r.source) as EconSource,
+    sourceEventId: s(r.source_event_id),
+    title: String(r.title),
+    name: String(r.name),
+    code: String(r.code) as EconCode,
+    dateET: String(r.date_et).slice(0, 10),
+    timeET: s(r.time_et),
+    timeStatus: String(r.time_status) as TimeStatus,
+    startsAt: iso(r.starts_at),
+    sourceUrl: String(r.source_url),
+    retrievedAt: iso(r.retrieved_at) ?? '',
+    kind: 'scheduled_release',
+    active: r.active !== false,
+  };
+}
+
+export function statusToRow(f: FeedStatus, validators?: { etag: string | null; lastModified: string | null }) {
+  return {
+    source: f.source,
+    checked_at: f.checkedAt,
+    last_success_at: f.lastSuccessAt,
+    status: f.status,
+    error: f.error,
+    event_count: f.eventCount,
+    coverage_until: f.coverageUntil,
+    ...(validators ? { etag: validators.etag, last_modified: validators.lastModified } : {}),
+  };
+}
+
+export function rowToStatus(r: Row): FeedStatus {
+  return {
+    source: String(r.source) as EconSource,
+    checkedAt: iso(r.checked_at),
+    lastSuccessAt: iso(r.last_success_at),
+    status: (['ok', 'not_modified', 'error', 'never'].includes(String(r.status)) ? r.status : 'never') as FeedStatus['status'],
+    error: s(r.error),
+    eventCount: Number(r.event_count ?? 0),
+    coverageUntil: r.coverage_until == null ? null : String(r.coverage_until).slice(0, 10),
+  };
+}
