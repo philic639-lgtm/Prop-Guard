@@ -14,6 +14,34 @@ import { SupabaseRepository, type RemovableTable } from './supabase/repository';
  */
 type Op = { label: string; run: (repo: SupabaseRepository) => Promise<void> };
 
+/**
+ * Every write needed to upload a full local dataset, in dependency order (parents before
+ * the rows that reference them). Exported so the database integration test replays the
+ * exact sequence the app uses.
+ */
+export function pushAllOps(data: AppData): Op[] {
+  const ops: Op[] = [];
+  const add = (label: string, run: Op['run']) => ops.push({ label, run });
+  data.accounts.forEach((a) => add('account', (r) => r.upsertAccount(a)));
+  data.strategies.forEach((s) => add('strategy', (r) => r.upsertStrategy(s)));
+  data.sessions.forEach((s) => add('session', (r) => r.upsertSession(s)));
+  data.trades.forEach((t) => add('trade', (r) => r.upsertTrade(t)));
+  data.events.forEach((e) => add('event', (r) => r.insertEvent(e)));
+  data.plans.forEach((p) => add('plan', (r) => r.upsertPlan(p)));
+  data.practiceRuns.forEach((p) => add('practice', (r) => r.insertPracticeRun(p)));
+  data.practiceAttempts.forEach((a) => add('practice attempt', (r) => r.upsertPracticeAttempt(a)));
+  data.practiceLessons.forEach((l) => add('practice lesson', (r) => r.upsertPracticeLesson(l)));
+  (data.setupChecks ?? []).forEach((c) => add('setup check', (r) => r.upsertSetupCheck(c)));
+  (data.sourceTraders ?? []).forEach((t) => add('source trader', (r) => r.upsertSourceTrader(t)));
+  (data.copyTrades ?? []).forEach((c) => add('copy trade', (r) => r.upsertCopyTrade(c)));
+  (data.copyGroups ?? []).forEach((g) => add('copy group', (r) => r.upsertCopyGroup(g)));
+  data.pendingTrades.forEach((p) => add('pending trade', (r) => r.upsertPendingTrade(p)));
+  add('preferences', (r) =>
+    r.savePreferences({ preferences: data.preferences, tradingRules: data.tradingRules, activeAccountId: data.activeAccountId, activeStrategyId: data.activeStrategyId }),
+  );
+  return ops;
+}
+
 class SyncService {
   private repo: SupabaseRepository | null = null;
   private userId: string | null = null;
@@ -102,21 +130,7 @@ class SyncService {
 
   /** Push a full local dataset (used after onboarding a new cloud account). */
   pushAll(data: AppData) {
-    data.accounts.forEach(this.upsertAccount);
-    data.strategies.forEach(this.upsertStrategy);
-    data.sessions.forEach(this.upsertSession);
-    data.trades.forEach(this.upsertTrade);
-    data.events.forEach(this.insertEvent);
-    data.plans.forEach(this.upsertPlan);
-    data.practiceRuns.forEach(this.insertPracticeRun);
-    data.practiceAttempts.forEach(this.upsertPracticeAttempt);
-    data.practiceLessons.forEach(this.upsertPracticeLesson);
-    (data.setupChecks ?? []).forEach(this.upsertSetupCheck);
-    (data.sourceTraders ?? []).forEach(this.upsertSourceTrader);
-    (data.copyTrades ?? []).forEach(this.upsertCopyTrade);
-    (data.copyGroups ?? []).forEach(this.upsertCopyGroup);
-    data.pendingTrades.forEach(this.upsertPendingTrade);
-    this.savePreferences(data);
+    for (const op of pushAllOps(data)) this.enqueue(op.label, op.run);
   }
 }
 

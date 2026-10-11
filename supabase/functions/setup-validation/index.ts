@@ -1,7 +1,7 @@
 // Supabase Edge Function (Deno) — Prop Guard Setup Check.
 // Deploy:  npm run shared:sync && supabase functions deploy setup-validation
 // Secrets: supabase secrets set OPENAI_API_KEY=... [OPENAI_VISION_MODEL=gpt-6-sol]
-//          [SETUP_CHECK_RATE_PER_HOUR=30] [SETUP_CHECK_TIMEOUT_MS=30000]
+//          [SETUP_CHECK_RATE_PER_HOUR=30] [SETUP_CHECK_TIMEOUT_MS=30000] [OPENAI_BASE_URL]
 //
 // Trust boundary: the client sends ONLY what the trader typed or explicitly
 // confirmed (prices, size, costs, manual confirmations) plus the screenshot.
@@ -59,6 +59,9 @@ function base64Of(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+// Same override as the trade-screenshot function (an OpenAI-compatible gateway or a local test double).
+const OPENAI_BASE_URL = (Deno.env.get('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+
 /** Sends the ACTUAL image bytes to the configured vision model and returns its structured observations. */
 function openAIProvider(key: string): VisionProvider {
   return {
@@ -66,7 +69,7 @@ function openAIProvider(key: string): VisionProvider {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
       try {
-        const res = await fetch('https://api.openai.com/v1/responses', {
+        const res = await fetch(`${OPENAI_BASE_URL}/responses`, {
           method: 'POST',
           signal: controller.signal,
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },

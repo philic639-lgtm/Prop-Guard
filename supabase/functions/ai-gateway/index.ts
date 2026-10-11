@@ -157,7 +157,8 @@ async function callOpenAI(task: Task, input: Record<string, unknown>) {
           { type: 'image_url', image_url: { url: `data:${input.mimeType};base64,${input.imageBase64}` } },
         ]
       : `${TASK_PROMPTS[task]}\n\nINPUT:\n${JSON.stringify(input)}`;
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const base = (Deno.env.get('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+  const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({

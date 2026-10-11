@@ -76,7 +76,8 @@ Never ship the Supabase service-role key, AI provider keys or RevenueCat secret 
    npx supabase link --project-ref <ref>
    npx supabase db push        # applies supabase/migrations/*
    ```
-   Or paste `supabase/migrations/20261003000000_init.sql` into the SQL editor.
+   Or run every file in `supabase/migrations/` in the SQL editor, in filename order (the app needs all of them, not just `init.sql`).
+   Full checklist (functions, secrets, verification): [`docs/BACKEND_DEPLOYMENT.md`](docs/BACKEND_DEPLOYMENT.md).
 3. Put the URL and anon key in `.env`, then restart Expo.
 4. Sign up in the app. A trigger creates `profiles`, `user_preferences` and `subscription_status` rows for each new user.
 
