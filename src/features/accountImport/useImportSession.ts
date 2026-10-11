@@ -145,7 +145,7 @@ export const useImportSession = create<State>((set, get) => ({
       // Black out account numbers / emails found by OCR before the image leaves the device (web).
       const boxes = (item.page?.sensitive ?? []).map((s) => s.bbox).filter((b): b is NonNullable<typeof b> => !!b);
       const redacted = await redactImage(item.image, boxes);
-      if (!redacted) throw new Error('The advanced reader needs a browser to black out account numbers first.');
+      if (!redacted) throw new Error('Account numbers could not be blacked out on this device, so nothing was sent. Enter the values below instead.');
       const reading = await aiService.readAccountScreenshot({ imageBase64: redacted.base64, mimeType: 'image/jpeg' });
       if (!reading) throw new Error('The advanced reader is not available. Enter the values below instead.');
       const index = get().images.findIndex((i) => i.image.id === id);

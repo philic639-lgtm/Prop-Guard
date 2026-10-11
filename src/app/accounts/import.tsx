@@ -9,6 +9,7 @@ import { isDemoMode } from '@/config/env';
 import { colors, radius, spacing } from '@/constants/theme';
 import { createAccountFromImport } from '@/features/accountImport/createAccount';
 import { DROP_SUPPORTED, DropZone } from '@/features/accountImport/DropZone';
+import { NativeOcrHost } from '@/features/accountImport/NativeOcrHost';
 import { ExampleScreenshotGuide } from '@/features/accountImport/ExampleScreenshotGuide';
 import type { GuidePage } from '@/features/accountImport/exampleGuide';
 import { displayValue, ImportFieldRow } from '@/features/accountImport/ImportFieldRow';
@@ -47,6 +48,16 @@ const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : n
  * (`from=onboarding` hands the confirmed values to the onboarding form).
  */
 export default function AccountScreenshotImport() {
+  // iOS / Android: the on-device reader lives in a hidden WebView for the whole import (web: renders nothing).
+  return (
+    <>
+      <ImportFlow />
+      <NativeOcrHost />
+    </>
+  );
+}
+
+function ImportFlow() {
   const params = useLocalSearchParams<{ accountId?: string; from?: 'new' | 'onboarding' }>();
   const accounts = useAppStore((s) => s.accounts);
   const upsert = useAppStore((s) => s.upsertAccount);

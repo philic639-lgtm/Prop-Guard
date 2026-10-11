@@ -26,7 +26,7 @@ export class OcrError extends Error {
   }
 }
 export const MESSAGES: Record<OcrErrorCode, string> = {
-  load_failed: 'The text reader could not start in this browser. Try again, or enter the values manually.',
+  load_failed: 'The text reader could not start on this device. Try again, or enter the values manually.',
   load_blocked: 'The text reader could not be downloaded — you may be offline, or this page blocks the download. Check your connection and try again.',
   load_missing: 'The text reader files are missing on this server. Enter the values manually; the app owner needs to add the OCR files (npm run ocr:assets).',
   load_timeout: 'The text reader took too long to download (about 7 MB, first use only). Try again, ideally on Wi-Fi.',

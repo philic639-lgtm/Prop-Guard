@@ -1,4 +1,5 @@
 import { Asset } from 'expo-asset';
+import { Platform } from 'react-native';
 
 import { imageId, type ImportImage } from '@/services/accountImport/images';
 
@@ -29,7 +30,8 @@ export async function sampleImages(keys: SampleKey[]): Promise<(ImportImage & { 
   for (const k of keys) {
     const s = SAMPLES.find((x) => x.key === k)!;
     const a = Asset.fromModule(s.mod);
-    if (!a.localUri && !a.uri.startsWith('http') && !a.uri.startsWith('/')) await a.downloadAsync();
+    // Native reads a local file (re-encoded for the reader); web can load the served URL directly.
+    if (!a.localUri && (Platform.OS !== 'web' || (!a.uri.startsWith('http') && !a.uri.startsWith('/')))) await a.downloadAsync();
     out.push({ id: imageId(), uri: a.localUri ?? a.uri, name: s.name, width: a.width ?? s.w, height: a.height ?? s.h, type: 'image/png', sample: true });
   }
   return out;
