@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText, Chip, SegmentedControl } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { confidenceBand, COUNT_FIELDS, DATE_FIELDS, DRAWDOWN_TYPE_LABEL, FIELD_HELP, FIELD_LABEL, MONEY_FIELDS, type ExtractedField, type FieldKey } from '@/lib/engines/accountImport';
 import { parseNum } from '@/utils/format';
@@ -119,11 +119,11 @@ export function ImportFieldRow({ k, field, edited, onChange, onReset, note }: Pr
           />
           {edited ? (
             <Pressable accessibilityRole="button" accessibilityLabel={`Undo edit to ${FIELD_LABEL[k]}`} hitSlop={10} onPress={() => (setText(null), onReset())}>
-              <Ionicons name="arrow-undo-outline" size={18} color={colors.textSecondary} />
+              <Icon name="arrow-undo-outline" size={18} color={colors.textSecondary} />
             </Pressable>
           ) : value != null ? (
             <Pressable accessibilityRole="button" accessibilityLabel={`Clear ${FIELD_LABEL[k]}`} hitSlop={10} onPress={() => (setText(null), onChange(null))}>
-              <Ionicons name="close-circle-outline" size={18} color={colors.textTertiary} />
+              <Icon name="close-circle-outline" size={18} color={colors.textTertiary} />
             </Pressable>
           ) : null}
         </View>

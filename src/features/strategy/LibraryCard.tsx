@@ -1,16 +1,16 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, StatusBadge } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import { CATEGORY_LABEL, CONDITION_LABEL, type Complexity, type StrategyCategory, type StrategyTemplate } from '@/data/strategyLibrary';
 import { formatClock } from '@/utils/dates';
 
 export const COMPLEXITY_TONE: Record<Complexity, Tone> = { Beginner: 'positive', Intermediate: 'warning', Advanced: 'danger' };
 
-export const CATEGORY_ICON: Record<StrategyCategory, keyof typeof Ionicons.glyphMap> = {
+export const CATEGORY_ICON: Record<StrategyCategory, IconName> = {
   opening_range: 'time-outline',
   vwap: 'analytics-outline',
   trend: 'trending-up',
@@ -43,7 +43,7 @@ function LibraryCardBase({ template: t, locked, saved, badge }: LibraryCardProps
     <Card onPress={open} accessibilityLabel={`${t.shortName}, ${CATEGORY_LABEL[t.category]}${locked ? ', Pro' : ''}`}>
       <View style={styles.head}>
         <View style={styles.libIcon}>
-          <Ionicons name={CATEGORY_ICON[t.category]} size={18} color={colors.accentBright} />
+          <Icon name={CATEGORY_ICON[t.category]} size={18} color={colors.accentBright} />
         </View>
         <View style={styles.flex}>
           <AppText variant="heading" numberOfLines={1}>
@@ -54,7 +54,7 @@ function LibraryCardBase({ template: t, locked, saved, badge }: LibraryCardProps
           </AppText>
         </View>
         {locked ? (
-          <Ionicons name="lock-closed" size={16} color={colors.textTertiary} />
+          <Icon name="lock-closed" size={16} color={colors.textTertiary} />
         ) : badge ? (
           <StatusBadge label={badge} tone="accent" size="sm" />
         ) : saved ? (

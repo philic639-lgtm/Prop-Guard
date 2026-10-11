@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -19,6 +18,7 @@ import {
   type ChecklistRow,
   type DetailRow,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { AI_DISCLAIMER } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { newDraft } from '@/features/session/draft';
@@ -316,7 +316,7 @@ export default function SetupCheckScreen() {
       {evaluation.violations.length > 0 ? (
         <Card tone="danger">
           <View style={styles.head}>
-            <Ionicons name="close-circle" size={18} color={colors.danger} />
+            <Icon name="close-circle" size={18} color={colors.danger} />
             <AppText variant="label" tone="danger">
               Violations
             </AppText>
@@ -345,7 +345,7 @@ export default function SetupCheckScreen() {
       {evaluation.cautions.length > 0 ? (
         <Card tone="warning">
           <View style={styles.head}>
-            <Ionicons name="warning" size={18} color={colors.warning} />
+            <Icon name="warning" size={18} color={colors.warning} />
             <AppText variant="label" tone="warning">
               Caution
             </AppText>
@@ -365,7 +365,7 @@ export default function SetupCheckScreen() {
       {aiAllowed ? (
         <Card>
           <View style={styles.head}>
-            <Ionicons name="sparkles" size={16} color={colors.accentBright} />
+            <Icon name="sparkles" size={16} color={colors.accentBright} />
             <AppText variant="label" tone="accent">
               {analysis?.source === 'ai' ? 'AI analysis' : 'Guard analysis'}
             </AppText>
@@ -406,7 +406,7 @@ export default function SetupCheckScreen() {
       </AppText>
       {draft.pendingId ? (
         <View style={styles.saved}>
-          <Ionicons name="book-outline" size={14} color={colors.textSecondary} />
+          <Icon name="book-outline" size={14} color={colors.textSecondary} />
           <AppText variant="caption" tone="secondary">
             Saved to your Journal as pending — add the result when it&apos;s done.
           </AppText>

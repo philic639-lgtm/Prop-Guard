@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { TradeCard } from '@/components/domain/TradeCard';
 import { AppHeader, AppText, Button, Card, EmptyState, MetricTile, Screen, SectionHeader, StatusBadge, TabSwitch, TileGrid } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing, toneColor } from '@/constants/theme';
 import { useActiveAccount, useDiscipline } from '@/hooks/useAppData';
 import { useNow } from '@/hooks/useNow';
@@ -24,7 +24,7 @@ function Line({ ok, text }: { ok: boolean | 'warn'; text: string }) {
   const color = ok === true ? colors.positive : ok === 'warn' ? colors.warning : colors.danger;
   return (
     <View style={styles.line}>
-      <Ionicons name={icon} size={17} color={color} />
+      <Icon name={icon} size={17} color={color} />
       <AppText variant="body" style={styles.flex}>
         {text}
       </AppText>
@@ -158,7 +158,7 @@ export default function SessionSummaryScreen() {
           ) : null}
           <Card tone={summary.netPnl >= 0 ? 'positive' : 'danger'}>
             <View style={styles.row}>
-              <Ionicons name="shield-checkmark" size={18} color={summary.netPnl >= 0 ? colors.positive : colors.danger} />
+              <Icon name="shield-checkmark" size={18} color={summary.netPnl >= 0 ? colors.positive : colors.danger} />
               <AppText variant="label">Session result</AppText>
               {ended ? <StatusBadge label="Ended" tone="neutral" size="sm" /> : null}
             </View>
@@ -192,7 +192,7 @@ export default function SessionSummaryScreen() {
           ) : (
             <Card>
               <View style={styles.row}>
-                <Ionicons name="sparkles" size={16} color={colors.accentBright} />
+                <Icon name="sparkles" size={16} color={colors.accentBright} />
                 <AppText variant="label" tone="accent">
                   {review?.source === 'ai' ? 'AI summary' : 'Summary'}
                 </AppText>
@@ -284,7 +284,7 @@ export default function SessionSummaryScreen() {
           </Card>
           <Card tone="warning">
             <View style={styles.row}>
-              <Ionicons name="bulb" size={18} color={colors.warning} />
+              <Icon name="bulb" size={18} color={colors.warning} />
               <AppText variant="label" tone="warning">
                 Focus area
               </AppText>

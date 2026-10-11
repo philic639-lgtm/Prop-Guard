@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -15,6 +14,7 @@ import {
   StatusBadge,
   ToggleRow,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { instrumentOptions } from '@/lib/engines';
 import { aiService, type ScreenshotExtraction } from '@/services/ai';
@@ -172,7 +172,7 @@ export function ChartImport({ onUse, cta = 'Use confirmed values' }: { onUse: (v
       <Card>
         <View style={styles.drop}>
           <View style={styles.dropIcon}>
-            <Ionicons name="camera" size={30} color={colors.accentBright} />
+            <Icon name="camera" size={30} color={colors.accentBright} />
           </View>
           <AppText variant="heading">Upload chart</AppText>
           <AppText variant="caption" align="center">
@@ -193,7 +193,7 @@ export function ChartImport({ onUse, cta = 'Use confirmed values' }: { onUse: (v
       </View>
       <Card>
         <View style={styles.row}>
-          <Ionicons name="information-circle" size={18} color={colors.accentBright} />
+          <Icon name="information-circle" size={18} color={colors.accentBright} />
           <AppText variant="caption" style={styles.flex}>
             Prop Guard reads instrument, direction, entry, stop, target, ORB, VWAP and key levels where visible. You confirm every value — extracted numbers are never trusted silently.
           </AppText>

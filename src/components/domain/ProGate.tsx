@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import type { Feature } from '@/config/plans';
 import { colors, spacing } from '@/constants/theme';
 import { useEntitlement } from '@/store/useSubscriptionStore';
@@ -22,7 +22,7 @@ export function ProGate({ feature, title, description, children }: ProGateProps)
   return (
     <Card tone="accent">
       <View style={styles.head}>
-        <Ionicons name="lock-closed" size={16} color={colors.accent} />
+        <Icon name="lock-closed" size={16} color={colors.accent} />
         <AppText variant="label" tone="accent">
           Prop Guard Pro
         </AppText>

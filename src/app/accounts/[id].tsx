@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -18,6 +17,7 @@ import {
   SegmentedControl,
   StatusBadge,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { ScreenshotStatus } from '@/features/accountImport/ScreenshotStatus';
 import { useConsumeImport } from '@/features/accountImport/useConsumeImport';
@@ -173,14 +173,14 @@ export default function AccountEditor() {
         {custom.length === 0 ? <AppText variant="caption">Track any other rule your firm has, e.g. &quot;No trading during FOMC&quot;.</AppText> : null}
         {custom.map((c) => (
           <View key={c.id} style={styles.custom}>
-            <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
+            <Icon name="document-text-outline" size={16} color={colors.textSecondary} />
             <View style={styles.flex}>
               <AppText variant="body">{c.label}</AppText>
               {c.description ? <AppText variant="caption">{c.description}</AppText> : null}
             </View>
             {isFirmCustomRule(c) ? <StatusBadge label="Firm rule" tone="positive" size="sm" /> : null}
             <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${c.label}`} hitSlop={10} onPress={() => setCustom((cur) => cur.filter((x) => x.id !== c.id))}>
-              <Ionicons name="close" size={18} color={colors.textTertiary} />
+              <Icon name="close" size={18} color={colors.textTertiary} />
             </Pressable>
           </View>
         ))}

@@ -1,10 +1,9 @@
-import type { Ionicons } from '@expo/vector-icons';
-
+import type { IconName } from '@/components/ui/Icon';
 import type { Tone } from '@/constants/theme';
 import type { FollowVerdict } from '@/lib/engines/copyTradeEngine';
 import type { CopyAssetClass, CopyMode, CopyPlatform, CopySizingMode, CopyVerdict } from '@/types/copyTrade';
 
-type Icon = keyof typeof Ionicons.glyphMap;
+type Icon = IconName;
 
 export const VERDICT_UI: Record<CopyVerdict, { tone: Tone; icon: Icon }> = {
   safe: { tone: 'positive', icon: 'shield-checkmark' },

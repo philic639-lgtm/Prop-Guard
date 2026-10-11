@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, CircularScore, Input, Sheet, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import {
   CONFIDENCE_LABELS,
@@ -50,7 +50,7 @@ export function DefinitionScoreCard({ baseline, current }: { baseline: StrategyH
   return (
     <Card>
       <View style={styles.row}>
-        <Ionicons name="pulse-outline" size={16} color={colors.accentBright} />
+        <Icon name="pulse-outline" size={16} color={colors.accentBright} />
         <AppText variant="label" tone="accent">
           Strategy definition score
         </AppText>
@@ -100,7 +100,7 @@ export function ResolveSummaryCard({ progress, onResolveNext, onViewAll, onFinis
   return (
     <Card tone={progress.criticalOpen.length ? 'danger' : open ? 'warning' : 'positive'}>
       <View style={styles.row}>
-        <Ionicons name={open ? 'construct-outline' : 'checkmark-circle'} size={18} color={open ? colors.warning : colors.positive} />
+        <Icon name={open ? 'construct-outline' : 'checkmark-circle'} size={18} color={open ? colors.warning : colors.positive} />
         <AppText variant="label" tone={open ? 'warning' : 'positive'}>
           Resolve missing rules
         </AppText>
@@ -116,7 +116,7 @@ export function ResolveSummaryCard({ progress, onResolveNext, onViewAll, onFinis
       </View>
       {progress.criticalOpen.length ? (
         <View style={[styles.row, { marginTop: spacing.sm }]}>
-          <Ionicons name="alert-circle" size={16} color={colors.danger} />
+          <Icon name="alert-circle" size={16} color={colors.danger} />
           <AppText variant="bodyStrong" tone="danger">
             Critical rule missing: {progress.criticalOpen.map((i) => i.title).join(', ')}
           </AppText>
@@ -164,7 +164,7 @@ export function ResolveList({ items, onOpen }: { items: StrategyRuleItem[]; onOp
   return (
     <Card>
       <View style={styles.row}>
-        <Ionicons name="list-circle-outline" size={18} color={colors.warning} />
+        <Icon name="list-circle-outline" size={18} color={colors.warning} />
         <AppText variant="label" tone="warning">
           Resolve missing rules
         </AppText>
@@ -176,7 +176,7 @@ export function ResolveList({ items, onOpen }: { items: StrategyRuleItem[]; onOp
       {optional.length ? (
         <>
           <Pressable accessibilityRole="button" onPress={() => setShowOptional((v) => !v)} style={[styles.row, { marginTop: spacing.md }]}>
-            <Ionicons name={showOptional ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
+            <Icon name={showOptional ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
             <AppText variant="label">{showOptional ? 'Hide' : 'Show'} optional refinements ({optional.length})</AppText>
           </Pressable>
           {showOptional ? optional.map(row) : null}
@@ -237,7 +237,7 @@ function ResolveBody({ item, onResolve, onUnresolve, progress, onNext, onClose }
     return (
       <View style={{ gap: spacing.md }}>
         <View style={styles.row}>
-          <Ionicons name="checkmark-circle" size={22} color={colors.positive} />
+          <Icon name="checkmark-circle" size={22} color={colors.positive} />
           <AppText variant="heading">Rule resolved ✓</AppText>
         </View>
         <AppText variant="body" tone="secondary">
@@ -354,7 +354,7 @@ function ResolveBody({ item, onResolve, onUnresolve, progress, onNext, onClose }
             const isRec = rec?.optionIds.includes(o.id);
             return (
               <Pressable key={o.id} accessibilityRole={item.multiSelect ? 'checkbox' : 'radio'} accessibilityState={{ checked: on }} accessibilityLabel={o.label} onPress={() => toggle(o.id)} style={[styles.option, on && styles.optionOn]}>
-                <Ionicons name={item.multiSelect ? (on ? 'checkbox' : 'square-outline') : on ? 'radio-button-on' : 'radio-button-off'} size={20} color={on ? colors.accentBright : colors.textTertiary} />
+                <Icon name={item.multiSelect ? (on ? 'checkbox' : 'square-outline') : on ? 'radio-button-on' : 'radio-button-off'} size={20} color={on ? colors.accentBright : colors.textTertiary} />
                 <View style={styles.flex}>
                   <View style={[styles.row, styles.wrap]}>
                     <AppText variant="bodyStrong">{o.label}</AppText>
@@ -377,7 +377,7 @@ function ResolveBody({ item, onResolve, onUnresolve, progress, onNext, onClose }
           ) : null}
           {rec ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Let Prop Guard recommend one" onPress={() => setShowOptions(false)} style={styles.option}>
-              <Ionicons name="sparkles-outline" size={20} color={colors.accentBright} />
+              <Icon name="sparkles-outline" size={20} color={colors.accentBright} />
               <View style={styles.flex}>
                 <AppText variant="bodyStrong">Let Prop Guard recommend one</AppText>
                 <AppText variant="caption">See the suggestion and why — nothing is added until you approve it</AppText>
@@ -385,7 +385,7 @@ function ResolveBody({ item, onResolve, onUnresolve, progress, onNext, onClose }
             </Pressable>
           ) : null}
           <Pressable accessibilityRole="radio" accessibilityState={{ checked: writing }} accessibilityLabel="Custom rule" onPress={() => setWriting(true)} style={[styles.option, writing && styles.optionOn]}>
-            <Ionicons name={writing ? 'radio-button-on' : 'radio-button-off'} size={20} color={writing ? colors.accentBright : colors.textTertiary} />
+            <Icon name={writing ? 'radio-button-on' : 'radio-button-off'} size={20} color={writing ? colors.accentBright : colors.textTertiary} />
             <View style={styles.flex}>
               <AppText variant="bodyStrong">Custom rule</AppText>
               <AppText variant="caption">Define it in your own words</AppText>
@@ -421,7 +421,7 @@ export function OwnershipCard({ ownership, uniquenessNote }: { ownership: Strate
   return (
     <Card>
       <View style={styles.row}>
-        <Ionicons name="person-circle-outline" size={18} color={colors.positive} />
+        <Icon name="person-circle-outline" size={18} color={colors.positive} />
         <AppText variant="label" tone="positive">
           Strategy ownership
         </AppText>
@@ -454,7 +454,7 @@ export function TestReadyCard({ readiness, score, onViewFinal, onTest }: { readi
   return (
     <Card tone="positive">
       <View style={styles.row}>
-        <Ionicons name="shield-checkmark" size={20} color={colors.positive} />
+        <Icon name="shield-checkmark" size={20} color={colors.positive} />
         <AppText variant="heading" tone="positive">
           STRATEGY TEST READY ✓
         </AppText>

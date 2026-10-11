@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, Chip, DetailTable, Illustration, RiskProgress, Screen, SectionHeader, StatusBadge, ToggleRow } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { isDemoMode } from '@/config/env';
 import { colors, radius, spacing } from '@/constants/theme';
 import { createAccountFromImport } from '@/features/accountImport/createAccount';
@@ -301,7 +301,7 @@ export default function AccountScreenshotImport() {
               <View key={i.image.id} style={styles.thumb}>
                 <Image source={{ uri: i.image.uri }} style={styles.thumbImg} contentFit="cover" accessibilityLabel={`Screenshot ${n + 1}`} />
                 <Pressable accessibilityRole="button" accessibilityLabel={`Remove screenshot ${n + 1}`} style={styles.thumbX} onPress={() => session.remove(i.image.id)} hitSlop={8}>
-                  <Ionicons name="close" size={14} color="#fff" />
+                  <Icon name="close" size={14} color="#fff" />
                 </Pressable>
               </View>
             ))}
@@ -309,13 +309,13 @@ export default function AccountScreenshotImport() {
         ) : null}
 
         <Pressable accessibilityRole="button" onPress={() => setGuide('overview')} style={styles.linkRow}>
-          <Ionicons name="help-circle-outline" size={16} color={colors.accentBright} />
+          <Icon name="help-circle-outline" size={16} color={colors.accentBright} />
           <AppText variant="caption" tone="accent">
             See example screenshots
           </AppText>
         </Pressable>
         <View style={styles.row}>
-          <Ionicons name="eye-off-outline" size={14} color={colors.warning} />
+          <Icon name="eye-off-outline" size={14} color={colors.warning} />
           <AppText variant="caption" tone="secondary" style={styles.flex}>
             Hide passwords, API keys, emails and personal details first. Screenshots stay on this device and are never stored.
           </AppText>
@@ -389,7 +389,7 @@ export default function AccountScreenshotImport() {
 
       {!readingNow && anyRead && !failed.length ? (
         <View style={styles.row} accessibilityRole="alert">
-          <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
+          <Icon name="document-text-outline" size={16} color={colors.textSecondary} />
           <AppText variant="caption" tone="secondary" style={styles.flex}>
             {images.length > 1 ? `${images.length} screenshots read.` : 'Screenshot read.'} Check the values below — nothing is saved until you confirm.
           </AppText>
@@ -455,7 +455,7 @@ export default function AccountScreenshotImport() {
             <AppText variant="bodyStrong" style={styles.flex}>
               Screenshot evidence, all fields & privacy
             </AppText>
-            <Ionicons name={more ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
+            <Icon name={more ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
           </Pressable>
           {more ? (
             <View style={styles.gap}>
@@ -503,7 +503,7 @@ export default function AccountScreenshotImport() {
                 : null}
               {IMPORT_DEBUG && images.some((i) => i.ocrText) ? <OcrDebugPanel images={images} /> : null}
               <Pressable accessibilityRole="button" onPress={() => setGuide('overview')} style={styles.linkRow}>
-                <Ionicons name="help-circle-outline" size={16} color={colors.accentBright} />
+                <Icon name="help-circle-outline" size={16} color={colors.accentBright} />
                 <AppText variant="caption" tone="accent">
                   See example screenshots
                 </AppText>
@@ -590,7 +590,7 @@ function OcrDebugPanel({ images }: { images: { image: { id: string }; ocrText?: 
     <Card style={styles.gap}>
       <Pressable onPress={() => setOpen((o) => !o)} accessibilityRole="button" accessibilityState={{ expanded: open }} style={styles.debugHead}>
         <AppText variant="label">OCR text (debug)</AppText>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
+        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
       </Pressable>
       {open
         ? images.map((i, n) =>

@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, FieldRow } from '@/components/ui';
+import type { IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { formatPrice, practiceTradeMetrics, validatePracticeTrade } from '@/lib/engines';
 import type { PracticeDecision as Decision, PracticeTradeInput } from '@/types/practice';
@@ -75,7 +75,7 @@ export function PracticeDecision({ instrument, lastClose, onSubmit, waitLabel = 
   );
 }
 
-function Choice({ label, icon, tone, selected, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; tone: string; selected: boolean; onPress: () => void }) {
+function Choice({ label, icon, tone, selected, onPress }: { label: string; icon: IconName; tone: string; selected: boolean; onPress: () => void }) {
   return (
     <View style={styles.flex}>
       <Button

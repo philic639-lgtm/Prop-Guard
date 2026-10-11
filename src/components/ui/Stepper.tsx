@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { colors, webNoOutline, radius, spacing } from '@/constants/theme';
+import { Icon } from './Icon';
 
 interface StepperProps {
   value: number;
@@ -33,10 +33,10 @@ export function Stepper({ value, onChange, min = 1, max = 99, label }: StepperPr
         selectionColor={colors.accent}
       />
       <Pressable accessibilityRole="button" accessibilityLabel={`Decrease ${label}`} onPress={() => set(value - 1)} style={[styles.btn, styles.divider]} hitSlop={4}>
-        <Ionicons name="remove" size={20} color={value <= min ? colors.textTertiary : colors.text} />
+        <Icon name="remove" size={20} color={value <= min ? colors.textTertiary : colors.text} />
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel={`Increase ${label}`} onPress={() => set(value + 1)} style={[styles.btn, styles.divider]} hitSlop={4}>
-        <Ionicons name="add" size={20} color={value >= max ? colors.textTertiary : colors.text} />
+        <Icon name="add" size={20} color={value >= max ? colors.textTertiary : colors.text} />
       </Pressable>
     </View>
   );

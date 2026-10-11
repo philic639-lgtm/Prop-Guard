@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Chip } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 
 export type ReplaySpeed = 1 | 2 | 4;
@@ -40,7 +40,7 @@ export function PracticeReplayControls(p: PracticeReplayControlsProps) {
   );
 }
 
-function Ctrl({ icon, label, onPress, primary, disabled }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
+function Ctrl({ icon, label, onPress, primary, disabled }: { icon: IconName; label: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -49,7 +49,7 @@ function Ctrl({ icon, label, onPress, primary, disabled }: { icon: keyof typeof 
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [styles.ctrl, primary && styles.primary, (pressed || disabled) && { opacity: disabled ? 0.35 : 0.8 }]}>
-      <Ionicons name={icon} size={primary ? 24 : 20} color={primary ? colors.accentOn : colors.text} />
+      <Icon name={icon} size={primary ? 24 : 20} color={primary ? colors.accentOn : colors.text} />
     </Pressable>
   );
 }

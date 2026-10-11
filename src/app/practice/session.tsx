@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, EmptyState, RuleChecklist, Screen, StatusBadge, VerdictBanner } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { PRACTICE_DISCLAIMER, SAMPLE_DATA_NOTE, SIMULATED_DATA_NOTE, VERIFIED_DATA_NOTE } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
@@ -161,7 +161,7 @@ function Session({ scenario: s, mode, reason }: { scenario: PracticeScenario; mo
       {reason ? (
         <Card tone="accent">
           <View style={styles.row}>
-            <Ionicons name="sparkles" size={16} color={colors.accentBright} />
+            <Icon name="sparkles" size={16} color={colors.accentBright} />
             <AppText variant="label" tone="accent">
               {mode === 'great' ? 'Great setups' : 'Prop Guard selected this scenario because'}
             </AppText>

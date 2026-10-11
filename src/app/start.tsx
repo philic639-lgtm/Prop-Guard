@@ -1,20 +1,20 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, Illustration, RiskProgress, Screen, SectionHeader } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { ExperienceSwitch } from '@/features/learning/ExperienceSwitch';
 import { useQuickStart } from '@/features/learning/useQuickStart';
 
-const TOOLS: { label: string; sub: string; icon: keyof typeof Ionicons.glyphMap; route: string }[] = [
+const TOOLS: { label: string; sub: string; icon: IconName; route: string }[] = [
   { label: 'Check a trade', sub: 'Risk + rules before entry', icon: 'shield-checkmark-outline', route: '/analyze' },
   { label: 'Setup Check', sub: 'Chart vs your strategy', icon: 'scan-outline', route: '/setup-check' },
   { label: 'Risk calculator', sub: 'Size from your stop', icon: 'calculator-outline', route: '/calculator' },
   { label: 'Import strategy', sub: 'In your own words', icon: 'create-outline', route: '/strategy/describe' },
   { label: 'Copy Trade', sub: 'Copy others, sized to you', icon: 'copy-outline', route: '/copy' },
-  { label: 'Practice', sub: 'Replay scenarios', icon: 'flask-outline', route: '/practice' },
-  { label: 'Performance', sub: 'From your journal', icon: 'stats-chart-outline', route: '/performance' },
+  { label: 'Practice', sub: 'Replay scenarios', icon: 'practice', route: '/practice' },
+  { label: 'Performance', sub: 'From your journal', icon: 'analytics', route: '/performance' },
 ];
 
 /** Experienced quick start — straight to the tools, with setup status from real data. */
@@ -44,7 +44,7 @@ export default function QuickStartScreen() {
         <Card key={i.id} style={styles.item} onPress={() => router.push(i.route as never)} accessibilityLabel={`${i.title}: ${i.done ? 'done' : 'to do'}. ${i.detail}`}>
           <View style={[styles.step, i.done && styles.stepDone]}>
             {i.done ? (
-              <Ionicons name="checkmark" size={16} color={colors.positive} />
+              <Icon name="checkmark" size={16} color={colors.positive} />
             ) : (
               <AppText variant="bodyStrong" style={styles.stepNum}>
                 {n + 1}
@@ -58,7 +58,7 @@ export default function QuickStartScreen() {
             <AppText variant="caption">{i.detail}</AppText>
           </View>
           {i.done ? (
-            <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            <Icon name="chevron-forward" size={16} color={colors.textTertiary} />
           ) : (
             <View style={styles.cta}>
               <AppText variant="caption" tone="accent" style={styles.ctaText}>
@@ -74,7 +74,7 @@ export default function QuickStartScreen() {
         {TOOLS.map((t) => (
           <Card key={t.route} style={styles.tool} onPress={() => router.push(t.route as never)} accessibilityLabel={t.label}>
             <View style={styles.icon}>
-              <Ionicons name={t.icon} size={18} color={colors.accentBright} />
+              <Icon name={t.icon} size={18} color={colors.accentBright} />
             </View>
             <AppText variant="bodyStrong">{t.label}</AppText>
             <AppText variant="caption">{t.sub}</AppText>

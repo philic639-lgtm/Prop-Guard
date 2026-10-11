@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, DetailTable, FieldRow, Screen, SegmentedControl, SelectField, Stepper } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { newDraft } from '@/features/session/draft';
 import { useActiveAccount, useActiveStrategy } from '@/hooks/useAppData';
@@ -160,11 +160,11 @@ export default function CalculatorScreen() {
       {savedPending ? (
         <Card onPress={() => router.push({ pathname: '/journal/complete/[id]', params: { id: savedPending.id } })}>
           <View style={styles.row}>
-            <Ionicons name="book" size={18} color={colors.accentBright} />
+            <Icon name="book" size={18} color={colors.accentBright} />
             <AppText variant="bodyStrong" style={styles.flex}>
               Pending in your Journal
             </AppText>
-            <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+            <Icon name="chevron-forward" size={16} color={colors.textTertiary} />
           </View>
           <AppText variant="caption" style={{ marginTop: spacing.xs }}>
             When the trade is done, add the exit or a screenshot and the full journal entry is created for you.
@@ -179,7 +179,7 @@ export default function CalculatorScreen() {
       ) : (
         <Card tone={compliant ? 'positive' : 'danger'}>
           <View style={styles.row}>
-            <Ionicons name={compliant ? 'checkmark-circle' : 'close-circle'} size={22} color={compliant ? colors.positive : colors.danger} />
+            <Icon name={compliant ? 'checkmark-circle' : 'close-circle'} size={22} color={compliant ? colors.positive : colors.danger} />
             <AppText variant="heading" style={{ color: compliant ? colors.positive : colors.danger }}>
               {compliant ? 'PLAN COMPLIANT' : 'RISK LIMIT EXCEEDED'}
             </AppText>

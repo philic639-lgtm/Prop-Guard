@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, Logo, Screen, SegmentedControl, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { PLANS } from '@/config/plans';
 import { DISCLAIMER } from '@/constants/legal';
 import { colors, radius, spacing } from '@/constants/theme';
@@ -31,8 +31,8 @@ const ROWS: { label: string; free: Cell; pro: Cell }[] = [
 ];
 
 function CellView({ value, pro }: { value: Cell; pro?: boolean }) {
-  if (value === true) return <Ionicons name="checkmark-circle" size={18} color={pro ? colors.accentBright : colors.positive} />;
-  if (value === false) return <Ionicons name="remove" size={18} color={colors.textTertiary} />;
+  if (value === true) return <Icon name="checkmark-circle" size={18} color={pro ? colors.accentBright : colors.positive} />;
+  if (value === false) return <Icon name="remove" size={18} color={colors.textTertiary} />;
   return (
     <AppText variant="caption" align="center" style={{ color: pro ? colors.accentBright : colors.textSecondary, fontWeight: '600', fontSize: 11.5 }}>
       {value}

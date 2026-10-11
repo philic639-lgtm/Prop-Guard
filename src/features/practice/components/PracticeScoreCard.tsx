@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, CircularScore } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing, type Tone } from '@/constants/theme';
 import { SCORE_WEIGHTS } from '@/lib/engines';
 import type { PracticeScore } from '@/types/practice';
@@ -49,7 +49,7 @@ export function PracticeScoreCard({ score }: { score: PracticeScore }) {
 
       {score.strengths.map((s) => (
         <View key={s} style={styles.line}>
-          <Ionicons name="checkmark" size={16} color={colors.positive} />
+          <Icon name="checkmark" size={16} color={colors.positive} />
           <AppText variant="body" style={styles.flex}>
             {s}
           </AppText>
@@ -62,7 +62,7 @@ export function PracticeScoreCard({ score }: { score: PracticeScore }) {
       ) : null}
       {score.mistakes.map((s) => (
         <View key={s} style={styles.line}>
-          <Ionicons name="close" size={16} color={colors.danger} />
+          <Icon name="close" size={16} color={colors.danger} />
           <AppText variant="body" style={styles.flex}>
             {s}
           </AppText>

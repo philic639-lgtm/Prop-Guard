@@ -1,12 +1,12 @@
-import type { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, Card, ListRow, Logo, Screen, SectionHeader } from '@/components/ui';
+import type { IconName } from '@/components/ui/Icon';
 import { spacing, type Tone } from '@/constants/theme';
 import { useAppStore } from '@/store/useAppStore';
 
-type Item = { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; route: string; tone?: Tone; value?: string };
+type Item = { title: string; subtitle: string; icon: IconName; route: string; tone?: Tone; value?: string };
 
 /** More: every secondary destination, grouped, one tap each. */
 export default function MoreTab() {
@@ -15,7 +15,7 @@ export default function MoreTab() {
     {
       title: 'Trading',
       items: [
-        { title: 'Risk Manager', subtitle: 'Daily risk, drawdown, rules and position size', icon: 'shield-checkmark-outline', route: '/risk', tone: 'positive' },
+        { title: 'Risk Manager', subtitle: 'Daily risk, drawdown, rules and position size', icon: 'risk-manager', route: '/risk', tone: 'positive' },
         { title: 'Check a trade', subtitle: 'Risk + rules before you enter', icon: 'checkmark-done-outline', route: '/analyze', tone: 'accent' },
         { title: 'Setup Check', subtitle: 'Chart vs your strategy', icon: 'scan-outline', route: '/setup-check', tone: 'accent' },
         { title: 'Risk calculator', subtitle: 'Size from your stop', icon: 'calculator-outline', route: '/calculator', tone: 'accent' },
@@ -24,16 +24,16 @@ export default function MoreTab() {
     {
       title: 'Accounts',
       items: [
-        { title: 'Account management', subtitle: 'Prop accounts, rules and balances', icon: 'briefcase-outline', route: '/accounts', tone: 'accent', value: String(accounts) },
-        { title: 'Import from screenshot', subtitle: 'Read a dashboard screenshot', icon: 'image-outline', route: '/accounts/import', tone: 'accent' },
+        { title: 'Account management', subtitle: 'Prop accounts, rules and balances', icon: 'accounts', route: '/accounts', tone: 'accent', value: String(accounts) },
+        { title: 'Import from screenshot', subtitle: 'Read a dashboard screenshot', icon: 'account-import', route: '/accounts/import', tone: 'accent' },
       ],
     },
     {
       title: 'Review & improve',
       items: [
-        { title: 'Performance', subtitle: 'From your journal', icon: 'stats-chart-outline', route: '/performance', tone: 'positive' },
+        { title: 'Performance', subtitle: 'From your journal', icon: 'analytics', route: '/performance', tone: 'positive' },
         { title: 'Discipline score', subtitle: 'Rules followed over time', icon: 'ribbon-outline', route: '/discipline', tone: 'positive' },
-        { title: 'Practice', subtitle: 'Replay scenarios', icon: 'flask-outline', route: '/practice', tone: 'positive' },
+        { title: 'Practice', subtitle: 'Replay scenarios', icon: 'practice', route: '/practice', tone: 'positive' },
         { title: 'Learn', subtitle: 'Lessons and your trading plan', icon: 'school-outline', route: '/learn', tone: 'positive' },
         { title: 'Quick start', subtitle: 'Setup checklist', icon: 'flash-outline', route: '/start', tone: 'positive' },
       ],
@@ -41,8 +41,8 @@ export default function MoreTab() {
     {
       title: 'App',
       items: [
-        { title: 'Settings', subtitle: 'Profile, preferences, notifications, data', icon: 'settings-outline', route: '/profile' },
-        { title: 'Alerts', subtitle: 'Entry, breakeven and risk alerts', icon: 'notifications-outline', route: '/alerts' },
+        { title: 'Settings', subtitle: 'Profile, preferences, notifications, data', icon: 'settings', route: '/profile' },
+        { title: 'Alerts', subtitle: 'Entry, breakeven and risk alerts', icon: 'alerts', route: '/alerts' },
       ],
     },
   ];

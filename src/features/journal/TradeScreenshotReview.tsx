@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, DetailTable, FieldRow, LoadingState, SegmentedControl, SelectField, StatusBadge, ToggleRow } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import { calculateTradeRisk, instrumentOptions, isInstrumentSymbol } from '@/lib/engines';
 import { REVIEW_CONFIDENCE, type ReadField, type ScreenshotKind, type TradeReading } from '@/lib/engines/tradeScreenshot';
@@ -121,7 +121,7 @@ export function TradeScreenshotReview({ onUse, onManual }: { onUse: (v: Confirme
     return (
       <Card style={styles.gap}>
         <View style={styles.drop}>
-          <Ionicons name="scan-outline" size={30} color={colors.accentBright} />
+          <Icon name="scan-outline" size={30} color={colors.accentBright} />
           <AppText variant="heading" align="center">
             Upload a trade screenshot
           </AppText>

@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { PendingTrade } from '@/types/domain';
 import { money, price, rr, shortDate, time } from '@/utils/format';
@@ -23,7 +23,7 @@ function PendingTradeCardBase({ pending: p, strategyName, onPress }: PendingTrad
           <View style={styles.titleRow}>
             <AppText variant="heading">{p.instrument}</AppText>
             <View style={[styles.dir, { backgroundColor: long ? colors.positiveMuted : colors.dangerMuted }]}>
-              <Ionicons name={long ? 'arrow-up' : 'arrow-down'} size={12} color={long ? colors.positive : colors.danger} />
+              <Icon name={long ? 'arrow-up' : 'arrow-down'} size={12} color={long ? colors.positive : colors.danger} />
               <AppText variant="label" style={{ fontSize: 10, color: long ? colors.positive : colors.danger }}>
                 {p.direction}
               </AppText>

@@ -4,7 +4,7 @@
  */
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { BrandMark, EmptyState, Illustration, Logo, type IllustrationKind } from '@/components/ui';
+import { BrandMark, EmptyState, Icon, ICON_NAMES, Illustration, Logo, type IllustrationKind } from '@/components/ui';
 import { DEFAULT_COPY_SETTINGS, translateCopyTrade } from '@/lib/engines/copyTradeEngine';
 import { computeDailyGuard } from '@/lib/engines/dailyGuardEngine';
 import { useAppStore } from '@/store/useAppStore';
@@ -16,8 +16,6 @@ import { newCopyGroup } from '@/lib/engines/accountCopierEngine';
 import { AccountCopierPanel } from '../AccountCopierPanel';
 import { CopyVerdictCard } from '../CopyVerdictCard';
 
-// Icon fonts load asynchronously; a static stand-in keeps renders synchronous.
-jest.mock('@expo/vector-icons', () => ({ Ionicons: ({ name }: { name: string }) => `icon:${name}` }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn(), back: jest.fn() } }));
 
 const text = (r: ReactTestRenderer) => JSON.stringify(r.toJSON());
@@ -36,8 +34,17 @@ afterEach(() => act(() => mounted.splice(0).forEach((r) => r.unmount())));
 describe('Copy Trade UI', () => {
   beforeEach(() => useAppStore.getState().startFresh('local'));
 
-  it('14: the five primary destinations, in order, with labels', () => {
+  it('14: the five primary destinations, in order, with labels and their feature icons', () => {
     expect(Object.values(TAB_ITEMS).map((t) => t.label)).toEqual(['Home', 'Strategies', 'Copy Trade', 'Journal', 'More']);
+    expect(Object.values(TAB_ITEMS).map((t) => t.icon)).toEqual(['dashboard', 'strategies', 'copy-trade', 'journal', 'more']);
+  });
+
+  it('every registered icon renders as an SVG (no icon font, so no empty squares)', () => {
+    expect(ICON_NAMES.length).toBeGreaterThan(180);
+    for (const name of ICON_NAMES) {
+      const json = JSON.stringify(render(<Icon name={name} size={22} color="#4DA3FF" />).toJSON());
+      expect(json).toMatch(/RNSVG|svg/i);
+    }
   });
 
   it('trade copier: needs two accounts; setup-only banner; live start disabled with the reason', () => {

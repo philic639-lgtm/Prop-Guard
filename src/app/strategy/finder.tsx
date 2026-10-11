@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ProGate } from '@/components/domain/ProGate';
 import { AppHeader, AppText, Button, Card, Chip, LoadingState, Screen, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { LIBRARY_DISCLAIMER } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { CATEGORY_LABEL, getTemplate } from '@/data/strategyLibrary';
@@ -152,7 +152,7 @@ export default function StrategyFinder() {
               </AppText>
               {best.reasons.map((reason) => (
                 <View key={reason} style={styles.reason}>
-                  <Ionicons name="checkmark" size={16} color={colors.positive} />
+                  <Icon name="checkmark" size={16} color={colors.positive} />
                   <AppText variant="body" style={styles.flex}>
                     {reason}
                   </AppText>
@@ -268,7 +268,7 @@ function Cautions({ items }: { items: string[] }) {
     <View style={{ marginTop: spacing.sm, gap: 4 }}>
       {items.map((c) => (
         <View key={c} style={styles.reason}>
-          <Ionicons name="information-circle-outline" size={16} color={colors.warning} />
+          <Icon name="information-circle-outline" size={16} color={colors.warning} />
           <AppText variant="caption" style={styles.flex}>
             {c}
           </AppText>

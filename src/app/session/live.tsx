@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -23,6 +22,7 @@ import {
   ToggleRow,
   WarningSheet,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useDailyGuard, useStrategy, useTrade } from '@/hooks/useAppData';
 import { closedTradeAlert, getInstrument, isStopWidened, liveAlerts, liveState, openPnl, roundToTick, stopChangeRiskDelta, type LiveAlert } from '@/lib/engines';
@@ -184,7 +184,7 @@ function LiveMonitor({ trade }: { trade: Trade }) {
         <Card>
           <View style={styles.tradeHead}>
             <View style={styles.instIcon}>
-              <Ionicons name={trade.direction === 'long' ? 'trending-up' : 'trending-down'} size={20} color={colors.accentBright} />
+              <Icon name={trade.direction === 'long' ? 'trending-up' : 'trending-down'} size={20} color={colors.accentBright} />
             </View>
             <View style={styles.flex}>
               <AppText variant="heading">
@@ -319,7 +319,7 @@ function LiveMonitor({ trade }: { trade: Trade }) {
         </View>
         {exitVal != null ? (
           <View style={styles.preview}>
-            <Ionicons name="calculator-outline" size={16} color={colors.textSecondary} />
+            <Icon name="calculator-outline" size={16} color={colors.textSecondary} />
             <AppText variant="bodyStrong">
               Result: {money(openPnl(trade.instrument, trade.direction, trade.entryPrice, exitVal, trade.contracts), { sign: true })}
             </AppText>

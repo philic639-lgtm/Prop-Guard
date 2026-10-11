@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Sheet, TabSwitch } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { FIELD_LABEL } from '@/lib/engines/accountImport';
 
@@ -13,7 +13,7 @@ export function SensitiveInfoWarning({ compact }: { compact?: boolean }) {
   return (
     <View style={styles.warn} accessibilityRole="alert">
       <View style={styles.row}>
-        <Ionicons name="eye-off-outline" size={16} color={colors.warning} />
+        <Icon name="eye-off-outline" size={16} color={colors.warning} />
         <AppText variant="bodyStrong" style={{ color: colors.warning }}>
           Hide private details first
         </AppText>
@@ -55,7 +55,7 @@ function MockScreen({ g }: { g: GuideExample }) {
       </View>
       {g.key === 'overview' ? (
         <View style={styles.private}>
-          <Ionicons name="eye-off-outline" size={14} color={colors.danger} />
+          <Icon name="eye-off-outline" size={14} color={colors.danger} />
           <AppText variant="caption" style={styles.flex}>
             Login email · name · password
           </AppText>
@@ -152,7 +152,7 @@ export function ExampleScreenshotGuide({ visible, onClose, initial = 'overview' 
       <MockScreen g={g} />
       <CaptureList g={g} />
       <View style={styles.tip}>
-        <Ionicons name="bulb-outline" size={16} color={colors.accentBright} />
+        <Icon name="bulb-outline" size={16} color={colors.accentBright} />
         <AppText variant="caption" style={styles.flex}>
           {g.tip}
         </AppText>

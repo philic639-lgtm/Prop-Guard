@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState, type ReactNode } from 'react';
 import { Controller, useWatch, type Control } from 'react-hook-form';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Input, NumericInput, SectionHeader, SegmentedControl } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import type { FirmRuleField, FirmRuleValues, Permission } from '@/types/domain';
 
@@ -24,7 +24,7 @@ interface ImportProps {
 function LockedRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.locked} accessible accessibilityLabel={`${label}: ${value}. Firm rule, read-only`}>
-      <Ionicons name="lock-closed" size={14} color={colors.positive} />
+      <Icon name="lock-closed" size={14} color={colors.positive} />
       <AppText variant="body" tone="secondary" style={styles.flex}>
         {label}
       </AppText>
@@ -252,7 +252,7 @@ export function AccountFields({
       <Money control={control} name="payoutThreshold" label="Payout threshold" hint="Optional" {...imp} />
 
       <Pressable accessibilityRole="button" accessibilityState={{ expanded: moreOpen }} onPress={() => setShowMore((v) => !v)} disabled={hasMore} style={styles.toggle}>
-        <Ionicons name={moreOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
+        <Icon name={moreOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
         <AppText variant="label">More firm rules{hasMore ? '' : ' (optional)'}</AppText>
       </Pressable>
       {moreOpen ? (

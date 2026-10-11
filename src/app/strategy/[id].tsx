@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -19,6 +18,7 @@ import {
   SectionHeader,
   ToggleRow,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
 import { blankStrategy, strategyFromTemplate } from '@/features/strategy/fromTemplate';
@@ -225,12 +225,12 @@ export default function StrategyBuilder() {
         ) : (
           checklist.map((c, i) => (
             <View key={c.id} style={[styles.item, i > 0 && styles.itemBorder]}>
-              <Ionicons name="checkbox-outline" size={18} color={colors.accent} />
+              <Icon name="checkbox-outline" size={18} color={colors.accent} />
               <AppText variant="body" style={styles.flex}>
                 {c.label}
               </AppText>
               <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${c.label}`} hitSlop={10} onPress={() => setChecklist((cur) => cur.filter((x) => x.id !== c.id))}>
-                <Ionicons name="close" size={18} color={colors.textTertiary} />
+                <Icon name="close" size={18} color={colors.textTertiary} />
               </Pressable>
             </View>
           ))

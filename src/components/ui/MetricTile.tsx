@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radius, spacing, toneColor, type Tone } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 
 interface MetricTileProps {
@@ -11,7 +11,7 @@ interface MetricTileProps {
   value: string;
   tone?: Tone | 'primary';
   sub?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
   onPress?: () => void;
   align?: 'left' | 'center';
   children?: ReactNode;
@@ -26,7 +26,7 @@ export function MetricTile({ label, value, tone = 'primary', sub, icon, onPress,
         {label}
       </AppText>
       <View style={[styles.valueRow, align === 'center' && { justifyContent: 'center' }]}>
-        {icon ? <Ionicons name={icon} size={18} color={color} /> : null}
+        {icon ? <Icon name={icon} size={18} color={color} /> : null}
         <AppText variant="number" style={{ color, fontSize: 21 }} numberOfLines={1} adjustsFontSizeToFit>
           {value}
         </AppText>

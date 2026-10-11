@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
 import { colors, radius, spacing, toneColor, type Tone } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 
 interface VerdictBannerProps {
@@ -11,10 +11,10 @@ interface VerdictBannerProps {
   subtitle?: string;
   /** e.g. "7/7" or "1:2 R:R" */
   badge?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
 }
 
-const ICON: Record<VerdictBannerProps['tone'], keyof typeof Ionicons.glyphMap> = {
+const ICON: Record<VerdictBannerProps['tone'], IconName> = {
   positive: 'shield-checkmark',
   warning: 'shield-half',
   danger: 'close-circle',
@@ -31,7 +31,7 @@ export function VerdictBanner({ tone, title, subtitle, badge, icon }: VerdictBan
       accessibilityLabel={`${title}${badge ? `, ${badge}` : ''}${subtitle ? `. ${subtitle}` : ''}`}
       style={[styles.wrap, { backgroundColor: c.bg, borderColor: c.fg + '88' }]}>
       <View style={[styles.icon, { borderColor: c.fg + '66' }]}>
-        <Ionicons name={icon ?? ICON[tone]} size={34} color={c.fg} />
+        <Icon name={icon ?? ICON[tone]} size={34} color={c.fg} />
       </View>
       <View style={styles.text}>
         <View style={styles.titleRow}>

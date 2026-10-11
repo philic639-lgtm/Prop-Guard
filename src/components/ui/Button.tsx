@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning' | 'success' | 'caution';
@@ -12,7 +12,7 @@ interface ButtonProps {
   label: string;
   onPress: () => void;
   variant?: Variant;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
   loading?: boolean;
   disabled?: boolean;
   size?: 'md' | 'lg';
@@ -66,7 +66,7 @@ export function Button({
         <ActivityIndicator color={v.fg} />
       ) : (
         <View style={styles.inner}>
-          {icon ? <Ionicons name={icon} size={18} color={v.fg} /> : null}
+          {icon ? <Icon name={icon} size={18} color={v.fg} /> : null}
           <AppText variant="bodyStrong" style={[styles.label, { color: v.fg }]}>
             {label}
           </AppText>

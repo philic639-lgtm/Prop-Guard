@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { Trade } from '@/types/domain';
 import { money, points, shortDate, time } from '@/utils/format';
@@ -27,7 +27,7 @@ function TradeCardBase({ trade, strategyName, onPress }: TradeCardProps) {
           <View style={styles.titleRow}>
             <AppText variant="heading">{trade.instrument}</AppText>
             <View style={[styles.dir, { backgroundColor: trade.direction === 'long' ? colors.positiveMuted : colors.dangerMuted }]}>
-              <Ionicons name={trade.direction === 'long' ? 'arrow-up' : 'arrow-down'} size={12} color={trade.direction === 'long' ? colors.positive : colors.danger} />
+              <Icon name={trade.direction === 'long' ? 'arrow-up' : 'arrow-down'} size={12} color={trade.direction === 'long' ? colors.positive : colors.danger} />
               <AppText variant="label" style={{ fontSize: 10, color: trade.direction === 'long' ? colors.positive : colors.danger }}>
                 {trade.direction}
               </AppText>
@@ -53,7 +53,7 @@ function TradeCardBase({ trade, strategyName, onPress }: TradeCardProps) {
       <View style={styles.footer}>
         {trade.origin === 'copied' ? (
           <View style={[styles.flex, styles.copied]}>
-            <Ionicons name="copy-outline" size={13} color={colors.accentBright} />
+            <Icon name="copy-outline" size={13} color={colors.accentBright} />
             <AppText variant="caption" numberOfLines={1} style={[styles.flex, { color: colors.accentBright }]}>
               Copied · {trade.sourceTraderName ?? 'source trader'}
             </AppText>
@@ -65,7 +65,7 @@ function TradeCardBase({ trade, strategyName, onPress }: TradeCardProps) {
         )}
         <View style={styles.meta}>
           {trade.screenshotUri ? <Image source={{ uri: trade.screenshotUri }} style={styles.thumb} contentFit="cover" accessibilityLabel="Screenshot" /> : null}
-          <Ionicons name={discipline >= 100 ? 'shield-checkmark' : 'shield-half'} size={14} color={discipline >= 100 ? colors.positive : colors.warning} />
+          <Icon name={discipline >= 100 ? 'shield-checkmark' : 'shield-half'} size={14} color={discipline >= 100 ? colors.positive : colors.warning} />
           <AppText variant="caption">Discipline {discipline}%</AppText>
           {!trade.journaled && trade.status === 'closed' ? <View style={styles.dot} accessibilityLabel="Journal pending" /> : null}
         </View>

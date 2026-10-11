@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, DetailTable, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import type { HistoricalSimilarityStats } from '@/lib/engines/historicalSimilarityEngine';
 import type { PracticeScenario, PracticeScore, PracticeTradeInput, ReplayOutcome } from '@/types/practice';
@@ -95,7 +95,7 @@ export function HistoricalAnalysisCard({ scenario: s, stats, lines }: { scenario
   return (
     <Card>
       <View style={styles.row}>
-        <Ionicons name="analytics-outline" size={16} color={colors.accentBright} />
+        <Icon name="analytics-outline" size={16} color={colors.accentBright} />
         <AppText variant="label" tone="accent">
           Historical analysis
         </AppText>
@@ -109,7 +109,7 @@ export function HistoricalAnalysisCard({ scenario: s, stats, lines }: { scenario
       ) : null}
       {lines.map((l) => (
         <View key={l} style={styles.line}>
-          <Ionicons name={hasStats ? 'stats-chart-outline' : 'information-circle-outline'} size={15} color={hasStats ? colors.accentBright : colors.warning} />
+          <Icon name={hasStats ? 'stats-chart-outline' : 'information-circle-outline'} size={15} color={hasStats ? colors.accentBright : colors.warning} />
           <AppText variant="body" style={styles.flex}>
             {l}
           </AppText>

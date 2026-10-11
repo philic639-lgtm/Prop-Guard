@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -23,6 +22,7 @@ import {
   StatusBadge,
   TileGrid,
 } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, GUTTER, radius, spacing, toneColor } from '@/constants/theme';
 import { CoachCard } from '@/features/home/CoachCard';
 import { useCopyAnalytics } from '@/features/copyTrade/useCopyTrade';
@@ -67,8 +67,8 @@ export default function HomeScreen() {
     <View style={styles.header}>
       <Logo tagline />
       <View style={styles.headerRight}>
-        <HeaderIconButton icon="notifications-outline" label="Alerts" badge={unread} onPress={() => router.push('/alerts')} />
-        <HeaderIconButton icon="settings-outline" label="Profile and settings" onPress={() => router.push('/profile')} />
+        <HeaderIconButton icon="alerts" label="Alerts" badge={unread} onPress={() => router.push('/alerts')} />
+        <HeaderIconButton icon="settings" label="Profile and settings" onPress={() => router.push('/profile')} />
       </View>
     </View>
   );
@@ -126,7 +126,7 @@ export default function HomeScreen() {
             </AppText>
           ) : null}
         </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        <Icon name="chevron-forward" size={18} color={colors.textTertiary} />
       </Pressable>
 
       {/* The four numbers that matter: balance, profit target, daily risk, drawdown. */}
@@ -164,19 +164,19 @@ export default function HomeScreen() {
           <AppText variant="caption" style={[styles.flex, { color: colors.text }]} numberOfLines={1}>
             {guard.cooldown.active ? `Cooldown ${formatDuration(guard.cooldown.remainingMs)}` : (guard.reasons[0] ?? `${money(guard.riskRemaining)} risk left today`)}
           </AppText>
-          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+          <Icon name="chevron-forward" size={16} color={colors.textSecondary} />
         </Pressable>
       ) : null}
 
       {/* Actions — separate from the account numbers above. */}
       <Button label="Check Trade" icon="shield-checkmark" variant="success" onPress={() => router.push('/analyze')} />
       <View style={styles.actions}>
-        <ActionCard icon="copy-outline" title="Copy Trade" subtitle={copyLine} onPress={() => router.push('/copy')} />
-        <ActionCard icon="shield-half-outline" title="Risk Manager" subtitle={guard ? (guard.dailyLimit > 0 ? `${money(guard.riskRemaining)} risk left` : 'Set your limits') : 'Rules & sizing'} onPress={() => router.push('/risk')} tone="positive" />
+        <ActionCard icon="copy-trade" title="Copy Trade" subtitle={copyLine} onPress={() => router.push('/copy')} />
+        <ActionCard icon="risk-manager" title="Risk Manager" subtitle={guard ? (guard.dailyLimit > 0 ? `${money(guard.riskRemaining)} risk left` : 'Set your limits') : 'Rules & sizing'} onPress={() => router.push('/risk')} tone="positive" />
       </View>
       <View style={styles.actions}>
         <ActionCard icon="scan-outline" title="Setup Check" subtitle="Chart vs your rules" onPress={() => router.push('/setup-check')} compact />
-        <ActionCard icon="book-outline" title="Journal" subtitle={pending.length ? `${pending.length} awaiting result` : 'Your trades'} onPress={() => router.push('/journal')} compact />
+        <ActionCard icon="journal" title="Journal" subtitle={pending.length ? `${pending.length} awaiting result` : 'Your trades'} onPress={() => router.push('/journal')} compact />
       </View>
       <HomeModeCard />
 
@@ -235,7 +235,7 @@ export default function HomeScreen() {
             pending.length === 1 ? router.push({ pathname: '/journal/complete/[id]', params: { id: pending[0].id } }) : router.push('/journal')
           }>
           <View style={styles.row}>
-            <Ionicons name="book" size={16} color={colors.warning} />
+            <Icon name="book" size={16} color={colors.warning} />
             <AppText variant="label" tone="warning">
               {pending.length} trade{pending.length === 1 ? '' : 's'} waiting for a result
             </AppText>
@@ -259,7 +259,7 @@ export default function HomeScreen() {
       {todaysPlan ? (
         <Card onPress={() => router.push('/analyze')} tone="accent">
           <View style={styles.row}>
-            <Ionicons name="document-text-outline" size={18} color={colors.accentBright} />
+            <Icon name="document-text-outline" size={18} color={colors.accentBright} />
             <AppText variant="label" tone="accent">
               Saved trade plan
             </AppText>
@@ -293,7 +293,7 @@ export default function HomeScreen() {
               </AppText>
             ) : null}
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+          <Icon name="chevron-forward" size={18} color={colors.textTertiary} />
         </View>
       </Card>
 
@@ -318,12 +318,12 @@ export default function HomeScreen() {
 }
 
 /** A dashboard action: icon, title, one line of context. Each action is its own card. */
-function ActionCard({ icon, title, subtitle, onPress, tone = 'accent', compact }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string; onPress: () => void; tone?: 'accent' | 'positive'; compact?: boolean }) {
+function ActionCard({ icon, title, subtitle, onPress, tone = 'accent', compact }: { icon: IconName; title: string; subtitle: string; onPress: () => void; tone?: 'accent' | 'positive'; compact?: boolean }) {
   const c = toneColor[tone];
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={`${title}. ${subtitle}`} onPress={onPress} style={({ pressed }) => [styles.action, compact && styles.actionCompact, pressed && styles.pressed]}>
       <View style={[styles.actionIcon, compact && styles.actionIconSm, { backgroundColor: c.bg }]}>
-        <Ionicons name={icon} size={compact ? 18 : 20} color={tone === 'positive' ? colors.positive : colors.accentBright} />
+        <Icon name={icon} size={compact ? 18 : 20} color={tone === 'positive' ? colors.positive : colors.accentBright} />
       </View>
       <View style={compact ? styles.flex : styles.actionText}>
         <AppText variant="bodyStrong" numberOfLines={1}>

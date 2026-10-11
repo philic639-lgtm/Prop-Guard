@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -22,6 +21,7 @@ import {
   TabSwitch,
   TileGrid,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing, toneColor, type Tone } from '@/constants/theme';
 import { useAccountTrades, useActiveAccount, useDiscipline } from '@/hooks/useAppData';
 import {
@@ -158,7 +158,7 @@ export default function PerformanceScreen() {
           </Card>
           <Card tone="warning">
             <View style={styles.row}>
-              <Ionicons name="bulb" size={18} color={colors.warning} />
+              <Icon name="bulb" size={18} color={colors.warning} />
               <AppText variant="label" tone="warning">
                 Prop Guard insight
               </AppText>

@@ -5,6 +5,9 @@ module.exports = {
   globalSetup: '<rootDir>/jest.global-setup.js',
   setupFiles: ['<rootDir>/jest.setup.js'],
   moduleNameMapper: {
+    // Lucide's ESM build is .mjs (not transformed by jest); tests use its CommonJS build.
+    '^lucide-react-native$': '<rootDir>/node_modules/lucide-react-native/dist/cjs/lucide-react-native.js',
+    '^lucide-react-native/icons/(.*)$': '<rootDir>/node_modules/lucide-react-native/dist/cjs/icons/$1.js',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
 };

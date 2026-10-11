@@ -1,14 +1,14 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 
 interface OptionCardProps {
   title: string;
   description?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
   selected?: boolean;
   onPress: () => void;
   badge?: string;
@@ -27,7 +27,7 @@ export function OptionCard({ title, description, icon, selected, onPress, badge,
       style={({ pressed }) => [styles.card, selected && styles.selected, disabled && { opacity: 0.55 }, pressed && { opacity: 0.85 }]}>
       {icon ? (
         <View style={[styles.icon, selected && { backgroundColor: colors.accent + '33' }]}>
-          <Ionicons name={icon} size={24} color={selected ? colors.accentBright : colors.textSecondary} />
+          <Icon name={icon} size={24} color={selected ? colors.accentBright : colors.textSecondary} />
         </View>
       ) : null}
       <View style={styles.text}>
@@ -45,7 +45,7 @@ export function OptionCard({ title, description, icon, selected, onPress, badge,
         </View>
         {description ? <AppText variant="caption">{description}</AppText> : null}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={selected ? colors.accentBright : colors.textTertiary} />
+      <Icon name="chevron-forward" size={18} color={selected ? colors.accentBright : colors.textTertiary} />
     </Pressable>
   );
 }

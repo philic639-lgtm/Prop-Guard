@@ -1,19 +1,19 @@
-import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, TAB_BAR_HEIGHT } from '@/constants/theme';
 
 /** The five primary destinations (other tab routes — analyze, performance — are reached from Home / More). */
-export const TAB_ITEMS: Record<string, { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap; label: string }> = {
-  home: { on: 'home', off: 'home-outline', label: 'Home' },
-  strategy: { on: 'git-branch', off: 'git-branch-outline', label: 'Strategies' },
-  copy: { on: 'copy', off: 'copy-outline', label: 'Copy Trade' },
-  journal: { on: 'book', off: 'book-outline', label: 'Journal' },
-  more: { on: 'grid', off: 'grid-outline', label: 'More' },
+export const TAB_ITEMS: Record<string, { icon: IconName; label: string }> = {
+  home: { icon: 'dashboard', label: 'Home' },
+  strategy: { icon: 'strategies', label: 'Strategies' },
+  copy: { icon: 'copy-trade', label: 'Copy Trade' },
+  journal: { icon: 'journal', label: 'Journal' },
+  more: { icon: 'more', label: 'More' },
 };
 
 export function TabBar({ state, navigation }: BottomTabBarProps) {
@@ -40,11 +40,11 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
             aria-selected={focused}
             accessibilityLabel={cfg.label}
             hitSlop={4}
-            style={({ pressed }) => [styles.tab, pressed && styles.pressed]}>
+            style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [styles.tab, hovered && !focused && styles.hovered, pressed && styles.pressed]}>
             <View style={[styles.pill, focused && styles.pillOn]}>
-              <Ionicons name={focused ? cfg.on : cfg.off} size={21} color={focused ? colors.accentBright : colors.textSecondary} />
+              <Icon name={cfg.icon} size={23} strokeWidth={focused ? 2.25 : 1.9} color={focused ? colors.accentBright : colors.textSecondary} />
             </View>
-            <AppText variant="caption" numberOfLines={1} style={[styles.label, { color: focused ? colors.text : colors.textSecondary }]}>
+            <AppText variant="caption" numberOfLines={1} style={[styles.label, { color: focused ? colors.accentBright : colors.textSecondary }]}>
               {cfg.label}
             </AppText>
           </Pressable>
@@ -66,9 +66,10 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     paddingHorizontal: 4,
   },
-  tab: { flex: 1, minWidth: 0, minHeight: 56, alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: 6 },
+  tab: { flex: 1, minWidth: 0, minHeight: 58, alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: 6 },
   pressed: { opacity: 0.7 },
-  pill: { width: 52, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  pillOn: { backgroundColor: colors.accentMuted },
+  hovered: { opacity: 0.85 },
+  pill: { width: 56, height: 32, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  pillOn: { backgroundColor: colors.accentMuted, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.accentBright + '40' },
   label: { fontSize: 11, fontWeight: '600', letterSpacing: 0.1 },
 });

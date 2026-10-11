@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -21,6 +20,7 @@ import {
   VerdictBanner,
   YesNo,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useActiveStrategy } from '@/hooks/useAppData';
 import { aiService } from '@/services/ai';
@@ -106,7 +106,7 @@ export default function ScreenshotPracticeScreen() {
           <>
             <Card>
               <View style={styles.row}>
-                <Ionicons name="school" size={18} color={colors.accentBright} />
+                <Icon name="school" size={18} color={colors.accentBright} />
                 <AppText variant="body" style={styles.flex}>
                   Practice spotting your setup. Nothing here is a real trade and nothing affects your account.
                 </AppText>
@@ -147,7 +147,7 @@ export default function ScreenshotPracticeScreen() {
             ) : (
               <Card>
                 <View style={styles.drop}>
-                  <Ionicons name="cloud-upload-outline" size={32} color={colors.accentBright} />
+                  <Icon name="cloud-upload-outline" size={32} color={colors.accentBright} />
                   <AppText variant="heading">Upload a chart</AppText>
                   <AppText variant="caption" align="center">
                     Use a past chart from TradingView, Tradovate or NinjaTrader.
@@ -185,7 +185,7 @@ export default function ScreenshotPracticeScreen() {
                 <VerdictBanner tone={VERDICT_UI[result.verdict].tone} title={VERDICT_UI[result.verdict].title} subtitle={VERDICT_UI[result.verdict].subtitle} badge={`${result.conditionsMet}/${result.conditionsTotal}`} />
                 <Card>
                   <View style={styles.row}>
-                    <Ionicons name="sparkles" size={16} color={colors.accentBright} />
+                    <Icon name="sparkles" size={16} color={colors.accentBright} />
                     <AppText variant="label" tone="accent">
                       AI feedback
                     </AppText>

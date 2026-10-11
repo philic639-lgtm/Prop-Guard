@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import type { DailyGuard } from '@/lib/engines/dailyGuardEngine';
 import { aiService, type DailyCoach } from '@/services/ai';
@@ -43,7 +43,7 @@ export function CoachCard({ guard, disciplineScore, strategyName, lastSetupMatch
   return (
     <Card>
       <View style={styles.head}>
-        <Ionicons name="sparkles" size={16} color={colors.accent} />
+        <Icon name="sparkles" size={16} color={colors.accent} />
         <AppText variant="label" tone="accent">
           AI Coach
         </AppText>

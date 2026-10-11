@@ -1,14 +1,14 @@
-import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 import { Button } from './Button';
 import { Illustration, type IllustrationKind } from './Illustration';
 
 interface EmptyStateProps {
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
   /** Branded spot illustration (replaces the icon tile). */
   illustration?: IllustrationKind;
   title: string;
@@ -24,7 +24,7 @@ export function EmptyState({ icon = 'sparkles-outline', illustration, title, mes
         <Illustration kind={illustration} size={76} />
       ) : (
         <View style={styles.icon}>
-          <Ionicons name={icon} size={26} color={colors.accent} />
+          <Icon name={icon} size={26} color={colors.accent} />
         </View>
       )}
       <AppText variant="heading" align="center">
@@ -51,7 +51,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   return (
     <View style={styles.wrap}>
       <View style={[styles.icon, { backgroundColor: colors.dangerMuted }]}>
-        <Ionicons name="cloud-offline-outline" size={26} color={colors.danger} />
+        <Icon name="cloud-offline-outline" size={26} color={colors.danger} />
       </View>
       <AppText variant="heading" align="center">
         Something went wrong

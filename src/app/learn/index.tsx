@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, RiskProgress, Screen, SectionHeader, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { CURRICULUM } from '@/data/learning/curriculum';
 import { ExperienceSwitch } from '@/features/learning/ExperienceSwitch';
@@ -55,17 +55,17 @@ export default function LearnHub() {
 
       <View style={styles.tools}>
         <Card style={styles.tool} onPress={() => router.push('/learn/personality')} accessibilityLabel="Trading personality">
-          <Ionicons name="person-outline" size={20} color={colors.accentBright} />
+          <Icon name="person-outline" size={20} color={colors.accentBright} />
           <AppText variant="bodyStrong">Personality</AppText>
           <AppText variant="caption">{learning?.personality ? learning.personality.archetype : 'Not taken yet'}</AppText>
         </Card>
         <Card style={styles.tool} onPress={() => router.push('/learn/strategies')} accessibilityLabel="Strategy matches">
-          <Ionicons name="compass-outline" size={20} color={colors.accentBright} />
+          <Icon name="compass-outline" size={20} color={colors.accentBright} />
           <AppText variant="bodyStrong">Matches</AppText>
           <AppText variant="caption">From the library</AppText>
         </Card>
         <Card style={styles.tool} onPress={() => router.push('/learn/plan')} accessibilityLabel="Trading plan">
-          <Ionicons name="map-outline" size={20} color={colors.accentBright} />
+          <Icon name="map-outline" size={20} color={colors.accentBright} />
           <AppText variant="bodyStrong">My plan</AppText>
           <AppText variant="caption">{plan ? 'Applied' : 'Not built yet'}</AppText>
         </Card>
@@ -79,7 +79,7 @@ export default function LearnHub() {
             <Card padded={false}>
               <View style={styles.modHead}>
                 <View style={styles.modIcon}>
-                  <Ionicons name={m.icon} size={18} color={colors.accentBright} />
+                  <Icon name={m.icon} size={18} color={colors.accentBright} />
                 </View>
                 <AppText variant="caption" style={styles.flex}>
                   {m.description}
@@ -93,14 +93,14 @@ export default function LearnHub() {
                 const icon = STATUS_ICON[st];
                 return (
                   <Card key={l.id} padded={false} style={styles.lesson} onPress={() => open(l.id)} accessibilityLabel={`${l.title}, ${st.replace('_', ' ')}`}>
-                    <Ionicons name={icon.name} size={20} color={icon.color} />
+                    <Icon name={icon.name} size={20} color={icon.color} />
                     <View style={styles.flex}>
                       <AppText variant="bodyStrong">{l.title}</AppText>
                       <AppText variant="caption" numberOfLines={1}>
                         {l.minutes} min · {l.summary}
                       </AppText>
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+                    <Icon name="chevron-forward" size={16} color={colors.textTertiary} />
                   </Card>
                 );
               })}

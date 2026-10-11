@@ -1,12 +1,12 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
 import type { AlertKind } from '@/types/domain';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 
-const KIND_UI: Record<AlertKind, { icon: keyof typeof Ionicons.glyphMap; color: string }> = {
+const KIND_UI: Record<AlertKind, { icon: IconName; color: string }> = {
   good_entry: { icon: 'checkmark-circle', color: colors.positive },
   move_stop_breakeven: { icon: 'arrow-up-circle', color: colors.warning },
   partial_taken: { icon: 'pie-chart', color: colors.positive },
@@ -38,7 +38,7 @@ export function NotificationCard({ kind, title, body, time, unread, onPress, hig
       accessibilityLabel={`${title}. ${body}${time ? `. ${time}` : ''}`}
       style={[styles.card, highlight && { borderColor: ui.color + '99' }]}>
       <View style={styles.logo}>
-        <Ionicons name="shield-checkmark" size={22} color={colors.positive} />
+        <Icon name="shield-checkmark" size={22} color={colors.positive} />
       </View>
       <View style={styles.text}>
         <View style={styles.head}>
@@ -53,7 +53,7 @@ export function NotificationCard({ kind, title, body, time, unread, onPress, hig
         </View>
         <View style={styles.titleRow}>
           <AppText variant="bodyStrong">{title}</AppText>
-          <Ionicons name={ui.icon} size={15} color={ui.color} />
+          <Icon name={ui.icon} size={15} color={ui.color} />
           {unread ? <View style={styles.dot} /> : null}
         </View>
         <AppText variant="caption" tone="primary" style={{ opacity: 0.85 }}>

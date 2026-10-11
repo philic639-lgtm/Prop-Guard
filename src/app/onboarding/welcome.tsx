@@ -1,17 +1,17 @@
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText, Button, Logo } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { env } from '@/config/env';
 import { DISCLAIMER } from '@/constants/legal';
 import { colors, GUTTER, radius, spacing } from '@/constants/theme';
 import { useOnboardingStore } from '@/features/onboarding/useOnboardingStore';
 import { useAppStore } from '@/store/useAppStore';
 
-const FEATURES: { icon: keyof typeof Ionicons.glyphMap; color: string; text: string }[] = [
+const FEATURES: { icon: IconName; color: string; text: string }[] = [
   { icon: 'shield-checkmark', color: colors.accentBright, text: 'Load your firm’s verified rules and protect the account' },
   { icon: 'calculator', color: colors.positive, text: 'Plan every trade: size, risk and rules checked before entry' },
   { icon: 'school', color: colors.warning, text: 'Learn step by step — or skip straight to your tools' },
@@ -49,7 +49,7 @@ export default function Welcome() {
           {FEATURES.map((f) => (
             <View key={f.text} style={styles.feature}>
               <View style={[styles.featureIcon, { backgroundColor: f.color + '22' }]}>
-                <Ionicons name={f.icon} size={20} color={f.color} />
+                <Icon name={f.icon} size={20} color={f.color} />
               </View>
               <AppText variant="body" style={{ flex: 1 }}>
                 {f.text}

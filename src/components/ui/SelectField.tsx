@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 import { Sheet } from './Sheet';
 
@@ -13,7 +13,7 @@ interface SelectFieldProps<T extends string> {
   options: { value: T; label: string; sub?: string }[];
   onChange: (v: T) => void;
   placeholder?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
 }
 
 /** Dropdown-style select that opens a bottom sheet (instrument, setup type…). */
@@ -27,11 +27,11 @@ export function SelectField<T extends string>({ label, value, options, onChange,
         accessibilityLabel={`${label}: ${current?.label ?? placeholder}`}
         onPress={() => setOpen(true)}
         style={({ pressed }) => [styles.field, pressed && { opacity: 0.8 }]}>
-        {icon ? <Ionicons name={icon} size={18} color={colors.textSecondary} /> : null}
+        {icon ? <Icon name={icon} size={18} color={colors.textSecondary} /> : null}
         <AppText variant="bodyStrong" style={styles.flex} numberOfLines={1} tone={current ? 'primary' : 'tertiary'}>
           {current?.label ?? placeholder}
         </AppText>
-        <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+        <Icon name="chevron-down" size={18} color={colors.textSecondary} />
       </Pressable>
       <Sheet visible={open} onClose={() => setOpen(false)} title={label}>
         {options.map((o) => {
@@ -50,7 +50,7 @@ export function SelectField<T extends string>({ label, value, options, onChange,
                 <AppText variant="bodyStrong">{o.label}</AppText>
                 {o.sub ? <AppText variant="caption">{o.sub}</AppText> : null}
               </View>
-              {on ? <Ionicons name="checkmark-circle" size={20} color={colors.accentBright} /> : null}
+              {on ? <Icon name="checkmark-circle" size={20} color={colors.accentBright} /> : null}
             </Pressable>
           );
         })}

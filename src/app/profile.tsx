@@ -70,9 +70,9 @@ export default function ProfileScreen() {
 
       <SectionHeader title="Trading" />
       <Card padded={false} style={styles.group}>
-        <ListRow icon="briefcase-outline" iconTone="accent" title="Prop accounts" value={String(accounts.length)} onPress={() => router.push('/accounts')} />
+        <ListRow icon="accounts" iconTone="accent" title="Prop accounts" value={String(accounts.length)} onPress={() => router.push('/accounts')} />
         <Divider />
-        <ListRow icon="shield-checkmark-outline" iconTone="accent" title="Trading rules" subtitle={`${money(rules.maxRiskPerTrade)} / trade · ${rules.maxTradesPerDay} trades · ${money(rules.dailyStop)} daily stop`} onPress={() => router.push('/settings/rules')} />
+        <ListRow icon="rules-drawdown" iconTone="accent" title="Trading rules" subtitle={`${money(rules.maxRiskPerTrade)} / trade · ${rules.maxTradesPerDay} trades · ${money(rules.dailyStop)} daily stop`} onPress={() => router.push('/settings/rules')} />
         <Divider />
         <ListRow icon="options-outline" iconTone="accent" title="Trading preferences" subtitle={`Default ${prefs.defaultInstrument} · ${prefs.timezone}`} onPress={() => router.push('/settings/preferences')} />
         <Divider />
@@ -81,20 +81,20 @@ export default function ProfileScreen() {
 
       <SectionHeader title="Performance" />
       <Card padded={false} style={styles.group}>
-        <ListRow icon="stats-chart-outline" iconTone="positive" title="Analytics" onPress={() => router.push('/performance')} />
+        <ListRow icon="analytics" iconTone="positive" title="Analytics" onPress={() => router.push('/performance')} />
         <Divider />
         <ListRow icon="ribbon-outline" iconTone="positive" title="Discipline score" onPress={() => router.push('/discipline')} />
         <Divider />
         <ListRow icon="sparkles-outline" iconTone="positive" title="AI session summary" onPress={() => router.push('/session/review')} />
         <Divider />
-        <ListRow icon="school-outline" iconTone="positive" title="Practice mode" onPress={() => router.push('/practice')} />
+        <ListRow icon="practice" iconTone="positive" title="Practice mode" onPress={() => router.push('/practice')} />
       </Card>
 
       <SectionHeader title="App" />
       <Card padded={false} style={styles.group}>
         <ListRow icon="diamond-outline" title="Subscription" value={PLANS[plan].name} onPress={() => router.push('/paywall')} />
         <Divider />
-        <ListRow icon="notifications-outline" title="Alerts" onPress={() => router.push('/alerts')} />
+        <ListRow icon="alerts" title="Alerts" onPress={() => router.push('/alerts')} />
         <Divider />
         <ListRow icon="options-outline" title="Notification settings" onPress={() => router.push('/settings/notifications')} />
         <Divider />

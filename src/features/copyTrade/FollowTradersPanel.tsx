@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, Chip, EmptyState, Illustration, SectionHeader, StatusBadge } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { MODE_LABEL, VERDICT_UI } from './copyUi';
 import { SourceTraderCard } from './SourceTraderCard';
@@ -99,7 +99,7 @@ export function FollowTradersPanel() {
             <Card key={c.id} onPress={() => router.push({ pathname: '/copy/[id]', params: { id: c.id } })} accessibilityLabel={`${c.sourceTraderName} ${c.instrument} ${c.direction}`}>
               <View style={styles.logRow}>
                 <View style={[styles.dirIcon, { backgroundColor: c.direction === 'long' ? colors.positiveMuted : colors.dangerMuted }]}>
-                  <Ionicons name={c.direction === 'long' ? 'arrow-up' : 'arrow-down'} size={16} color={c.direction === 'long' ? colors.positive : colors.danger} />
+                  <Icon name={c.direction === 'long' ? 'arrow-up' : 'arrow-down'} size={16} color={c.direction === 'long' ? colors.positive : colors.danger} />
                 </View>
                 <View style={styles.flex}>
                   <AppText variant="bodyStrong" numberOfLines={1}>
@@ -128,11 +128,11 @@ export function FollowTradersPanel() {
   );
 }
 
-function Step({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+function Step({ icon, text }: { icon: IconName; text: string }) {
   return (
     <View style={styles.step}>
       <View style={styles.stepIcon}>
-        <Ionicons name={icon} size={16} color={colors.accentBright} />
+        <Icon name={icon} size={16} color={colors.accentBright} />
       </View>
       <AppText variant="caption" style={styles.flex}>
         {text}
@@ -141,10 +141,10 @@ function Step({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: stri
   );
 }
 
-function Summary({ icon, label, value, tone }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; tone?: string }) {
+function Summary({ icon, label, value, tone }: { icon: IconName; label: string; value: string; tone?: string }) {
   return (
     <View style={styles.sumTile}>
-      <Ionicons name={icon} size={16} color={colors.accentBright} />
+      <Icon name={icon} size={16} color={colors.accentBright} />
       <AppText variant="number" style={tone ? { color: tone } : null} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </AppText>
@@ -155,10 +155,10 @@ function Summary({ icon, label, value, tone }: { icon: keyof typeof Ionicons.gly
   );
 }
 
-function Insight({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
+function Insight({ icon, label, value }: { icon: IconName; label: string; value: string }) {
   return (
     <Pressable style={styles.insight} accessible accessibilityLabel={`${label}: ${value}`}>
-      <Ionicons name={icon} size={16} color={colors.textSecondary} />
+      <Icon name={icon} size={16} color={colors.textSecondary} />
       <AppText variant="caption" tone="secondary" style={styles.insightLabel}>
         {label}
       </AppText>

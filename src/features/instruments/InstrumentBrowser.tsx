@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Input, Sheet } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { CATEGORY_LABEL } from '@/data/instruments';
 import { allInstruments, groupByCategory, searchInstruments } from '@/lib/engines/instrumentEngine';
@@ -41,7 +41,7 @@ export function InstrumentBrowser({ visible, selected, onToggle, onClose, onAddC
       />
       {total === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="search" size={22} color={colors.textTertiary} />
+          <Icon name="search" size={22} color={colors.textTertiary} />
           <AppText variant="body" tone="secondary" align="center">
             No contract matches “{query.trim()}”.
           </AppText>

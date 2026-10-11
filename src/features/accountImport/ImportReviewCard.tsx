@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { AppText, Chip, StatusBadge, ToggleRow } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { ProgramOption } from '@/data/propFirms/types';
 import { REVIEW_STATE_LABEL, type CardStatus, type DetailRow, type FieldKey, type ReviewIssue, type ReviewRow, type ReviewSource, type ReviewState, type SummaryCard } from '@/lib/engines/accountImport';
@@ -167,7 +167,7 @@ function SummaryTile({ card, onEdit, onConfirm, editThreshold }: { card: Summary
         </AppText>
       )}
       <View style={styles.statusRow}>
-        {card.status === 'verified' ? <Ionicons name="shield-checkmark" size={12} color={t.fg} /> : null}
+        {card.status === 'verified' ? <Icon name="shield-checkmark" size={12} color={t.fg} /> : null}
         <AppText variant="caption" style={[styles.flex, { color: t.fg }]}>
           {card.statusLabel}
         </AppText>
@@ -260,7 +260,7 @@ export function ImportReviewCard(p: ImportReviewCardProps) {
 
       {p.notice ? (
         <View style={styles.notice} accessibilityRole="alert">
-          <Ionicons name="alert-circle-outline" size={16} color={colors.warning} />
+          <Icon name="alert-circle-outline" size={16} color={colors.warning} />
           <AppText variant="caption" style={[styles.flex, { color: colors.warning }]}>
             {p.notice}
           </AppText>
@@ -308,7 +308,7 @@ export function ImportReviewCard(p: ImportReviewCardProps) {
       {p.issues.length ? (
         <View style={[styles.gap, styles.issues]}>
           <View style={styles.rowHead}>
-            <Ionicons name="alert-circle-outline" size={16} color={colors.warning} />
+            <Icon name="alert-circle-outline" size={16} color={colors.warning} />
             <AppText variant="bodyStrong" style={{ color: colors.warning }}>
               Needs your attention
             </AppText>
@@ -326,7 +326,7 @@ export function ImportReviewCard(p: ImportReviewCardProps) {
         <AppText variant="bodyStrong" style={styles.flex}>
           Additional Account Details
         </AppText>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
+        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
       </Pressable>
       {open ? (
         <View style={styles.details}>

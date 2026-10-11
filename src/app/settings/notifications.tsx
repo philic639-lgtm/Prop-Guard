@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ProGate } from '@/components/domain/ProGate';
 import { AppHeader, AppText, Button, Card, Divider, Screen, ToggleRow } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { useActiveStrategy } from '@/hooks/useAppData';
 import { NOTIFICATION_COPY, notificationService } from '@/services/notificationService';
@@ -44,7 +44,7 @@ export default function NotificationsScreen() {
         ) : granted === false ? (
           <Card tone="accent">
             <View style={styles.row}>
-              <Ionicons name="notifications-off-outline" size={18} color={colors.accent} />
+              <Icon name="notifications-off-outline" size={18} color={colors.accent} />
               <AppText variant="bodyStrong">Notifications are off</AppText>
             </View>
             <AppText variant="caption" style={{ marginTop: spacing.xs }}>

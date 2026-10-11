@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, Sheet, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useActiveAccount } from '@/hooks/useAppData';
 import { useAppStore } from '@/store/useAppStore';
@@ -36,7 +36,7 @@ export function AccountSelector() {
           <AppText variant="bodyStrong" numberOfLines={1} style={styles.flex}>
             {account.name}
           </AppText>
-          <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+          <Icon name="chevron-down" size={18} color={colors.textSecondary} />
         </View>
         <AppText variant="hero" style={styles.balance}>
           {money(account.balance)}

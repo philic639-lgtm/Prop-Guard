@@ -1,9 +1,9 @@
-import type { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Card, EmptyState, ListRow, MetricTile, RiskProgress, Screen, SectionHeader, StatusBadge, TileGrid } from '@/components/ui';
 import { GUARD_UI } from '@/components/domain/guardUi';
+import type { IconName } from '@/components/ui/Icon';
 import { spacing } from '@/constants/theme';
 import { useActiveAccount, useDailyGuard } from '@/hooks/useAppData';
 import { drawdownFloor } from '@/lib/engines/propRuleEngine';
@@ -18,11 +18,11 @@ export default function RiskManager() {
   const account = useActiveAccount();
   const guard = useDailyGuard(true);
   const rules = useAppStore((s) => s.tradingRules);
-  const links: { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; route: string }[] = [
-    { title: 'Trading rules', subtitle: `${money(rules.maxRiskPerTrade)} / trade · ${money(rules.dailyStop)} daily stop · ${rules.maxTradesPerDay} trades`, icon: 'options-outline', route: '/settings/rules' },
+  const links: { title: string; subtitle: string; icon: IconName; route: string }[] = [
+    { title: 'Trading rules', subtitle: `${money(rules.maxRiskPerTrade)} / trade · ${money(rules.dailyStop)} daily stop · ${rules.maxTradesPerDay} trades`, icon: 'rules-drawdown', route: '/settings/rules' },
     { title: 'Position size calculator', subtitle: 'Contracts from your stop and risk', icon: 'calculator-outline', route: '/calculator' },
     { title: 'Check a trade', subtitle: 'Risk + rules before entry', icon: 'checkmark-done-outline', route: '/analyze' },
-    { title: 'Account limits', subtitle: account ? account.name : 'Add an account', icon: 'briefcase-outline', route: account ? `/accounts/${account.id}` : '/accounts/new' },
+    { title: 'Account limits', subtitle: account ? account.name : 'Add an account', icon: 'accounts', route: account ? `/accounts/${account.id}` : '/accounts/new' },
   ];
   return (
     <Screen header={<AppHeader title="Risk Manager" subtitle={account?.name ?? 'No account'} back />}>

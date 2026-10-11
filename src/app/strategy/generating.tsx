@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, GUTTER, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
 import { finderAnswersFromProfile } from '@/features/strategy/finderProfile';
@@ -69,7 +69,7 @@ export default function GeneratingPlan() {
       <View style={styles.steps} accessibilityLiveRegion="polite">
         {STEPS.map((s, i) => (
           <View key={s} style={styles.step}>
-            <Ionicons name={i < done ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={i < done ? colors.positive : colors.textTertiary} />
+            <Icon name={i < done ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={i < done ? colors.positive : colors.textTertiary} />
             <AppText variant="body" tone={i < done ? 'primary' : 'tertiary'}>
               {s}
             </AppText>

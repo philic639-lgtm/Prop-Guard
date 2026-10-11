@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { MIN_TRADES_FOR_INSIGHT, UNASSIGNED, type StrategyPerformanceRow } from '@/lib/engines';
 import { money, rMultiple } from '@/utils/format';
@@ -48,7 +48,7 @@ export function StrategyPerformanceCard({ rows, insight, limit }: { rows: Strate
       ) : null}
       {insight ? (
         <View style={styles.insight}>
-          <Ionicons name="sparkles" size={14} color={colors.accentBright} />
+          <Icon name="sparkles" size={14} color={colors.accentBright} />
           <AppText variant="caption" style={styles.flex}>
             {insight}
           </AppText>

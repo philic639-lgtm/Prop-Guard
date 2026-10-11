@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { InstrumentSpec } from '@/data/instruments';
 import { specSummary } from '@/lib/engines/instrumentEngine';
@@ -44,7 +44,7 @@ function InstrumentRowBase({ spec, selected, onToggle }: Props) {
           {specSummary(spec.symbol)}
         </AppText>
       </View>
-      <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selected ? colors.accentBright : colors.textTertiary} />
+      <Icon name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selected ? colors.accentBright : colors.textTertiary} />
     </Pressable>
   );
 }

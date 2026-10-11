@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, CircularScore, Screen } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { useDailyGuard, useTrade } from '@/hooks/useAppData';
 import { notificationService } from '@/services/notificationService';
@@ -44,7 +44,7 @@ export default function LossScreen() {
       }>
       <View style={styles.top}>
         <View style={styles.icon}>
-          <Ionicons name="pause" size={26} color={colors.warning} />
+          <Icon name="pause" size={26} color={colors.warning} />
         </View>
         <AppText variant="label" tone="warning">
           Loss recorded
@@ -76,7 +76,7 @@ export default function LossScreen() {
             </CircularScore>
           </View>
           <View style={styles.locked}>
-            <Ionicons name={cooldown.active ? 'lock-closed' : 'lock-open'} size={16} color={cooldown.active ? colors.warning : colors.positive} />
+            <Icon name={cooldown.active ? 'lock-closed' : 'lock-open'} size={16} color={cooldown.active ? colors.warning : colors.positive} />
             <AppText variant="label" tone={cooldown.active ? 'warning' : 'positive'}>
               {cooldown.active ? 'New trade locked' : 'Cooldown complete'}
             </AppText>

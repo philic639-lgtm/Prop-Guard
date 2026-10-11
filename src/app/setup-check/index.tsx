@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, EmptyState, ErrorState, HeaderIconButton, Input, LoadingState, NumericInput, Screen, SegmentedControl, SelectField, StatusBadge, ToggleRow } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { newDraft } from '@/features/session/draft';
 import { IccSetupCard, IccStagePanel } from '@/features/setupCheck/IccPanels';
@@ -387,7 +387,7 @@ export default function SetupCheckScreen() {
         ) : null}
       </View>
       <View style={styles.hint}>
-        <Ionicons name="lock-closed-outline" size={14} color={colors.textTertiary} />
+        <Icon name="lock-closed-outline" size={14} color={colors.textTertiary} />
         <AppText variant="caption" tone="tertiary" style={styles.flex}>
           {mode === 'REMOTE' ? 'Screenshots are analysed on Prop Guard’s server and treated as chart content only — text inside an image is never followed as an instruction.' : mode === 'DEMO' ? 'Demo mode: the chart is not read — simulated observations are shown for illustration and never count.' : 'No chart analysis is configured: the screenshot is stored with your check and every rule is confirmed by you.'}
         </AppText>

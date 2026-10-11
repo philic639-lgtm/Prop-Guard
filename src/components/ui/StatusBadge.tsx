@@ -1,15 +1,15 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
 import { radius, spacing, toneColor, type Tone } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 
 interface StatusBadgeProps {
   label: string;
   tone?: Tone;
   /** Icon reinforces meaning so status is not conveyed by color alone. */
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -21,7 +21,7 @@ export function StatusBadge({ label, tone = 'neutral', icon, size = 'md' }: Stat
       accessible
       accessibilityLabel={label}
       style={[styles.pill, { backgroundColor: c.bg, borderColor: c.fg + '33' }, size === 'lg' && styles.lg, size === 'sm' && styles.sm]}>
-      {icon ? <Ionicons name={icon} size={fontSize + 3} color={c.fg} /> : <View style={[styles.dot, { backgroundColor: c.fg }]} />}
+      {icon ? <Icon name={icon} size={fontSize + 3} color={c.fg} /> : <View style={[styles.dot, { backgroundColor: c.fg }]} />}
       <AppText variant="label" style={{ color: c.fg, fontSize }}>
         {label}
       </AppText>

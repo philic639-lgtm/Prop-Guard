@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing, toneColor } from '@/constants/theme';
 import type { CopyTranslation } from '@/lib/engines/copyTradeEngine';
 import { money } from '@/utils/format';
@@ -37,7 +37,7 @@ export function CopyVerdictCard({ t, sourceLine }: { t: CopyTranslation; sourceL
 
       {t.suggestion ? (
         <View style={[styles.suggest, { backgroundColor: c.bg, borderColor: c.fg + '44' }]}>
-          <Ionicons name={t.verdict === 'safe' ? 'checkmark-circle' : 'arrow-forward-circle'} size={18} color={c.fg} />
+          <Icon name={t.verdict === 'safe' ? 'checkmark-circle' : 'arrow-forward-circle'} size={18} color={c.fg} />
           <AppText variant="bodyStrong" style={[styles.flex, { color: c.fg }]}>
             {t.suggestion}
           </AppText>

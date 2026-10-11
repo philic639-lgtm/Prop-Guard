@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import type { DailyGuard } from '@/lib/engines/dailyGuardEngine';
 import { inEntryWindow } from '@/lib/engines/strategyEngine';
@@ -45,7 +45,7 @@ export function TradingPlanCard({ strategy, guard }: { strategy: Strategy; guard
       <View style={styles.rows}>
         {rows.map((r) => (
           <View key={r.label} style={styles.row} accessible accessibilityLabel={`${r.label} ${r.value}${r.ok ? '' : ', limit reached or outside'}`}>
-            <Ionicons name={r.ok ? 'checkmark-circle' : 'alert-circle'} size={18} color={r.ok ? colors.positive : colors.warning} />
+            <Icon name={r.ok ? 'checkmark-circle' : 'alert-circle'} size={18} color={r.ok ? colors.positive : colors.warning} />
             <AppText variant="body" style={styles.flex}>
               {r.label}
             </AppText>

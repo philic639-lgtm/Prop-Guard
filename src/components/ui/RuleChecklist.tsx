@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
 import { colors, spacing } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 
 export interface ChecklistRow {
@@ -12,7 +12,7 @@ export interface ChecklistRow {
   detail?: string;
 }
 
-const ICON: Record<ChecklistRow['state'], { name: keyof typeof Ionicons.glyphMap; color: string; a11y: string }> = {
+const ICON: Record<ChecklistRow['state'], { name: IconName; color: string; a11y: string }> = {
   pass: { name: 'checkmark-circle', color: colors.positive, a11y: 'passed' },
   fail: { name: 'close-circle', color: colors.danger, a11y: 'failed' },
   warn: { name: 'alert-circle', color: colors.warning, a11y: 'caution' },
@@ -26,7 +26,7 @@ export function RuleChecklist({ rows }: { rows: ChecklistRow[] }) {
         const i = ICON[r.state];
         return (
           <View key={r.id} style={styles.row} accessible accessibilityLabel={`${r.label}, ${i.a11y}${r.detail ? `. ${r.detail}` : ''}`}>
-            <Ionicons name={i.name} size={20} color={i.color} />
+            <Icon name={i.name} size={20} color={i.color} />
             <View style={styles.text}>
               <AppText variant="body" tone={r.state === 'pending' ? 'secondary' : 'primary'}>
                 {r.label}

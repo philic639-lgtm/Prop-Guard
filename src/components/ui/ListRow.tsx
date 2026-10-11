@@ -1,16 +1,16 @@
-import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radius, spacing, toneColor, type Tone } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 
 interface ListRowProps {
   title: string;
   subtitle?: string;
   value?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
   iconTone?: Tone;
   onPress?: () => void;
   right?: ReactNode;
@@ -29,7 +29,7 @@ export function ListRow({ title, subtitle, value, icon, iconTone = 'neutral', on
       style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}>
       {icon ? (
         <View style={[styles.icon, { backgroundColor: tone.bg }]}>
-          <Ionicons name={icon} size={17} color={tone.fg} />
+          <Icon name={icon} size={17} color={tone.fg} />
         </View>
       ) : null}
       <View style={styles.text}>
@@ -48,7 +48,7 @@ export function ListRow({ title, subtitle, value, icon, iconTone = 'neutral', on
         </AppText>
       ) : null}
       {right}
-      {chevron ? <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} /> : null}
+      {chevron ? <Icon name="chevron-forward" size={18} color={colors.textTertiary} /> : null}
     </Pressable>
   );
 }

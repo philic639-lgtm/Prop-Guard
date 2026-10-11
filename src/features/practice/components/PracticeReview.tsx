@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, DetailTable, RuleChecklist, SectionHeader, StatusBadge } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
 import { formatPrice } from '@/lib/engines';
@@ -136,10 +136,10 @@ export function PracticeReview({ scenario: s, attempt: a, score, replay, lessonS
   );
 }
 
-function Line({ icon, color, text, small }: { icon: keyof typeof Ionicons.glyphMap; color: string; text: string; small?: boolean }) {
+function Line({ icon, color, text, small }: { icon: IconName; color: string; text: string; small?: boolean }) {
   return (
     <View style={styles.line}>
-      <Ionicons name={icon} size={small ? 7 : 16} color={color} style={small ? { marginTop: 7 } : undefined} />
+      <Icon name={icon} size={small ? 7 : 16} color={color} style={small ? { marginTop: 7 } : undefined} />
       <AppText variant="body" style={styles.flex}>
         {text}
       </AppText>

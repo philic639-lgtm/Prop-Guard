@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { VisualDiagram } from '@/components/charts/VisualDiagram';
 import { AppText, Card, StatusBadge, TabSwitch } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { RealChartExample, VisualExample } from '@/data/strategyLibrary';
 
@@ -85,7 +85,7 @@ export function StrategyVisualExample({ visual, strategyName }: StrategyVisualEx
 
       <Card tone="positive">
         <View style={styles.head}>
-          <Ionicons name="checkmark-circle" size={18} color={colors.positive} />
+          <Icon name="checkmark-circle" size={18} color={colors.positive} />
           <AppText variant="label" tone="positive">
             Why this entry works
           </AppText>
@@ -95,7 +95,7 @@ export function StrategyVisualExample({ visual, strategyName }: StrategyVisualEx
         </AppText>
         {visual.whyItWorks.map((w) => (
           <View key={w} style={styles.line}>
-            <Ionicons name="checkmark" size={15} color={colors.positive} />
+            <Icon name="checkmark" size={15} color={colors.positive} />
             <AppText variant="body" style={styles.flex}>
               {w}
             </AppText>
@@ -105,7 +105,7 @@ export function StrategyVisualExample({ visual, strategyName }: StrategyVisualEx
 
       <Card tone="danger">
         <View style={styles.head}>
-          <Ionicons name="close-circle" size={18} color={colors.danger} />
+          <Icon name="close-circle" size={18} color={colors.danger} />
           <AppText variant="label" tone="danger" style={styles.flex}>
             Common mistake
           </AppText>
@@ -129,7 +129,7 @@ function RealExamples({ examples, strategyName }: { examples: RealChartExample[]
   if (examples.length === 0) {
     return (
       <View style={styles.placeholder}>
-        <Ionicons name="images-outline" size={28} color={colors.accentBright} />
+        <Icon name="images-outline" size={28} color={colors.accentBright} />
         <AppText variant="heading" align="center">
           Real chart examples coming soon
         </AppText>

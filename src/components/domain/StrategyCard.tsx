@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import type { Strategy } from '@/types/domain';
 import { formatClock } from '@/utils/dates';
@@ -41,7 +41,7 @@ export function StrategyCard({ strategy, active, onPress }: StrategyCardProps) {
           <AppText variant="label" tone="accent">
             Edit
           </AppText>
-          <Ionicons name="arrow-forward" size={14} color={colors.accent} />
+          <Icon name="arrow-forward" size={14} color={colors.accent} />
         </View>
       ) : null}
     </Card>

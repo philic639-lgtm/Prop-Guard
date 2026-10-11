@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { MIN_INSIGHT_ATTEMPTS, type PracticeInsight } from '@/lib/engines';
 
@@ -14,7 +14,7 @@ export function PersonalEdgeInsights({ insights, attempts }: { insights: Practic
     return (
       <Card>
         <View style={styles.head}>
-          <Ionicons name="analytics-outline" size={16} color={colors.accentBright} />
+          <Icon name="analytics-outline" size={16} color={colors.accentBright} />
           <AppText variant="label" tone="accent">
             Personal edge insights
           </AppText>
@@ -45,7 +45,7 @@ export function PersonalEdgeInsights({ insights, attempts }: { insights: Practic
       {insights.map((i) => (
         <Card key={i.id} tone="accent">
           <View style={styles.head}>
-            <Ionicons name="sparkles" size={16} color={colors.accentBright} />
+            <Icon name="sparkles" size={16} color={colors.accentBright} />
             <AppText variant="label" tone="accent">
               Prop Guard insight
             </AppText>

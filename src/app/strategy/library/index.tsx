@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Disclaimer } from '@/components/domain/Disclaimer';
 import { AppHeader, AppText, Button, Card, Chip, EmptyState, HeaderIconButton, Input, Screen, SectionHeader, Sheet } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { PLANS } from '@/config/plans';
 import { LIBRARY_DISCLAIMER } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
@@ -209,7 +209,7 @@ function FilterGroup({ title, children }: { title: string; children: React.React
   return (
     <View style={{ gap: spacing.sm }}>
       <View style={styles.groupHead}>
-        <Ionicons name="funnel-outline" size={12} color={colors.textTertiary} />
+        <Icon name="funnel-outline" size={12} color={colors.textTertiary} />
         <AppText variant="label">{title}</AppText>
       </View>
       <View style={styles.wrap}>{children}</View>

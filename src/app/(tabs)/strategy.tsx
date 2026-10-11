@@ -1,14 +1,15 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Disclaimer } from '@/components/domain/Disclaimer';
 import { AppHeader, AppText, Button, Card, HeaderIconButton, OptionCard, Screen, SectionHeader, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { PLANS } from '@/config/plans';
 import { LIBRARY_DISCLAIMER } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { STRATEGY_LIBRARY } from '@/data/strategyLibrary';
+import { StrategyPathCard } from '@/features/strategy/StrategyPathCard';
 import { StrategyPerformanceCard } from '@/features/strategy/StrategyPerformanceCard';
 import { useAccountTrades, useActiveStrategy } from '@/hooks/useAppData';
 import { performanceInsight, strategyPerformance, strategyRules, strategySourceLabel } from '@/lib/engines';
@@ -30,7 +31,7 @@ export default function StrategyTab() {
   const gate = (path: Parameters<typeof router.push>[0]) => router.push(canAdd ? path : '/paywall');
 
   return (
-    <Screen tabBar header={<AppHeader title="Strategies" right={<HeaderIconButton icon="school-outline" label="Practice mode" onPress={() => router.push('/practice')} />} />}>
+    <Screen tabBar header={<AppHeader title="Strategies" right={<HeaderIconButton icon="practice" label="Practice mode" onPress={() => router.push('/practice')} />} />}>
       {active ? (
         <>
           <SectionHeader title="Active strategy" />
@@ -68,15 +69,27 @@ export default function StrategyTab() {
             </View>
             <View style={styles.btnRow}>
               <Button label="Edit rules" variant="secondary" size="md" icon="create-outline" style={styles.flex} onPress={() => router.push({ pathname: '/strategy/review', params: { id: active.id } })} />
-              <Button label="Practice" variant="secondary" size="md" icon="school-outline" style={styles.flex} onPress={() => router.push({ pathname: '/practice', params: { strategyId: active.id } })} />
+              <Button label="Practice" variant="secondary" size="md" icon="practice" style={styles.flex} onPress={() => router.push({ pathname: '/practice', params: { strategyId: active.id } })} />
             </View>
           </Card>
         </>
       ) : null}
 
       <SectionHeader title="Build a strategy" />
-      <OptionCard icon="shield-checkmark-outline" title="I have a strategy" description="Describe any strategy in plain English. Prop Guard analyzes it, finds vague rules and helps make it measurable." onPress={() => gate('/strategy/describe')} />
-      <OptionCard icon="sparkles" title="Help me build a strategy" description="Create a structured plan from your account, risk limits and preferences." selected onPress={() => gate('/strategy/generating')} />
+      <StrategyPathCard
+        icon="have-strategy"
+        accent="blue"
+        title="I have a strategy"
+        description="Already have a setup? Let Prop Guard turn your strategy into a structured, measurable trading plan."
+        onPress={() => gate('/strategy/describe')}
+      />
+      <StrategyPathCard
+        icon="ai-builder"
+        accent="emerald"
+        title="Help me build a strategy"
+        description="Discover a strategy based on your trading style, experience, schedule, and risk tolerance."
+        onPress={() => gate('/strategy/generating')}
+      />
       <OptionCard icon="compass-outline" title="Find something repeatable" description="Answer a few questions and compare matching templates." onPress={() => router.push('/strategy/finder')} />
 
       {others.length > 0 ? (
@@ -105,7 +118,7 @@ export default function StrategyTab() {
       <Card onPress={() => router.push('/strategy/library')} accessibilityLabel="Strategy Library — browse rule-based frameworks">
         <View style={styles.head}>
           <View style={styles.exploreIcon}>
-            <Ionicons name="library-outline" size={20} color={colors.accentBright} />
+            <Icon name="library-outline" size={20} color={colors.accentBright} />
           </View>
           <View style={styles.flex}>
             <AppText variant="heading">Strategy Library</AppText>

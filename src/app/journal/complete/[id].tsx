@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -24,6 +23,7 @@ import {
   ToggleRow,
   YesNo,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { TradeScreenshotReview } from '@/features/journal/TradeScreenshotReview';
 import { useStrategy } from '@/hooks/useAppData';
@@ -285,7 +285,7 @@ function CompleteForm({ pending: p }: { pending: PendingTrade }) {
           <Input label="Notes (optional)" value={notes} onChangeText={setNotes} multiline placeholder="What happened? Anything to repeat or avoid?" />
 
           <View style={styles.auto}>
-            <Ionicons name="sparkles-outline" size={14} color={colors.textSecondary} />
+            <Icon name="sparkles-outline" size={14} color={colors.textSecondary} />
             <AppText variant="caption" tone="secondary" style={styles.flex}>
               Instrument, prices, size, account, risk, reward, R:R, strategy, time and your pre-trade checklist are filled in automatically.
             </AppText>

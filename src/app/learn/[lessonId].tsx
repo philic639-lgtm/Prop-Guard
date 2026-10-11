@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type ScrollView } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, EmptyState, RiskProgress, Screen, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { findLesson, moduleOfLesson, type LessonBlock, type QuizQuestion } from '@/data/learning/curriculum';
 import { getTemplate } from '@/data/strategyLibrary';
@@ -116,7 +116,7 @@ function Block({ block: b, answers, onAnswer }: { block: LessonBlock; answers: R
           <AppText variant="label">Key points</AppText>
           {b.points.map((p) => (
             <View key={p} style={styles.point}>
-              <Ionicons name="checkmark-circle" size={16} color={colors.positive} style={styles.pointIcon} />
+              <Icon name="checkmark-circle" size={16} color={colors.positive} style={styles.pointIcon} />
               <AppText variant="body" style={styles.flex}>
                 {p}
               </AppText>
@@ -140,7 +140,7 @@ function Block({ block: b, answers, onAnswer }: { block: LessonBlock; answers: R
       return (
         <Card raised style={styles.gapCard}>
           <View style={styles.point}>
-            <Ionicons name="hand-left-outline" size={16} color={colors.accentBright} style={styles.pointIcon} />
+            <Icon name="hand-left-outline" size={16} color={colors.accentBright} style={styles.pointIcon} />
             <AppText variant="caption" tone="secondary" style={styles.flex}>
               Try it · {b.caption}
             </AppText>
@@ -191,8 +191,8 @@ function Question({ q, picked, onPick }: { q: QuizQuestion; picked: number | und
             <AppText variant="body" style={styles.flex}>
               {c}
             </AppText>
-            {answered && isAnswer ? <Ionicons name="checkmark-circle" size={18} color={colors.positive} /> : null}
-            {answered && chosen && !isAnswer ? <Ionicons name="close-circle" size={18} color={colors.danger} /> : null}
+            {answered && isAnswer ? <Icon name="checkmark-circle" size={18} color={colors.positive} /> : null}
+            {answered && chosen && !isAnswer ? <Icon name="close-circle" size={18} color={colors.danger} /> : null}
           </Pressable>
         );
       })}

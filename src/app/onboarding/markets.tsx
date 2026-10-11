@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, ChoiceGrid, SectionHeader } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { POPULAR_INSTRUMENTS, type InstrumentSpec } from '@/data/instruments';
 import { CustomInstrumentSheet } from '@/features/instruments/CustomInstrumentSheet';
@@ -65,7 +65,7 @@ export default function Markets() {
                 <AppText variant="caption" numberOfLines={1} style={{ maxWidth: 140 }}>
                   {findInstrument(s)?.name}
                 </AppText>
-                <Ionicons name="close" size={14} color={colors.textSecondary} />
+                <Icon name="close" size={14} color={colors.textSecondary} />
               </Pressable>
             ))}
           </View>
@@ -74,13 +74,13 @@ export default function Markets() {
 
       <Pressable accessibilityRole="button" accessibilityLabel="Add custom instrument" onPress={() => setAddingCustom(true)} style={({ pressed }) => [styles.custom, pressed && { opacity: 0.85 }]}>
         <View style={styles.customIcon}>
-          <Ionicons name="add" size={22} color={colors.accentBright} />
+          <Icon name="add" size={22} color={colors.accentBright} />
         </View>
         <View style={{ flex: 1 }}>
           <AppText variant="bodyStrong">Add Custom Instrument</AppText>
           <AppText variant="caption">Trade something else? Enter its tick size and tick value.</AppText>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        <Icon name="chevron-forward" size={18} color={colors.textTertiary} />
       </Pressable>
 
       <InstrumentBrowser

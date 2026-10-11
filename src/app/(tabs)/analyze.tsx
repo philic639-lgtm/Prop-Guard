@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -25,6 +24,7 @@ import {
   TabSwitch,
   YesNo,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { ChartImport } from '@/features/analyze/ChartImport';
 import { newDraft } from '@/features/session/draft';
@@ -120,11 +120,11 @@ export default function AnalyzeScreen() {
 
       <Card onPress={() => router.push('/setup-check')} accessibilityLabel="AI Setup Check: compare a chart screenshot with your saved rules">
         <View style={styles.row}>
-          <Ionicons name="scan-outline" size={18} color={colors.accentBright} />
+          <Icon name="scan-outline" size={18} color={colors.accentBright} />
           <AppText variant="bodyStrong" style={{ flex: 1 }}>
             AI Setup Check
           </AppText>
-          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+          <Icon name="chevron-forward" size={18} color={colors.textTertiary} />
         </View>
         <AppText variant="caption" style={{ marginTop: 2 }}>
           Upload a chart — see if it meets YOUR saved rules right now: QUALIFIED, WAIT or STAND DOWN.
@@ -149,7 +149,7 @@ export default function AnalyzeScreen() {
       {guard.cooldown.active ? (
         <Card tone="warning">
           <View style={styles.row}>
-            <Ionicons name="lock-closed" size={18} color={colors.warning} />
+            <Icon name="lock-closed" size={18} color={colors.warning} />
             <AppText variant="label" tone="warning">
               New trade locked · {formatDuration(guard.cooldown.remainingMs)}
             </AppText>
@@ -331,7 +331,7 @@ export default function AnalyzeScreen() {
 
       <Card>
         <View style={styles.row}>
-          <Ionicons name="link-outline" size={16} color={colors.textSecondary} />
+          <Icon name="link-outline" size={16} color={colors.textSecondary} />
           <AppText variant="label">Connected broker — coming soon</AppText>
         </View>
         <AppText variant="caption" style={{ marginTop: spacing.xs }}>

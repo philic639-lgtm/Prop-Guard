@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, toneColor, type Tone } from '@/constants/theme';
 
+import { Icon } from './Icon';
 import { AppText } from './AppText';
 import { Button } from './Button';
 
@@ -99,7 +99,7 @@ export function WarningSheet({
       {children}
       <View style={[styles.warning, { backgroundColor: c.bg, borderColor: c.fg + '55' }]}>
         <View style={styles.warningHead}>
-          <Ionicons name="warning" size={18} color={c.fg} />
+          <Icon name="warning" size={18} color={c.fg} />
           <AppText variant="label" style={{ color: c.fg }}>
             {heading}
           </AppText>

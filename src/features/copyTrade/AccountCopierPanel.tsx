@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, Chip, EmptyState, NumericInput, SectionHeader, SegmentedControl, StatusBadge, ToggleRow } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import { useNow } from '@/hooks/useNow';
 import { canStartLive, connectionStatus, defaultFollower, MAX_MULTIPLIER, newCopyGroup, previewCopy, STATE_LABEL, transition, validateCopyGroup, withEvent } from '@/lib/engines/accountCopierEngine';
@@ -16,7 +16,7 @@ import { money, parseNum } from '@/utils/format';
 import { uuid } from '@/utils/id';
 
 const STATE_TONE: Record<CopierState, Tone> = { setup: 'accent', running: 'positive', paused: 'warning', stopped: 'neutral' };
-const EVENT_ICON: Record<CopierEventKind, keyof typeof Ionicons.glyphMap> = {
+const EVENT_ICON: Record<CopierEventKind, IconName> = {
   created: 'add-circle-outline',
   master: 'star-outline',
   linked: 'link-outline',
@@ -193,7 +193,7 @@ export function AccountCopierPanel() {
           const c = connectionStatus(a, brokers);
           return (
             <View key={a.id} style={styles.conn}>
-              <Ionicons name={c.state === 'connected' ? 'cloud-done-outline' : 'cloud-offline-outline'} size={18} color={c.state === 'connected' ? colors.positive : colors.textTertiary} />
+              <Icon name={c.state === 'connected' ? 'cloud-done-outline' : 'cloud-offline-outline'} size={18} color={c.state === 'connected' ? colors.positive : colors.textTertiary} />
               <View style={styles.flex}>
                 <AppText variant="bodyStrong" numberOfLines={1}>
                   {a.name}
@@ -218,7 +218,7 @@ export function AccountCopierPanel() {
       <Card style={styles.gap}>
         {group.activity.slice(0, 15).map((e) => (
           <View key={e.id} style={styles.event}>
-            <Ionicons name={EVENT_ICON[e.kind]} size={16} color={colors.textSecondary} />
+            <Icon name={EVENT_ICON[e.kind]} size={16} color={colors.textSecondary} />
             <View style={styles.flex}>
               <AppText variant="caption" tone="primary">
                 {e.detail}
@@ -237,7 +237,7 @@ export function AccountCopierPanel() {
 function DemoBanner() {
   return (
     <View style={styles.banner} accessibilityRole="alert">
-      <Ionicons name="construct-outline" size={18} color={colors.warning} />
+      <Icon name="construct-outline" size={18} color={colors.warning} />
       <AppText variant="caption" style={[styles.flex, { color: colors.warning }]}>
         Setup & preview only — no broker is connected, so live trade copying is not available. Prop Guard never places trades.
       </AppText>

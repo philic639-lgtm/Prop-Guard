@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Card, CircularScore, DetailTable, RuleChecklist, StatusBadge, VerdictBanner, type ChecklistRow, type DetailRow } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { CATEGORY_LABEL, type ConditionState, type SetupDecision, type SetupDisplayStatus } from '@/lib/engines/setupCheck';
 import { money, price, rr } from '@/utils/format';
@@ -14,7 +14,7 @@ import { money, price, rr } from '@/utils/format';
  * Everything shown comes from the deterministic decision (decision.ts).
  */
 
-export const STATUS_UI: Record<SetupDisplayStatus, { title: string; tone: 'positive' | 'warning' | 'danger'; icon: keyof typeof Ionicons.glyphMap; badge?: string }> = {
+export const STATUS_UI: Record<SetupDisplayStatus, { title: string; tone: 'positive' | 'warning' | 'danger'; icon: IconName; badge?: string }> = {
   QUALIFIED: { title: 'QUALIFIED', tone: 'positive', icon: 'shield-checkmark' },
   WAIT: { title: 'WAIT', tone: 'warning', icon: 'hourglass-outline' },
   STAND_DOWN: { title: 'STAND DOWN', tone: 'danger', icon: 'hand-left' },
@@ -32,7 +32,7 @@ function Collapsible({ title, children, initiallyOpen = false }: { title: string
         <AppText variant="label" style={styles.flex}>
           {title}
         </AppText>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
+        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
       </Pressable>
       {open ? <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>{children}</View> : null}
     </Card>
@@ -159,7 +159,7 @@ export function SetupDecisionCard({
         </AppText>
         {d.alert ? (
           <View style={styles.alert} accessibilityRole="alert">
-            <Ionicons name="notifications-outline" size={18} color={colors.warning} />
+            <Icon name="notifications-outline" size={18} color={colors.warning} />
             <AppText variant="body" style={styles.flex}>
               {d.alert}
             </AppText>

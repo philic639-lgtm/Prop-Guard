@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, DetailTable, EmptyState, Screen, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { draftNumbers, useSetupEvaluation } from '@/features/session/useSetupEvaluation';
 import { useActiveAccount } from '@/hooks/useAppData';
@@ -102,7 +102,7 @@ export default function SavePlanScreen() {
 
       <Card tone={compliant ? 'positive' : 'danger'}>
         <View style={styles.head}>
-          <Ionicons name={compliant ? 'checkmark-circle' : 'close-circle'} size={20} color={compliant ? colors.positive : colors.danger} />
+          <Icon name={compliant ? 'checkmark-circle' : 'close-circle'} size={20} color={compliant ? colors.positive : colors.danger} />
           <AppText variant="label" tone={compliant ? 'positive' : 'danger'}>
             {compliant ? 'Plan compliant' : 'Risk or rule limit exceeded'}
           </AppText>
@@ -114,7 +114,7 @@ export default function SavePlanScreen() {
 
       <Card>
         <View style={styles.head}>
-          <Ionicons name="information-circle" size={18} color={colors.accentBright} />
+          <Icon name="information-circle" size={18} color={colors.accentBright} />
           <AppText variant="caption" style={styles.flex}>
             Execute this trade on your trading platform, then return to Prop Guard to log the entry and start the live monitor.
           </AppText>
@@ -124,7 +124,7 @@ export default function SavePlanScreen() {
       {saved ? (
         <Card tone="positive">
           <View style={styles.head}>
-            <Ionicons name="checkmark-done-circle" size={22} color={colors.positive} />
+            <Icon name="checkmark-done-circle" size={22} color={colors.positive} />
             <AppText variant="heading">Plan saved</AppText>
           </View>
           <AppText variant="caption" style={{ marginTop: spacing.xs }}>

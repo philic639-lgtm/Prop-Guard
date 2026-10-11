@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, Input, SegmentedControl, Sheet, StatusBadge } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { FirmRulesDatabase, PropFirm, PropFirmProgram } from '@/data/propFirms/types';
 import { activeRuleVersion, isVerified, missingOptions, newerRulesAvailable, programFamilies, programLines, searchFirms, sizesForFamily, STAGE_LABEL, type ProgramFamily } from '@/lib/engines/firmRulesEngine';
@@ -71,7 +71,7 @@ export function FirmAutocomplete({
                 setOpen(false);
               }}
               style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}>
-              <Ionicons name="business-outline" size={16} color={colors.accentBright} />
+              <Icon name="business-outline" size={16} color={colors.accentBright} />
               <View style={styles.flex}>
                 <AppText variant="bodyStrong">{f.name}</AppText>
                 <AppText variant="caption">{programSummary(db, f.id)}</AppText>
@@ -80,7 +80,7 @@ export function FirmAutocomplete({
           ))}
           {typed && !matches.some((f) => f.name.toLowerCase() === typed.toLowerCase()) ? (
             <Pressable accessibilityRole="button" accessibilityLabel={`Use ${typed} as a custom firm`} onPress={() => setOpen(false)} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}>
-              <Ionicons name="create-outline" size={16} color={colors.textSecondary} />
+              <Icon name="create-outline" size={16} color={colors.textSecondary} />
               <View style={styles.flex}>
                 <AppText variant="bodyStrong">Use “{typed}” as a custom firm</AppText>
                 <AppText variant="caption">Not in the Prop Guard database — you enter the rules</AppText>
@@ -116,19 +116,19 @@ const verifiedOn = (p: PropFirmProgram) => {
   return isVerified(v) && v?.lastVerifiedAt ? v.lastVerifiedAt : null;
 };
 
-function Select({ label, value, placeholder, sub, icon, onPress }: { label: string; value: string | null; placeholder: string; sub?: string | null; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+function Select({ label, value, placeholder, sub, icon, onPress }: { label: string; value: string | null; placeholder: string; sub?: string | null; icon: IconName; onPress: () => void }) {
   return (
     <View style={styles.gap}>
       <AppText variant="label">{label}</AppText>
       <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value ?? placeholder}`} onPress={onPress} style={({ pressed }) => [styles.select, pressed && styles.pressed]}>
-        <Ionicons name={icon} size={18} color={colors.textSecondary} />
+        <Icon name={icon} size={18} color={colors.textSecondary} />
         <View style={styles.flex}>
           <AppText variant="bodyStrong" numberOfLines={1} tone={value ? 'primary' : 'tertiary'}>
             {value ?? placeholder}
           </AppText>
           {value && sub ? <AppText variant="caption">{sub}</AppText> : null}
         </View>
-        <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+        <Icon name="chevron-down" size={18} color={colors.textSecondary} />
       </Pressable>
     </View>
   );
@@ -141,7 +141,7 @@ function Option({ title, sub, on, onPress }: { title: string; sub?: string; on: 
         <AppText variant="bodyStrong">{title}</AppText>
         {sub ? <AppText variant="caption">{sub}</AppText> : null}
       </View>
-      {on ? <Ionicons name="checkmark-circle" size={20} color={colors.accentBright} /> : null}
+      {on ? <Icon name="checkmark-circle" size={20} color={colors.accentBright} /> : null}
     </Pressable>
   );
 }
@@ -333,7 +333,7 @@ export function FirmRulesStatus({ db, link, overrides, firmName }: { db: FirmRul
     return (
       <Card tone="warning">
         <View style={styles.row}>
-          <Ionicons name="alert-circle-outline" size={18} color={colors.warning} />
+          <Icon name="alert-circle-outline" size={18} color={colors.warning} />
           <AppText variant="bodyStrong" tone="warning">
             Rules not yet verified — enter manually.
           </AppText>
@@ -351,7 +351,7 @@ export function FirmRulesStatus({ db, link, overrides, firmName }: { db: FirmRul
   return (
     <Card tone="positive">
       <View style={styles.row}>
-        <Ionicons name="shield-checkmark" size={18} color={colors.positive} />
+        <Icon name="shield-checkmark" size={18} color={colors.positive} />
         <AppText variant="bodyStrong" tone="positive" style={styles.flex}>
           ✓ Verified rules
         </AppText>

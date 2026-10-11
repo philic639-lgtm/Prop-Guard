@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, CircularScore, StatusBadge, VerdictBanner } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import type { AnalysisMode, Check, Decision, SetupEvaluation, Status } from '@/lib/engines/setupCheck';
 import { money } from '@/utils/format';
@@ -11,7 +11,7 @@ import { money } from '@/utils/format';
  * Decision display. The engine's 'TAKE TRADE' is shown with Prop Guard's
  * established wording "QUALIFIED" — rule compliance, never an instruction to trade.
  */
-export const DECISION_UI: Record<Decision, { title: string; emoji: string; tone: 'positive' | 'warning' | 'danger'; icon: keyof typeof Ionicons.glyphMap }> = {
+export const DECISION_UI: Record<Decision, { title: string; emoji: string; tone: 'positive' | 'warning' | 'danger'; icon: IconName }> = {
   'TAKE TRADE': { title: 'QUALIFIED', emoji: '🟢', tone: 'positive', icon: 'shield-checkmark' },
   WAIT: { title: 'WAIT', emoji: '🟡', tone: 'warning', icon: 'hourglass-outline' },
   'STAND DOWN': { title: 'STAND DOWN', emoji: '🔴', tone: 'danger', icon: 'hand-left-outline' },
@@ -89,7 +89,7 @@ export function AnalysisModeBanner({ mode }: { mode: AnalysisMode }) {
   return (
     <Card tone="warning">
       <View style={styles.wrap}>
-        <Ionicons name={mode === 'DEMO' ? 'flask-outline' : 'eye-off-outline'} size={18} color={colors.warning} />
+        <Icon name={mode === 'DEMO' ? 'flask-outline' : 'eye-off-outline'} size={18} color={colors.warning} />
         <AppText variant="bodyStrong" tone="warning">
           {mode === 'DEMO' ? 'DEMO ANALYSIS — simulated' : 'Chart analysis unavailable'}
         </AppText>

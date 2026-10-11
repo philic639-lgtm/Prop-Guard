@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, Chip, EmptyState, Input, NumericInput, Screen, SectionHeader, SegmentedControl, ToggleRow } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { CopyVerdictCard } from '@/features/copyTrade/CopyVerdictCard';
 import { MODE_LABEL, SIZING_LABEL } from '@/features/copyTrade/copyUi';
@@ -219,7 +219,7 @@ export default function LogCopyTrade() {
         <View style={styles.shot}>
           <Image source={{ uri: shot }} style={styles.shotImg} contentFit="cover" accessibilityLabel="Copy screenshot" />
           <Pressable accessibilityRole="button" accessibilityLabel="Remove screenshot" onPress={() => setShot(null)} style={styles.shotX} hitSlop={8}>
-            <Ionicons name="close" size={14} color="#fff" />
+            <Icon name="close" size={14} color="#fff" />
           </Pressable>
         </View>
       ) : (

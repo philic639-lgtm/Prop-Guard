@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, RiskProgress } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { continueLesson, experienceMode, overallProgress } from '@/lib/engines/learningEngine';
 import { useAppStore } from '@/store/useAppStore';
@@ -23,11 +23,11 @@ export function HomeModeCard() {
     return (
       <Card tone="accent" style={styles.card} onPress={() => (next ? router.push({ pathname: '/learn/[lessonId]', params: { lessonId: next.id } }) : router.push('/learn'))} accessibilityLabel="Continue learning">
         <View style={styles.row}>
-          <Ionicons name="school-outline" size={20} color={colors.accentBright} />
+          <Icon name="school-outline" size={20} color={colors.accentBright} />
           <AppText variant="label" style={styles.flex}>
             Learning path · {overall.completed}/{overall.total}
           </AppText>
-          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+          <Icon name="chevron-forward" size={16} color={colors.textSecondary} />
         </View>
         <AppText variant="heading">{next ? (overall.completed || overall.skipped ? `Continue: ${next.title}` : `Start: ${next.title}`) : 'Path complete — revisit any lesson'}</AppText>
         <RiskProgress value={overall.pct / 100} tone="positive" height={6} label="Learning progress" />
@@ -41,14 +41,14 @@ export function HomeModeCard() {
   // A slim strip: present until setup is done, never the biggest thing on the dashboard.
   return (
     <Card style={styles.strip} onPress={() => router.push('/start')} accessibilityLabel={`Quick start, ${done} of ${quick.length} done. Next: ${todo[0].title}`}>
-      <Ionicons name="flash-outline" size={18} color={colors.accentBright} />
+      <Icon name="flash-outline" size={18} color={colors.accentBright} />
       <View style={styles.flex}>
         <AppText variant="caption" tone="secondary" numberOfLines={1}>
           Quick start {done}/{quick.length} · <AppText variant="caption" tone="primary">Next: {todo[0].title}</AppText>
         </AppText>
         <RiskProgress value={done / quick.length} tone="positive" height={4} label="Quick start progress" />
       </View>
-      <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+      <Icon name="chevron-forward" size={16} color={colors.textSecondary} />
     </Card>
   );
 }

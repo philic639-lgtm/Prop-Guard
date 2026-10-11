@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, GUTTER, spacing } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 import { BrandMark } from './Illustration';
 
@@ -29,7 +29,7 @@ export function AppHeader({ title, subtitle, back, onBack, right, brand }: AppHe
             hitSlop={12}
             onPress={onBack ?? (() => (router.canGoBack() ? router.back() : router.replace('/')))}
             style={styles.back}>
-            <Ionicons name="chevron-back" size={22} color={colors.text} />
+            <Icon name="chevron-back" size={22} color={colors.text} />
           </Pressable>
         ) : null}
         <View style={styles.titles}>
@@ -63,14 +63,14 @@ export function HeaderIconButton({
   onPress,
   badge,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   label: string;
   onPress: () => void;
   badge?: boolean;
 }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} hitSlop={10} onPress={onPress} style={styles.iconBtn}>
-      <Ionicons name={icon} size={20} color={colors.text} />
+      <Icon name={icon} size={20} color={colors.text} />
       {badge ? <View style={styles.badge} /> : null}
     </Pressable>
   );

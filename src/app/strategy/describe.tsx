@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, Input, Screen } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { useStrategyAnalysisStore } from '@/features/strategy/useStrategyAnalysisStore';
 import { STRATEGY_EXAMPLE } from '@/lib/engines';
@@ -47,12 +47,12 @@ export default function DescribeStrategy() {
       <Button label="Use example" variant="secondary" size="md" icon="document-text-outline" onPress={() => setText(STRATEGY_EXAMPLE)} />
       <Card>
         <View style={styles.row}>
-          <Ionicons name="bulb-outline" size={18} color={colors.warning} />
+          <Icon name="bulb-outline" size={18} color={colors.warning} />
           <AppText variant="label">Include</AppText>
         </View>
         {TIPS.map((t) => (
           <View key={t} style={[styles.row, { marginTop: spacing.sm }]}>
-            <Ionicons name="checkmark" size={16} color={colors.positive} />
+            <Icon name="checkmark" size={16} color={colors.positive} />
             <AppText variant="body">{t}</AppText>
           </View>
         ))}

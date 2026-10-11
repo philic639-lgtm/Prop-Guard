@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { memo, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Card } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { dayKey } from '@/utils/dates';
 
@@ -32,11 +32,11 @@ function MonthCalendarBase({ month, pnlByDay, selected, onSelect, onMonthChange 
     <Card>
       <View style={styles.head}>
         <Pressable accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={10} onPress={() => onMonthChange(-1)}>
-          <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
+          <Icon name="chevron-back" size={20} color={colors.textSecondary} />
         </Pressable>
         <AppText variant="heading">{title}</AppText>
         <Pressable accessibilityRole="button" accessibilityLabel="Next month" hitSlop={10} onPress={() => onMonthChange(1)}>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          <Icon name="chevron-forward" size={20} color={colors.textSecondary} />
         </Pressable>
       </View>
       <View style={styles.grid}>

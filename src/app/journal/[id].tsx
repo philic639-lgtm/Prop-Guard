@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -23,6 +22,7 @@ import {
   StatusBadge,
   VerdictBanner,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { DECISION_UI } from '@/features/setupCheck/SetupCheckResult';
 import { useStrategy, useTrade } from '@/hooks/useAppData';
@@ -126,11 +126,11 @@ export default function TradeDetail() {
           accessibilityLabel={`Copied from ${trade.sourceTraderName ?? 'a source trader'}`}
           onPress={() => (trade.copyTradeId ? router.push({ pathname: '/copy/[id]', params: { id: trade.copyTradeId } }) : router.push('/copy'))}
           style={styles.copied}>
-          <Ionicons name="copy-outline" size={16} color={colors.accentBright} />
+          <Icon name="copy-outline" size={16} color={colors.accentBright} />
           <AppText variant="caption" tone="accent" style={{ flex: 1 }}>
             Copied from {trade.sourceTraderName ?? 'a source trader'} — view the copy check
           </AppText>
-          <Ionicons name="chevron-forward" size={14} color={colors.accentBright} />
+          <Icon name="chevron-forward" size={14} color={colors.accentBright} />
         </Pressable>
       ) : null}
       <View style={styles.hero}>
@@ -176,7 +176,7 @@ export default function TradeDetail() {
 
       <Card>
         <View style={styles.row}>
-          <Ionicons name="sparkles" size={16} color={colors.accentBright} />
+          <Icon name="sparkles" size={16} color={colors.accentBright} />
           <AppText variant="label" tone="accent" style={{ marginRight: 'auto' }}>
             AI notes
           </AppText>
@@ -314,7 +314,7 @@ export default function TradeDetail() {
             <View style={styles.stars} accessibilityRole="adjustable" accessibilityLabel={`Setup rating ${rating ?? 0} of 5`}>
               {[1, 2, 3, 4, 5].map((n) => (
                 <Pressable key={n} accessibilityRole="button" accessibilityLabel={`${n} star${n > 1 ? 's' : ''}`} hitSlop={6} onPress={() => setRating(n)}>
-                  <Ionicons name={rating != null && n <= rating ? 'star' : 'star-outline'} size={30} color={rating != null && n <= rating ? colors.warning : colors.textTertiary} />
+                  <Icon name={rating != null && n <= rating ? 'star' : 'star-outline'} size={30} color={rating != null && n <= rating ? colors.warning : colors.textTertiary} />
                 </Pressable>
               ))}
             </View>

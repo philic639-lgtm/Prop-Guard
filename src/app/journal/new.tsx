@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -20,6 +19,7 @@ import {
   TabSwitch,
   ToggleRow,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { TradeScreenshotReview } from '@/features/journal/TradeScreenshotReview';
 import { useActiveAccount } from '@/hooks/useAppData';
@@ -153,7 +153,7 @@ export default function JournalNew() {
         }>
         <View style={styles.done}>
           <View style={styles.doneIcon}>
-            <Ionicons name="checkmark" size={44} color={colors.positive} />
+            <Icon name="checkmark" size={44} color={colors.positive} />
           </View>
           <AppText variant="title" align="center">
             Trade journaled
@@ -184,7 +184,7 @@ export default function JournalNew() {
             <AppText variant="label">AI will extract</AppText>
             {['Instrument & direction', 'Entry / exit', 'Stop (if visible)', 'Key levels'].map((t) => (
               <View key={t} style={styles.extract}>
-                <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
+                <Icon name="checkmark-circle" size={16} color={colors.positive} />
                 <AppText variant="body">{t}</AppText>
               </View>
             ))}

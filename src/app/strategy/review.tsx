@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -17,6 +16,7 @@ import {
   Sheet,
   StatusBadge,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
 import { sourceTypeAfterEdit, strategyRules, strategySourceLabel, strategySourceType, validateStrategy, type ReviewRule } from '@/lib/engines';
@@ -142,7 +142,7 @@ export default function ReviewStrategy() {
           <AppText variant="title" style={styles.flex} numberOfLines={1}>
             {s.name}
           </AppText>
-          <Ionicons name="pencil" size={16} color={colors.textSecondary} />
+          <Icon name="pencil" size={16} color={colors.textSecondary} />
         </Pressable>
         <View style={styles.badgeRow}>
           <StatusBadge
@@ -177,11 +177,11 @@ export default function ReviewStrategy() {
               {r.label}
             </AppText>
             <Pressable accessibilityRole="button" accessibilityLabel={`Edit rule: ${r.label}`} hitSlop={8} onPress={() => openEdit(r)} style={styles.iconBtn}>
-              <Ionicons name="create-outline" size={18} color={colors.accentBright} />
+              <Icon name="create-outline" size={18} color={colors.accentBright} />
             </Pressable>
             {r.deletable ? (
               <Pressable accessibilityRole="button" accessibilityLabel={`Delete rule: ${r.label}`} hitSlop={8} onPress={() => remove(r)} style={styles.iconBtn}>
-                <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                <Icon name="trash-outline" size={18} color={colors.danger} />
               </Pressable>
             ) : (
               <View style={styles.iconBtn} />

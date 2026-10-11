@@ -1,9 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, EmptyState, HeaderIconButton, Metric, RuleChecklist, Screen, SectionHeader, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { LIBRARY_DISCLAIMER } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import {
@@ -94,7 +94,7 @@ function Detail({ t }: { t: StrategyTemplate }) {
 
       <Card>
         <View style={styles.row}>
-          <Ionicons name="bulb-outline" size={16} color={colors.accentBright} />
+          <Icon name="bulb-outline" size={16} color={colors.accentBright} />
           <AppText variant="label" tone="accent">
             In plain English
           </AppText>

@@ -1,15 +1,15 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { colors, radius, spacing } from '@/constants/theme';
 
+import { Icon, type IconName } from './Icon';
 import { AppText } from './AppText';
 
 interface ChipProps {
   label: string;
   selected?: boolean;
   onPress?: () => void;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
   large?: boolean;
 }
 
@@ -21,7 +21,7 @@ export function Chip({ label, selected, onPress, icon, large }: ChipProps) {
       accessibilityLabel={label}
       onPress={onPress}
       style={({ pressed }) => [styles.chip, large && styles.large, selected && styles.selected, pressed && { opacity: 0.8 }]}>
-      {selected ? <Ionicons name="checkmark" size={14} color={colors.accent} /> : icon ? <Ionicons name={icon} size={14} color={colors.textSecondary} /> : null}
+      {selected ? <Icon name="checkmark" size={14} color={colors.accent} /> : icon ? <Icon name={icon} size={14} color={colors.textSecondary} /> : null}
       <AppText variant="bodyStrong" style={{ color: selected ? colors.accent : colors.textSecondary, fontSize: large ? 16 : 14 }}>
         {label}
       </AppText>

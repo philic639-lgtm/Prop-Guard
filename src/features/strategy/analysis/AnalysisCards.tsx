@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, Chip, CircularScore, Input, StatusBadge } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import {
   CONFIDENCE_LABELS,
@@ -37,7 +37,7 @@ export function AnalysisProgress({ step }: { step: number }) {
           return (
             <View key={label} style={styles.row} accessibilityLabel={`${i + 1}. ${label}${done ? ', done' : active ? ', in progress' : ''}`}>
               <View style={[styles.stepDot, done && { backgroundColor: colors.positive, borderColor: colors.positive }, active && { borderColor: colors.accentBright }]}>
-                {done ? <Ionicons name="checkmark" size={13} color="#03140A" /> : active ? <ActivityIndicator size="small" color={colors.accentBright} /> : <AppText variant="caption">{i + 1}</AppText>}
+                {done ? <Icon name="checkmark" size={13} color="#03140A" /> : active ? <ActivityIndicator size="small" color={colors.accentBright} /> : <AppText variant="caption">{i + 1}</AppText>}
               </View>
               <AppText variant="body" tone={done || active ? 'primary' : 'tertiary'}>
                 {label}
@@ -50,11 +50,11 @@ export function AnalysisProgress({ step }: { step: number }) {
   );
 }
 
-export function SectionTitle({ children, icon, tone = 'accent' }: { children: string; icon: keyof typeof Ionicons.glyphMap; tone?: 'accent' | 'positive' | 'warning' | 'danger' }) {
+export function SectionTitle({ children, icon, tone = 'accent' }: { children: string; icon: IconName; tone?: 'accent' | 'positive' | 'warning' | 'danger' }) {
   const c = tone === 'positive' ? colors.positive : tone === 'warning' ? colors.warning : tone === 'danger' ? colors.danger : colors.accentBright;
   return (
     <View style={[styles.row, { marginTop: spacing.sm }]}>
-      <Ionicons name={icon} size={16} color={c} />
+      <Icon name={icon} size={16} color={c} />
       <AppText variant="label" style={{ color: c }}>
         {children}
       </AppText>
@@ -138,10 +138,10 @@ export function HealthCard({ health, improved }: { health: StrategyHealthScore; 
   );
 }
 
-function Line({ icon, color, text }: { icon: keyof typeof Ionicons.glyphMap; color: string; text: string }) {
+function Line({ icon, color, text }: { icon: IconName; color: string; text: string }) {
   return (
     <View style={styles.line}>
-      <Ionicons name={icon} size={16} color={color} style={{ marginTop: 2 }} />
+      <Icon name={icon} size={16} color={color} style={{ marginTop: 2 }} />
       <AppText variant="body" style={styles.flex}>
         {text}
       </AppText>
@@ -297,7 +297,7 @@ function FlowStep({ label, children, last }: { label: string; children: React.Re
         {label.toUpperCase()}
       </AppText>
       <View style={{ marginTop: 2 }}>{children}</View>
-      {!last ? <Ionicons name="arrow-down" size={12} color={colors.textTertiary} style={{ marginTop: 4 }} /> : null}
+      {!last ? <Icon name="arrow-down" size={12} color={colors.textTertiary} style={{ marginTop: 4 }} /> : null}
     </View>
   );
 }

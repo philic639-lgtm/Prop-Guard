@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -20,6 +19,7 @@ import {
   StatusBadge,
   TileGrid,
 } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { PRACTICE_DISCLAIMER, SAMPLE_DATA_NOTE, SIMULATED_DATA_NOTE, VERIFIED_DATA_NOTE } from '@/constants/legal';
 import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
@@ -132,7 +132,7 @@ export default function PracticeHome() {
       <ProGate feature="practiceMode" title="Practice mode" description="Practise reading setups on historical-style scenarios before risking capital.">
         <Card>
           <View style={styles.row}>
-            <Ionicons name="school" size={18} color={colors.accentBright} />
+            <Icon name="school" size={18} color={colors.accentBright} />
             <AppText variant="heading" style={styles.flex}>
               Decide first. Then see what happened.
             </AppText>

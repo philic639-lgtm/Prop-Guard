@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { FOLLOW_LABEL, type SourceTraderStats } from '@/lib/engines/copyTradeEngine';
 import type { SourceTrader } from '@/types/copyTrade';
@@ -16,7 +16,7 @@ export function SourceTraderCard({ trader, stats, onPress }: { trader: SourceTra
     <Card onPress={onPress} accessibilityLabel={`${trader.name}, ${FOLLOW_LABEL[stats?.verdict ?? 'too_few']}`}>
       <View style={styles.row}>
         <View style={[styles.avatar, !trader.isActive && styles.inactive]}>
-          <Ionicons name={PLATFORM_ICON[trader.platform]} size={18} color={colors.accentBright} />
+          <Icon name={PLATFORM_ICON[trader.platform]} size={18} color={colors.accentBright} />
         </View>
         <View style={styles.flex}>
           <AppText variant="heading" numberOfLines={1}>
@@ -27,7 +27,7 @@ export function SourceTraderCard({ trader, stats, onPress }: { trader: SourceTra
             {trader.archived ? ' · archived' : !trader.isActive ? ' · paused' : ''}
           </AppText>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        <Icon name="chevron-forward" size={18} color={colors.textTertiary} />
       </View>
       <View style={styles.stats}>
         <Mini label="Copies" value={String(stats?.logged ?? 0)} />

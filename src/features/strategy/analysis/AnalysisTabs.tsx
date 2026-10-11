@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, StatusBadge } from '@/components/ui';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
 import {
   provenanceLabel,
@@ -50,7 +50,7 @@ export function AnalyzerTabBar({ value, onChange }: { value: AnalyzerTab; onChan
 
 const PROV_TONE: Record<string, Tone> = { trader: 'positive', inferred: 'accent', suggested: 'warning', account: 'neutral' };
 
-function InsightList({ title, icon, items, tone = 'accent', empty }: { title: string; icon: keyof typeof Ionicons.glyphMap; items: Insight[]; tone?: 'accent' | 'warning' | 'danger' | 'positive'; empty?: string }) {
+function InsightList({ title, icon, items, tone = 'accent', empty }: { title: string; icon: IconName; items: Insight[]; tone?: 'accent' | 'warning' | 'danger' | 'positive'; empty?: string }) {
   if (!items.length && !empty) return null;
   return (
     <View style={styles.block}>
@@ -81,7 +81,7 @@ function InsightList({ title, icon, items, tone = 'accent', empty }: { title: st
 function ResolveChip({ label, tone, onPress }: { label: string; tone: 'warning' | 'danger'; onPress: () => void }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={6} style={[styles.resolveChip, { borderColor: tone === 'danger' ? colors.danger : colors.warning }]}>
-      <Ionicons name="construct-outline" size={12} color={tone === 'danger' ? colors.danger : colors.warning} />
+      <Icon name="construct-outline" size={12} color={tone === 'danger' ? colors.danger : colors.warning} />
       <AppText variant="caption" style={{ color: tone === 'danger' ? colors.danger : colors.warning, fontWeight: '600' }}>
         Resolve
       </AppText>
@@ -323,7 +323,7 @@ export function TestableRulesTab({ rules }: { rules: TestableRuleSet }) {
               <AppText variant="body" style={styles.flex}>
                 {l.text}
               </AppText>
-              <Ionicons name={l.evaluable ? 'hardware-chip-outline' : 'eye-outline'} size={15} color={l.evaluable ? colors.positive : colors.warning} accessibilityLabel={l.evaluable ? 'Checked automatically' : 'Confirm visually'} />
+              <Icon name={l.evaluable ? 'hardware-chip-outline' : 'eye-outline'} size={15} color={l.evaluable ? colors.positive : colors.warning} accessibilityLabel={l.evaluable ? 'Checked automatically' : 'Confirm visually'} />
             </View>
           ))}
           <View style={styles.ifLine}>
@@ -337,9 +337,9 @@ export function TestableRulesTab({ rules }: { rules: TestableRuleSet }) {
         </View>
       ))}
       <View style={[styles.row, { marginTop: spacing.sm }]}>
-        <Ionicons name="hardware-chip-outline" size={14} color={colors.positive} />
+        <Icon name="hardware-chip-outline" size={14} color={colors.positive} />
         <AppText variant="caption">checked on candles automatically</AppText>
-        <Ionicons name="eye-outline" size={14} color={colors.warning} style={{ marginLeft: spacing.sm }} />
+        <Icon name="eye-outline" size={14} color={colors.warning} style={{ marginLeft: spacing.sm }} />
         <AppText variant="caption">confirm visually</AppText>
       </View>
     </Card>
