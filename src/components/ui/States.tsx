@@ -5,21 +5,28 @@ import { colors, radius, spacing } from '@/constants/theme';
 
 import { AppText } from './AppText';
 import { Button } from './Button';
+import { Illustration, type IllustrationKind } from './Illustration';
 
 interface EmptyStateProps {
   icon?: keyof typeof Ionicons.glyphMap;
+  /** Branded spot illustration (replaces the icon tile). */
+  illustration?: IllustrationKind;
   title: string;
   message: string;
   actionLabel?: string;
   onAction?: () => void;
 }
 
-export function EmptyState({ icon = 'sparkles-outline', title, message, actionLabel, onAction }: EmptyStateProps) {
+export function EmptyState({ icon = 'sparkles-outline', illustration, title, message, actionLabel, onAction }: EmptyStateProps) {
   return (
     <View style={styles.wrap}>
-      <View style={styles.icon}>
-        <Ionicons name={icon} size={26} color={colors.accent} />
-      </View>
+      {illustration ? (
+        <Illustration kind={illustration} size={76} />
+      ) : (
+        <View style={styles.icon}>
+          <Ionicons name={icon} size={26} color={colors.accent} />
+        </View>
+      )}
       <AppText variant="heading" align="center">
         {title}
       </AppText>

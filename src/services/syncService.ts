@@ -1,9 +1,10 @@
 import type { AppData } from '@/data/demo';
 import type { Account, DisciplineEvent, PendingTrade, PracticeRun, SetupCheck, Strategy, Trade, TradePlan, TradingSession } from '@/types/domain';
+import type { CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 
 import { supabase } from './supabase/client';
-import { SupabaseRepository } from './supabase/repository';
+import { SupabaseRepository, type RemovableTable } from './supabase/repository';
 
 /**
  * Offline-first write-through sync. The local store is always the source of
@@ -84,6 +85,8 @@ class SyncService {
   upsertPracticeAttempt = (a: PracticeAttempt) => this.enqueue('practice attempt', (r) => r.upsertPracticeAttempt(a));
   upsertPracticeLesson = (l: PracticeLesson) => this.enqueue('practice lesson', (r) => r.upsertPracticeLesson(l));
   upsertSetupCheck = (c: SetupCheck) => this.enqueue('setup check', (r) => r.upsertSetupCheck(c));
+  upsertSourceTrader = (t: SourceTrader) => this.enqueue('source trader', (r) => r.upsertSourceTrader(t));
+  upsertCopyTrade = (c: CopyTrade) => this.enqueue('copy trade', (r) => r.upsertCopyTrade(c));
   insertPracticeRun = (p: PracticeRun) => this.enqueue('practice', (r) => r.insertPracticeRun(p));
   savePreferences = (s: Pick<AppData, 'preferences' | 'tradingRules' | 'activeAccountId' | 'activeStrategyId'>) =>
     this.enqueue('preferences', (r) =>
@@ -94,7 +97,7 @@ class SyncService {
         activeStrategyId: s.activeStrategyId,
       }),
     );
-  remove = (table: 'accounts' | 'strategies' | 'trades' | 'practice_lessons' | 'setup_checks', id: string) => this.enqueue(`delete ${table}`, (r) => r.remove(table, id));
+  remove = (table: RemovableTable, id: string) => this.enqueue(`delete ${table}`, (r) => r.remove(table, id));
 
   /** Push a full local dataset (used after onboarding a new cloud account). */
   pushAll(data: AppData) {
@@ -108,6 +111,8 @@ class SyncService {
     data.practiceAttempts.forEach(this.upsertPracticeAttempt);
     data.practiceLessons.forEach(this.upsertPracticeLesson);
     (data.setupChecks ?? []).forEach(this.upsertSetupCheck);
+    (data.sourceTraders ?? []).forEach(this.upsertSourceTrader);
+    (data.copyTrades ?? []).forEach(this.upsertCopyTrade);
     data.pendingTrades.forEach(this.upsertPendingTrade);
     this.savePreferences(data);
   }

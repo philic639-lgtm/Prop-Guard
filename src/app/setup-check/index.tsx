@@ -99,7 +99,7 @@ export default function SetupCheckScreen() {
   if (!strategies.length) {
     return (
       <Screen header={<AppHeader title="Setup check" back />}>
-        <EmptyState icon="list-outline" title="Save a strategy first" message="Setup Check compares a setup with YOUR saved rules, so it needs at least one strategy." actionLabel="Add a strategy" onAction={() => router.push('/strategy')} />
+        <EmptyState illustration="strategy" title="Save a strategy first" message="Setup Check compares a setup with YOUR saved rules, so it needs at least one strategy." actionLabel="Add a strategy" onAction={() => router.push('/strategy')} />
       </Screen>
     );
   }

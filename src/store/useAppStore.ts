@@ -5,6 +5,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { createDemoData, DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES, EMPTY_DATA, type AppData } from '@/data/demo';
 import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
 import type { BrokerImportAction } from '@/lib/engines/journalEngine';
+import type { CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 import { realizedPnl, realizedR } from '@/lib/engines/riskEngine';
 import { syncService } from '@/services/syncService';
@@ -104,6 +105,18 @@ export interface AppState extends AppData {
   markAlertsRead: () => void;
   /** Record an already-closed trade (manual or screenshot journaling). Updates balance. */
   addJournalTrade: (trade: Trade) => void;
+
+  // copy trade (assistant only — nothing is executed)
+  upsertSourceTrader: (trader: SourceTrader) => void;
+  /** Archive (or restore) a source trader. History is kept. */
+  archiveSourceTrader: (id: string, archived: boolean) => void;
+  /**
+   * Log a copied trade. Live copies also open a journal trade (origin `copied`)
+   * that is closed through the usual live monitor / journal flows.
+   */
+  logCopyTrade: (copy: CopyTrade, trade: Trade | null) => void;
+  updateCopyTrade: (id: string, patch: Partial<CopyTrade>) => void;
+  deleteCopyTrade: (id: string) => void;
 
   // automatic journaling
   /** Create or refresh the pending journal entry for a checked trade. */
@@ -454,6 +467,32 @@ export const useAppStore = create<AppState>()(
 
       markAlertsRead: () => set((s) => ({ alerts: s.alerts.map((a) => (a.read ? a : { ...a, read: true })) })),
 
+      upsertSourceTrader: (trader) => {
+        const saved = { ...trader, updatedAt: nowIso() };
+        set((s) => ({ sourceTraders: [saved, ...s.sourceTraders.filter((t) => t.id !== trader.id)] }));
+        syncService.upsertSourceTrader(saved);
+      },
+      archiveSourceTrader: (id, archived) => {
+        const t = get().sourceTraders.find((x) => x.id === id);
+        if (!t) return;
+        get().upsertSourceTrader({ ...t, archived, isActive: archived ? false : t.isActive });
+      },
+      logCopyTrade: (copy, trade) => {
+        const linked: CopyTrade = trade ? { ...copy, tradeId: trade.id, mode: 'live' } : copy;
+        set((s) => ({ copyTrades: [linked, ...s.copyTrades.filter((c) => c.id !== copy.id)] }));
+        syncService.upsertCopyTrade(linked);
+        if (trade) get().openTrade({ ...trade, origin: 'copied', copyTradeId: linked.id, sourceTraderId: linked.sourceTraderId, sourceTraderName: linked.sourceTraderName });
+      },
+      updateCopyTrade: (id, patch) => {
+        let updated: CopyTrade | undefined;
+        set((s) => ({ copyTrades: s.copyTrades.map((c) => (c.id === id ? (updated = { ...c, ...patch, updatedAt: nowIso() }) : c)) }));
+        if (updated) syncService.upsertCopyTrade(updated);
+      },
+      deleteCopyTrade: (id) => {
+        set((s) => ({ copyTrades: s.copyTrades.filter((c) => c.id !== id), trades: s.trades.map((t) => (t.copyTradeId === id ? { ...t, copyTradeId: null } : t)) }));
+        syncService.remove('copy_trades', id);
+      },
+
       addJournalTrade: (input) => {
         const trade = withStrategyName(input, get().strategies);
         set((s) => ({
@@ -528,7 +567,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'prop-guard-store',
-      version: 6,
+      version: 7,
       migrate: (persisted, version) => {
         const st = (persisted ?? {}) as Partial<AppState>;
         if (version < 3) {
@@ -541,6 +580,8 @@ export const useAppStore = create<AppState>()(
             practiceLessons: st.practiceLessons ?? [],
             setupChecks: st.setupChecks ?? [],
             alerts: st.alerts ?? [],
+            sourceTraders: st.sourceTraders ?? [],
+            copyTrades: st.copyTrades ?? [],
             preferences: {
               ...DEFAULT_PREFERENCES,
               ...(st.preferences ?? {}),
@@ -550,11 +591,13 @@ export const useAppStore = create<AppState>()(
             },
           } as AppState;
         }
-        if (version < 4) return { ...st, pendingTrades: st.pendingTrades ?? [], setupChecks: st.setupChecks ?? [] } as AppState;
-        if (version < 5) return { ...st, setupChecks: st.setupChecks ?? [] } as AppState;
+        // v7: Copy Trade collections (added empty to every older state).
+        const copy = { sourceTraders: st.sourceTraders ?? [], copyTrades: st.copyTrades ?? [] };
+        if (version < 4) return { ...st, ...copy, pendingTrades: st.pendingTrades ?? [], setupChecks: st.setupChecks ?? [] } as AppState;
+        if (version < 5) return { ...st, ...copy, setupChecks: st.setupChecks ?? [] } as AppState;
         // v6: Setup Check engine replaced — earlier (v1) checks used a different scoring model and are dropped.
-        if (version < 6) return { ...st, setupChecks: (st.setupChecks ?? []).filter((c) => (c as { version?: number }).version === 2) } as AppState;
-        return st as AppState;
+        if (version < 6) return { ...st, ...copy, setupChecks: (st.setupChecks ?? []).filter((c) => (c as { version?: number }).version === 2) } as AppState;
+        return { ...st, ...copy } as AppState;
       },
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
@@ -574,6 +617,8 @@ export const useAppStore = create<AppState>()(
         practiceLessons: s.practiceLessons,
         setupChecks: s.setupChecks,
         alerts: s.alerts,
+        sourceTraders: s.sourceTraders,
+        copyTrades: s.copyTrades,
         recentTemplateIds: s.recentTemplateIds,
         mode: s.mode,
         user: s.user,

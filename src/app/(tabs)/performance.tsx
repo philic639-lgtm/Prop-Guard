@@ -118,7 +118,7 @@ export default function PerformanceScreen() {
 
       {s.count === 0 ? (
         <Card>
-          <EmptyState icon="stats-chart-outline" title="No closed trades" message="Performance appears after your first closed trade in this period." actionLabel="Journal a trade" onAction={() => router.push('/journal/new')} />
+          <EmptyState illustration="chart" title="No closed trades" message="Performance appears after your first closed trade in this period." actionLabel="Journal a trade" onAction={() => router.push('/journal/new')} />
         </Card>
       ) : (
         <>

@@ -22,7 +22,7 @@ export default function FinalStrategyScreen() {
   if (!resolved || !readiness || !score) {
     return (
       <Screen header={<AppHeader title="Final strategy" back />}>
-        <EmptyState icon="document-text-outline" title="No strategy yet" message="Describe and analyze your strategy first." actionLabel="Describe my strategy" onAction={() => router.replace('/strategy/describe')} />
+        <EmptyState illustration="strategy" title="No strategy yet" message="Describe and analyze your strategy first." actionLabel="Describe my strategy" onAction={() => router.replace('/strategy/describe')} />
       </Screen>
     );
   }

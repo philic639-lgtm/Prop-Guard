@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { AppData } from '@/data/demo';
 import { DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES } from '@/data/demo';
+import type { CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 import type { Account, DisciplineEvent, PendingTrade, PracticeRun, SetupCheck, Strategy, Trade, TradePlan, TradingSession, UserPreferences } from '@/types/domain';
 
@@ -15,6 +16,10 @@ import {
   rowToPracticeAttempt,
   rowToPracticeLesson,
   rowToSetupCheck,
+  rowToCopyTrade,
+  rowToSourceTrader,
+  copyTradeToRow,
+  sourceTraderToRow,
   planToRow,
   practiceToRow,
   preferencesToRow,
@@ -41,6 +46,8 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
   return res.data;
 }
 
+export type RemovableTable = 'accounts' | 'strategies' | 'trades' | 'practice_lessons' | 'setup_checks' | 'copy_trades';
+
 export class SupabaseRepository {
   constructor(
     private readonly db: SupabaseClient,
@@ -49,13 +56,15 @@ export class SupabaseRepository {
 
   async loadAll(): Promise<Partial<AppData>> {
     const db = this.db;
-    const [plans, practice, pending, attempts, lessons, checks] = await Promise.all([
+    const [plans, practice, pending, attempts, lessons, checks, sources, copies] = await Promise.all([
       db.from('trade_plans').select('*').order('created_at', { ascending: false }).limit(200),
       db.from('practice_runs').select('*').order('created_at', { ascending: false }).limit(100),
       db.from('pending_trades').select('*').order('created_at', { ascending: false }).limit(200),
       db.from('practice_attempts').select('*').order('attempted_at', { ascending: false }).limit(1000),
       db.from('practice_lessons').select('*').order('created_at', { ascending: false }).limit(300),
       db.from('setup_checks').select('*').order('created_at', { ascending: false }).limit(500),
+      db.from('source_traders').select('*').order('updated_at', { ascending: false }).limit(200),
+      db.from('copy_trades').select('*').order('idea_at', { ascending: false }).limit(2000),
     ]);
     const [accounts, rules, strategies, items, sessions, trades, events, prefs, profile] = await Promise.all([
       db.from('accounts').select('*').order('created_at'),
@@ -118,6 +127,8 @@ export class SupabaseRepository {
       practiceAttempts: attempts.error ? [] : ((attempts.data ?? []) as Row[]).map(rowToPracticeAttempt),
       practiceLessons: lessons.error ? [] : ((lessons.data ?? []) as Row[]).map(rowToPracticeLesson),
       setupChecks: checks.error ? [] : ((checks.data ?? []) as Row[]).map(rowToSetupCheck),
+      sourceTraders: sources.error ? [] : ((sources.data ?? []) as Row[]).map(rowToSourceTrader),
+      copyTrades: copies.error ? [] : ((copies.data ?? []) as Row[]).map(rowToCopyTrade),
     };
   }
 
@@ -173,6 +184,14 @@ export class SupabaseRepository {
     check(await this.db.from('setup_checks').upsert(setupCheckToRow(c, this.userId)));
   }
 
+  async upsertSourceTrader(t: SourceTrader) {
+    check(await this.db.from('source_traders').upsert(sourceTraderToRow(t, this.userId)));
+  }
+
+  async upsertCopyTrade(c: CopyTrade) {
+    check(await this.db.from('copy_trades').upsert(copyTradeToRow(c, this.userId)));
+  }
+
   async upsertPracticeLesson(l: PracticeLesson) {
     check(await this.db.from('practice_lessons').upsert(practiceLessonToRow(l, this.userId)));
   }
@@ -190,7 +209,7 @@ export class SupabaseRepository {
     check(await this.db.from('profiles').update({ display_name: state.preferences.displayName }).eq('id', this.userId));
   }
 
-  async remove(table: 'accounts' | 'strategies' | 'trades' | 'practice_lessons' | 'setup_checks', id: string) {
+  async remove(table: RemovableTable, id: string) {
     check(await this.db.from(table).delete().eq('id', id));
   }
 }

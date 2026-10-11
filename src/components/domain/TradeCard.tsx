@@ -51,9 +51,18 @@ function TradeCardBase({ trade, strategyName, onPress }: TradeCardProps) {
         )}
       </View>
       <View style={styles.footer}>
-        <AppText variant="caption" numberOfLines={1} style={styles.flex}>
-          {strategyName ?? trade.strategyName ?? 'Strategy not assigned'}
-        </AppText>
+        {trade.origin === 'copied' ? (
+          <View style={[styles.flex, styles.copied]}>
+            <Ionicons name="layers-outline" size={13} color={colors.accentBright} />
+            <AppText variant="caption" numberOfLines={1} style={[styles.flex, { color: colors.accentBright }]}>
+              Copied · {trade.sourceTraderName ?? 'source trader'}
+            </AppText>
+          </View>
+        ) : (
+          <AppText variant="caption" numberOfLines={1} style={styles.flex}>
+            {strategyName ?? trade.strategyName ?? 'Strategy not assigned'}
+          </AppText>
+        )}
         <View style={styles.meta}>
           {trade.screenshotUri ? <Image source={{ uri: trade.screenshotUri }} style={styles.thumb} contentFit="cover" accessibilityLabel="Screenshot" /> : null}
           <Ionicons name={discipline >= 100 ? 'shield-checkmark' : 'shield-half'} size={14} color={discipline >= 100 ? colors.positive : colors.warning} />
@@ -68,6 +77,7 @@ function TradeCardBase({ trade, strategyName, onPress }: TradeCardProps) {
 export const TradeCard = memo(TradeCardBase);
 
 const styles = StyleSheet.create({
+  copied: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   left: { gap: 4, flex: 1 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

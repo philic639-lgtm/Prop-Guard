@@ -30,7 +30,7 @@ export default function AccountsScreen() {
         />
       }>
       {accounts.length === 0 ? (
-        <EmptyState icon="briefcase-outline" title="No accounts" message="Add a prop or personal account to track its rules." actionLabel="Add account" onAction={() => router.push('/accounts/new')} />
+        <EmptyState illustration="shield" title="No accounts" message="Add a prop or personal account to track its rules." actionLabel="Add account" onAction={() => router.push('/accounts/new')} />
       ) : (
         accounts.map((a) => {
           const ev = evals.get(a.id)!;

@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { MonthCalendar } from '@/features/journal/MonthCalendar';
 import { PendingTradeCard } from '@/features/journal/PendingTradeCard';
 import { useAccountTrades, usePendingTrades } from '@/hooks/useAppData';
 import { dailyPnl } from '@/lib/engines';
+import { filterByOrigin, type OriginFilter } from '@/lib/engines/copyTradeEngine';
 import { useAppStore } from '@/store/useAppStore';
 import { useSubscriptionStore } from '@/store/useSubscriptionStore';
 import type { Trade } from '@/types/domain';
@@ -22,7 +23,15 @@ const PAGE = 20;
 
 export default function JournalScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ origin?: OriginFilter }>();
   const trades = useAccountTrades();
+  const [origin, setOrigin] = useState<OriginFilter>(params.origin === 'copied' || params.origin === 'self' ? params.origin : 'all');
+  const [sourceTraderId, setSourceTraderId] = useState<string | null>(null);
+  const copiedSources = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of trades) if (t.origin === 'copied' && t.sourceTraderId) m.set(t.sourceTraderId, t.sourceTraderName ?? 'Source trader');
+    return [...m.entries()];
+  }, [trades]);
   const pending = usePendingTrades();
   const lessons = useAppStore((s) => s.practiceLessons);
   const setupChecks = useAppStore((s) => s.setupChecks);
@@ -43,7 +52,7 @@ export default function JournalScreen() {
   const limit = PLANS[plan].limits.journalTrades;
 
   const filtered = useMemo(() => {
-    return trades.filter((t) => {
+    return filterByOrigin(trades, origin, origin === 'copied' ? sourceTraderId : null).filter((t) => {
       if (outcome === 'wins' && !((t.pnl ?? 0) > 0)) return false;
       if (outcome === 'losses' && !((t.pnl ?? 0) < 0)) return false;
       if (outcome === 'pending' && (t.journaled || t.status !== 'closed')) return false;
@@ -52,7 +61,7 @@ export default function JournalScreen() {
       if (day && dayKey(t.openedAt) !== day) return false;
       return true;
     });
-  }, [trades, outcome, strategyId, instrument, day]);
+  }, [trades, origin, sourceTraderId, outcome, strategyId, instrument, day]);
 
   const capped = filtered.slice(0, Math.min(visible, limit));
   const hitPlanLimit = filtered.length > limit && visible >= limit;
@@ -135,6 +144,16 @@ export default function JournalScreen() {
           {money(monthNet, { sign: true })}
         </AppText>
       </View>
+      {copiedSources.length || origin !== 'all' ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+          {(['all', 'self', 'copied'] as OriginFilter[]).map((o) => (
+            <Chip key={o} label={o === 'all' ? 'All trades' : o === 'self' ? 'My trades' : 'Copied'} icon={o === 'copied' ? 'layers-outline' : o === 'self' ? 'person-outline' : undefined} selected={origin === o} onPress={() => setOrigin(o)} />
+          ))}
+          {origin === 'copied'
+            ? copiedSources.map(([id, name]) => <Chip key={id} label={name} selected={sourceTraderId === id} onPress={() => setSourceTraderId(sourceTraderId === id ? null : id)} />)
+            : null}
+        </ScrollView>
+      ) : null}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
         {(['all', 'wins', 'losses', 'pending'] as Outcome[]).map((o) => (
           <Chip key={o} label={o === 'pending' ? 'Needs notes' : o[0].toUpperCase() + o.slice(1)} selected={outcome === o} onPress={() => setOutcome(o)} />
@@ -183,14 +202,14 @@ export default function JournalScreen() {
           <Card>
             {trades.length === 0 ? (
               <EmptyState
-                icon="book-outline"
+                illustration="journal"
                 title="No trades yet"
                 message="Your journal will automatically organize your trading history."
                 actionLabel="Journal a trade"
                 onAction={() => router.push('/journal/new')}
               />
             ) : (
-              <EmptyState icon="filter-outline" title="Nothing matches" message="Try a different filter or day." />
+              <EmptyState icon="filter-outline" title="Nothing matches" message={origin === 'copied' ? 'No copied trades match — log one from Copy Trade.' : 'Try a different filter or day.'} />
             )}
           </Card>
         }

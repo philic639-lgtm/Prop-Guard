@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Button, Card, Chip, DetailTable, RiskProgress, Screen, SectionHeader, StatusBadge, ToggleRow } from '@/components/ui';
+import { AppHeader, AppText, Button, Card, Chip, DetailTable, Illustration, RiskProgress, Screen, SectionHeader, StatusBadge, ToggleRow } from '@/components/ui';
 import { isDemoMode } from '@/config/env';
 import { colors, radius, spacing } from '@/constants/theme';
 import { createAccountFromImport } from '@/features/accountImport/createAccount';
@@ -276,7 +276,7 @@ export default function AccountScreenshotImport() {
         }>
         <DropZone onFiles={add}>
           <Card style={styles.drop}>
-            <Ionicons name="images-outline" size={34} color={colors.accentBright} />
+            <Illustration kind="upload" size={72} />
             <AppText variant="heading" align="center">
               Upload your account dashboard
             </AppText>

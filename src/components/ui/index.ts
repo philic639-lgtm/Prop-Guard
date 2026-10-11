@@ -28,3 +28,4 @@ export * from './Stepper';
 export * from './TabSwitch';
 export * from './VerdictBanner';
 export * from './SelectField';
+export * from './Illustration';

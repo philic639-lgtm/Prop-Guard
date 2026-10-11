@@ -374,6 +374,12 @@ export interface Trade {
   strategyName?: string | null;
   /** AI Setup Check this trade was taken from (QUALIFIED / WAIT / STAND DOWN analytics). */
   setupCheckId?: string | null;
+  /** Whose idea the trade was: the trader's own (absent = self) or a copied source trader's. */
+  origin?: 'self' | 'copied';
+  /** Copy Trade log entry and source trader (copied trades only; name kept if the trader is renamed). */
+  copyTradeId?: string | null;
+  sourceTraderId?: string | null;
+  sourceTraderName?: string | null;
 }
 
 export type PendingOrigin = 'analyze' | 'calculator' | 'setup_check';

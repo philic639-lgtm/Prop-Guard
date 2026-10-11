@@ -20,7 +20,7 @@ export function StatusBadge({ label, tone = 'neutral', icon, size = 'md' }: Stat
     <View
       accessible
       accessibilityLabel={label}
-      style={[styles.pill, { backgroundColor: c.bg }, size === 'lg' && styles.lg, size === 'sm' && styles.sm]}>
+      style={[styles.pill, { backgroundColor: c.bg, borderColor: c.fg + '33' }, size === 'lg' && styles.lg, size === 'sm' && styles.sm]}>
       {icon ? <Ionicons name={icon} size={fontSize + 3} color={c.fg} /> : <View style={[styles.dot, { backgroundColor: c.fg }]} />}
       <AppText variant="label" style={{ color: c.fg, fontSize }}>
         {label}
@@ -38,6 +38,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs + 2,
     borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   lg: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   sm: { paddingHorizontal: spacing.sm, paddingVertical: 3 },

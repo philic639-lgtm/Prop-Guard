@@ -120,6 +120,19 @@ export default function TradeDetail() {
         />
       }
       footer={editing ? <Button label="Save journal" icon="checkmark" onPress={save} /> : undefined}>
+      {trade.origin === 'copied' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Copied from ${trade.sourceTraderName ?? 'a source trader'}`}
+          onPress={() => (trade.copyTradeId ? router.push({ pathname: '/copy/[id]', params: { id: trade.copyTradeId } }) : router.push('/copy'))}
+          style={styles.copied}>
+          <Ionicons name="layers-outline" size={16} color={colors.accentBright} />
+          <AppText variant="caption" tone="accent" style={{ flex: 1 }}>
+            Copied from {trade.sourceTraderName ?? 'a source trader'} — view the copy check
+          </AppText>
+          <Ionicons name="chevron-forward" size={14} color={colors.accentBright} />
+        </Pressable>
+      ) : null}
       <View style={styles.hero}>
         <View style={styles.row}>
           <AppText variant="title">
@@ -343,6 +356,7 @@ const SOURCE_LABEL: Partial<Record<Trade['source'], string>> = {
 };
 
 const styles = StyleSheet.create({
+  copied: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.accentMuted, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.accentBright + '44' },
   hero: { gap: 4 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },

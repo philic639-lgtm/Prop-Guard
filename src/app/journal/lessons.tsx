@@ -16,7 +16,7 @@ export default function PracticeLessonsScreen() {
     <Screen header={<AppHeader title="Practice lessons" subtitle="From practice — not real trades" back />}>
       {lessons.length === 0 ? (
         <Card>
-          <EmptyState icon="school-outline" title="No lessons saved yet" message="After a practice scenario, tap Save Lesson to keep the key takeaway here." actionLabel="Go to Practice" onAction={() => router.push('/practice')} />
+          <EmptyState illustration="journal" title="No lessons saved yet" message="After a practice scenario, tap Save Lesson to keep the key takeaway here." actionLabel="Go to Practice" onAction={() => router.push('/practice')} />
         </Card>
       ) : (
         lessons.map((l) => (

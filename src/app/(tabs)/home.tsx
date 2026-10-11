@@ -25,6 +25,7 @@ import {
 } from '@/components/ui';
 import { colors, GUTTER, radius, spacing, toneColor } from '@/constants/theme';
 import { CoachCard } from '@/features/home/CoachCard';
+import { CopyTradeHomeCard } from '@/features/copyTrade/CopyTradeHomeCard';
 import { screenshotLabel } from '@/features/accountImport/ScreenshotStatus';
 import { FIELD_LABEL, type FieldKey } from '@/lib/engines/accountImport';
 import { drawdownFloor } from '@/lib/engines/propRuleEngine';
@@ -62,8 +63,9 @@ export default function HomeScreen() {
 
   const header = (
     <View style={styles.header}>
-      <Logo />
+      <Logo tagline />
       <View style={styles.headerRight}>
+        <HeaderIconButton icon="layers-outline" label="Copy Trade" onPress={() => router.push('/copy')} />
         <HeaderIconButton icon="notifications-outline" label="Alerts" badge={unread} onPress={() => router.push('/alerts')} />
         <HeaderIconButton icon="settings-outline" label="Profile and settings" onPress={() => router.push('/profile')} />
       </View>
@@ -75,7 +77,7 @@ export default function HomeScreen() {
       <Screen tabBar header={header}>
         <HomeModeCard />
         <Card>
-          <EmptyState icon="briefcase-outline" title="Add your trading account" message="Prop Guard needs your account limits before it can protect you." actionLabel="Add account" onAction={() => router.push('/accounts/new')} />
+          <EmptyState illustration="shield" title="Add your trading account" message="Prop Guard needs your account limits before it can protect you." actionLabel="Add account" onAction={() => router.push('/accounts/new')} />
         </Card>
       </Screen>
     );
@@ -91,7 +93,7 @@ export default function HomeScreen() {
       <DemoBanner />
       <HomeModeCard />
 
-      <Card onPress={() => router.push({ pathname: '/accounts/[id]', params: { id: account.id } })} accessibilityLabel={`${account.name}, ${CONNECTION_LABEL[connection]}`}>
+      <Card accent="accent" onPress={() => router.push({ pathname: '/accounts/[id]', params: { id: account.id } })} accessibilityLabel={`${account.name}, ${CONNECTION_LABEL[connection]}`}>
         <View style={styles.accountRow}>
           <View style={styles.avatar}>
             <AppText variant="heading" style={{ color: colors.text }}>
@@ -221,16 +223,19 @@ export default function HomeScreen() {
         <TradingPlanCard strategy={strategy} guard={guard} />
       ) : (
         <Card>
-          <EmptyState icon="git-branch-outline" title="No strategy yet" message="Prop Guard checks every trade against YOUR rules. Describe your strategy to begin." actionLabel="Build my strategy" onAction={() => router.push('/strategy')} />
+          <EmptyState illustration="strategy" title="No strategy yet" message="Prop Guard checks every trade against YOUR rules. Describe your strategy to begin." actionLabel="Build my strategy" onAction={() => router.push('/strategy')} />
         </Card>
       )}
 
       <Button label="Check Trade" icon="shield-checkmark" variant="success" onPress={() => router.push('/analyze')} />
       {strategy ? <Button label="Today's Plan" icon="list-outline" variant="secondary" onPress={() => router.push('/session/today')} /> : null}
-      <View style={styles.row}>
-        <Button label="Analyze Setup" icon="scan-outline" variant="secondary" size="md" style={styles.flex} onPress={() => router.push('/setup-check')} />
-        <Button label="Risk Calc" icon="calculator-outline" variant="secondary" size="md" style={styles.flex} onPress={() => router.push('/calculator')} />
+      <View style={styles.quick}>
+        <QuickAction icon="scan-outline" label="Analyze Setup" onPress={() => router.push('/setup-check')} />
+        <QuickAction icon="calculator-outline" label="Risk Calc" onPress={() => router.push('/calculator')} />
+        <QuickAction icon="layers-outline" label="Copy Trade" onPress={() => router.push('/copy')} />
+        <QuickAction icon="book-outline" label="Journal" onPress={() => router.push('/journal')} />
       </View>
+      <CopyTradeHomeCard />
 
       {todaysPlan ? (
         <Card onPress={() => router.push('/analyze')} tone="accent">
@@ -276,7 +281,7 @@ export default function HomeScreen() {
       <SectionHeader title="Recent trades" action={recent.length ? 'Journal' : undefined} onAction={() => router.push('/journal')} />
       {recent.length === 0 ? (
         <Card>
-          <EmptyState icon="book-outline" title="No trades yet" message="Your journal will automatically organize your trading history." actionLabel="Check your first trade" onAction={() => router.push('/analyze')} />
+          <EmptyState illustration="trades" title="No trades yet" message="Your journal will automatically organize your trading history." actionLabel="Check your first trade" onAction={() => router.push('/analyze')} />
         </Card>
       ) : (
         recent.map((t) => (
@@ -293,7 +298,26 @@ export default function HomeScreen() {
   );
 }
 
+/** Icon tile for the dashboard's quick actions (consistent icon + label, one tap). */
+function QuickAction({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.qa, pressed && styles.qaPressed]}>
+      <View style={styles.qaIcon}>
+        <Ionicons name={icon} size={20} color={colors.accentBright} />
+      </View>
+      <AppText variant="caption" tone="primary" numberOfLines={1} style={styles.qaLabel}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  quick: { flexDirection: 'row', gap: spacing.sm },
+  qa: { flex: 1, minWidth: 0, alignItems: 'center', gap: spacing.xs + 2, paddingVertical: spacing.md, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  qaPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
+  qaIcon: { width: 38, height: 38, borderRadius: radius.md, backgroundColor: colors.accentMuted, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.accentBright + '33' },
+  qaLabel: { fontSize: 12, fontWeight: '600' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: GUTTER, paddingVertical: spacing.md },
   headerRight: { flexDirection: 'row', gap: spacing.sm },
   flex: { flex: 1 },

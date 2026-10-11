@@ -19,7 +19,7 @@ export default function SetupCheckHistory() {
   if (!checks.length) {
     return (
       <Screen header={<AppHeader title="Saved setup checks" back />}>
-        <EmptyState icon="scan-outline" title="No saved setup checks" message="Save a Setup Check to track how often you trade QUALIFIED setups." actionLabel="New setup check" onAction={() => router.replace('/setup-check')} />
+        <EmptyState illustration="upload" title="No saved setup checks" message="Save a Setup Check to track how often you trade QUALIFIED setups." actionLabel="New setup check" onAction={() => router.replace('/setup-check')} />
       </Screen>
     );
   }

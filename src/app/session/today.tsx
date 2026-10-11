@@ -38,7 +38,7 @@ export default function TodaysPlan() {
     return (
       <Screen header={<AppHeader title="Today's plan" back />}>
         <Card>
-          <EmptyState icon="git-branch-outline" title="No strategy yet" message="Save a strategy from the library or describe your own to start a pre-trade session." actionLabel="Open strategy library" onAction={() => router.push('/strategy/library')} />
+          <EmptyState illustration="strategy" title="No strategy yet" message="Save a strategy from the library or describe your own to start a pre-trade session." actionLabel="Open strategy library" onAction={() => router.push('/strategy/library')} />
         </Card>
       </Screen>
     );

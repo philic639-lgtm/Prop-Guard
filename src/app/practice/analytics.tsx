@@ -52,7 +52,7 @@ export default function PracticeAnalyticsScreen() {
     return (
       <Screen header={<AppHeader title="Practice analytics" back />}>
         <Card>
-          <EmptyState icon="stats-chart-outline" title="No practice yet" message="Complete a few practice scenarios and your accuracy, scores and personal edge insights will appear here." actionLabel="Start practising" onAction={() => router.replace('/practice')} />
+          <EmptyState illustration="chart" title="No practice yet" message="Complete a few practice scenarios and your accuracy, scores and personal edge insights will appear here." actionLabel="Start practising" onAction={() => router.replace('/practice')} />
         </Card>
       </Screen>
     );

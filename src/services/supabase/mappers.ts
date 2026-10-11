@@ -12,6 +12,8 @@ import type {
   TradingSession,
   UserPreferences,
 } from '@/types/domain';
+import { DEFAULT_COPY_SETTINGS } from '@/lib/engines/copyTradeEngine';
+import type { CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 
 /**
@@ -216,6 +218,10 @@ export function tradeToRows(t: Trade, userId: string) {
       external_id: t.externalId ?? null,
       strategy_name: t.strategyName ?? null,
       setup_check_id: t.setupCheckId ?? null,
+      origin: t.origin ?? 'self',
+      copy_trade_id: t.copyTradeId ?? null,
+      source_trader_id: t.sourceTraderId ?? null,
+      source_trader_name: t.sourceTraderName ?? null,
     },
     checklist: t.checklist.map((c) => ({ trade_id: t.id, item_key: c.itemId, user_id: userId, label: c.label, value: c.value })),
     journal: {
@@ -275,6 +281,10 @@ export function rowsToTrade(r: Row, checklist: Row[], journal: Row | undefined):
     ...(r.external_id != null ? { externalId: str(r.external_id) } : {}),
     ...(r.strategy_name != null ? { strategyName: str(r.strategy_name) } : {}),
     ...(r.setup_check_id != null ? { setupCheckId: str(r.setup_check_id) } : {}),
+    ...(r.origin === 'copied' ? { origin: 'copied' as const } : {}),
+    ...(r.copy_trade_id != null ? { copyTradeId: str(r.copy_trade_id) } : {}),
+    ...(r.source_trader_id != null ? { sourceTraderId: str(r.source_trader_id) } : {}),
+    ...(r.source_trader_name != null ? { sourceTraderName: str(r.source_trader_name) } : {}),
   };
 }
 
@@ -699,5 +709,103 @@ export function rowToSetupCheck(r: Row): SetupCheck {
     screenshotPath: (r.screenshot_path as string | null) ?? null,
     tradeId: (r.trade_id as string | null) ?? null,
     saved: true,
+  };
+}
+
+// ───────────────────────────── Copy Trade ─────────────────────────────
+
+export function sourceTraderToRow(t: SourceTrader, userId: string) {
+  return {
+    id: t.id,
+    user_id: userId,
+    name: t.name,
+    platform: t.platform,
+    asset_class: t.assetClass,
+    instruments: t.instruments,
+    style: t.style,
+    notes: t.notes,
+    trust_rating: t.trustRating,
+    is_active: t.isActive,
+    archived: t.archived,
+    settings: t.settings,
+    created_at: t.createdAt,
+    updated_at: t.updatedAt,
+  };
+}
+
+export function rowToSourceTrader(r: Row): SourceTrader {
+  return {
+    id: str(r.id),
+    name: str(r.name),
+    platform: (r.platform as SourceTrader['platform']) ?? 'other',
+    assetClass: (r.asset_class as SourceTrader['assetClass']) ?? 'futures',
+    instruments: Array.isArray(r.instruments) ? (r.instruments as string[]) : [],
+    style: (r.style as string | null) ?? null,
+    notes: str(r.notes),
+    trustRating: numOrNull(r.trust_rating),
+    isActive: r.is_active !== false,
+    archived: r.archived === true,
+    settings: { ...DEFAULT_COPY_SETTINGS, ...((r.settings as object) ?? {}) },
+    createdAt: str(r.created_at),
+    updatedAt: str(r.updated_at),
+  };
+}
+
+export function copyTradeToRow(c: CopyTrade, userId: string) {
+  return {
+    id: c.id,
+    user_id: userId,
+    source_trader_id: c.sourceTraderId,
+    source_trader_name: c.sourceTraderName,
+    account_id: c.accountId,
+    instrument: c.instrument,
+    direction: c.direction,
+    entry: c.entry,
+    stop: c.stop,
+    target: c.target,
+    source_contracts: c.sourceContracts,
+    source_instrument: c.sourceInstrument,
+    idea_at: c.at,
+    setup: c.setup,
+    notes: c.notes,
+    conviction: c.conviction,
+    mode: c.mode,
+    screenshot_url: c.screenshotUri,
+    contracts: c.contracts,
+    translation: c.translation,
+    trade_id: c.tradeId,
+    outcome: c.outcome,
+    lesson: c.lesson,
+    created_at: c.createdAt,
+    updated_at: c.updatedAt,
+  };
+}
+
+export function rowToCopyTrade(r: Row): CopyTrade {
+  return {
+    id: str(r.id),
+    sourceTraderId: str(r.source_trader_id),
+    sourceTraderName: str(r.source_trader_name),
+    accountId: (r.account_id as string | null) ?? null,
+    instrument: str(r.instrument),
+    direction: r.direction === 'short' ? 'short' : 'long',
+    entry: num(r.entry),
+    stop: num(r.stop),
+    target: numOrNull(r.target),
+    sourceContracts: numOrNull(r.source_contracts),
+    sourceInstrument: (r.source_instrument as string | null) ?? null,
+    at: str(r.idea_at),
+    setup: str(r.setup),
+    notes: str(r.notes),
+    conviction: (r.conviction as CopyTrade['conviction']) ?? null,
+    mode: (r.mode as CopyTrade['mode']) ?? 'missed',
+    screenshotUri: (r.screenshot_url as string | null) ?? null,
+    contracts: num(r.contracts),
+    translation: (r.translation as CopyTrade['translation']) ?? { verdict: 'review', instrument: str(r.instrument), contracts: null, riskDollars: null, dailyRiskRemaining: null, reasons: [] },
+    tradeId: (r.trade_id as string | null) ?? null,
+    outcome: (r.outcome as CopyTrade['outcome']) ?? null,
+    lesson: str(r.lesson),
+    createdAt: str(r.created_at),
+    updatedAt: str(r.updated_at),
   };
 }

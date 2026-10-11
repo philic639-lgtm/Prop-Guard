@@ -26,12 +26,16 @@ export function RiskProgress({ value, tone, height = 8, label }: RiskProgressPro
       accessibilityLabel={label}
       accessibilityValue={{ min: 0, max: 100, now: Math.round(v * 100) }}
       style={[styles.track, { height, borderRadius: height }]}>
-      <View style={[styles.fill, { width: `${v * 100}%`, backgroundColor: toneColor[t].fg, borderRadius: height }]} />
+      <View style={[styles.fill, { width: `${v * 100}%`, backgroundColor: toneColor[t].fg, borderRadius: height }]}>
+        {/* Soft highlight on the leading edge — reads as a premium meter, not a flat bar. */}
+        {v > 0.04 ? <View style={[styles.sheen, { borderRadius: height }]} /> : null}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  track: { width: '100%', backgroundColor: colors.surface, overflow: 'hidden', borderRadius: radius.pill },
-  fill: { height: '100%' },
+  track: { width: '100%', backgroundColor: colors.surface, overflow: 'hidden', borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  fill: { height: '100%', overflow: 'hidden' },
+  sheen: { position: 'absolute', top: 0, bottom: '50%', left: 0, right: 0, backgroundColor: 'rgba(255,255,255,0.18)' },
 });
