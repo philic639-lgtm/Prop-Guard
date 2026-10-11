@@ -190,7 +190,7 @@ const SEVERITY_TONE: Record<BehavioralRisk['severity'], Tone> = { high: 'danger'
 export function BehaviorCard({ risks }: { risks: BehavioralRisk[] }) {
   return (
     <Card>
-      <SectionTitle icon="copy-outline" tone="warning">
+      <SectionTitle icon="git-network-outline" tone="warning">
         Behavioral risk
       </SectionTitle>
       <AppText variant="caption" style={{ marginTop: 2 }}>
