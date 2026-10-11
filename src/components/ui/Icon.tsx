@@ -1,4 +1,5 @@
 import Activity from 'lucide-react-native/icons/activity';
+import CalendarClock from 'lucide-react-native/icons/calendar-clock';
 import Apple from 'lucide-react-native/icons/apple';
 import Archive from 'lucide-react-native/icons/archive';
 import ArrowDown from 'lucide-react-native/icons/arrow-down';
@@ -168,6 +169,7 @@ const ICONS = {
   journal: BookOpen,
   practice: GraduationCap,
   'risk-manager': ShieldCheck,
+  'economic-calendar': CalendarClock,
   'account-import': Camera,
   'upload-screenshot': ImageUp,
   'ai-builder': BrainCircuit,

@@ -29,6 +29,7 @@ import { useCopyAnalytics } from '@/features/copyTrade/useCopyTrade';
 import { screenshotLabel } from '@/features/accountImport/ScreenshotStatus';
 import { FIELD_LABEL, type FieldKey } from '@/lib/engines/accountImport';
 import { LIMIT_SOURCE_SHORT } from '@/lib/engines/dailyGuardEngine';
+import { NewsWatch } from '@/features/intelligence/NewsRiskBanner';
 import { drawdownFloor } from '@/lib/engines/propRuleEngine';
 import { HomeModeCard } from '@/features/learning/HomeModeCard';
 import { TradingPlanCard } from '@/features/home/TradingPlanCard';
@@ -168,6 +169,8 @@ export default function HomeScreen() {
           <Icon name="chevron-forward" size={16} color={colors.textSecondary} />
         </Pressable>
       ) : null}
+
+      <NewsWatch />
 
       {/* Actions — separate from the account numbers above. */}
       <Button label="Check Trade" icon="shield-checkmark" variant="success" onPress={() => router.push('/analyze')} />

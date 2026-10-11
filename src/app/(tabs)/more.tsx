@@ -16,6 +16,7 @@ export default function MoreTab() {
       title: 'Trading',
       items: [
         { title: 'Risk Manager', subtitle: 'Daily risk, drawdown, rules and position size', icon: 'risk-manager', route: '/risk', tone: 'positive' },
+        { title: 'Intelligence', subtitle: 'Scheduled economic releases (CPI, jobs, FOMC)', icon: 'economic-calendar', route: '/intelligence', tone: 'warning' },
         { title: 'Check a trade', subtitle: 'Risk + rules before you enter', icon: 'checkmark-done-outline', route: '/analyze', tone: 'accent' },
         { title: 'Setup Check', subtitle: 'Chart vs your strategy', icon: 'scan-outline', route: '/setup-check', tone: 'accent' },
         { title: 'Risk calculator', subtitle: 'Size from your stop', icon: 'calculator-outline', route: '/calculator', tone: 'accent' },

@@ -178,6 +178,20 @@ npx supabase secrets set FIRM_RULES_MONITOR_SECRET=<random>
 
 The monitor checks at most 25 due pages per run with conditional requests and a content hash (no AI, no per-visit scraping). A changed page opens a review in `prop_firm_rule_reviews`; a person re-verifies, edits the rules JSON (`firm-rules:export`) and publishes a new version (`firm-rules:publish`) — previous versions are kept for accounts bought under older terms. Blocked or unreachable pages back off (7 → 14 → 28 → 30 days) and keep the verified data.
 
+## Prop Guard Intelligence — economic release warnings
+
+More → **Intelligence** lists the next 14 days of **scheduled** US economic releases that matter for ES, MES, NQ and MNQ, warns on Home / Check Trade / Setup Check when one is close, shows your prop firm's news-trading rule when it is verified, and can alert your phone before releases. It does **not** show breaking news or actual / forecast numbers.
+
+| | |
+| --- | --- |
+| Sources (free, official) | BLS release calendar (iCalendar) · BEA release schedule (JSON, address set with `ECON_BEA_URL`) · Federal Reserve FOMC calendar page. U.S. federal government works; read politely (descriptive User-Agent with `ECON_CONTACT`, conditional requests, 4 refreshes a day) |
+| Refresh | Edge Function `economic-calendar-sync`, every 6 h via pg_cron (SQL in migration `20261025000000`). `npm run econ:check` = dry run against the live feeds; `npm run econ:sync` = the same refresh from your machine |
+| Rules | `IMPACT_RULES` in `src/lib/engines/economicCalendar/rules.ts` — impact, caution window and the reason per release family (shown in the app). Guidance only: smaller size or no new entries inside the window; never blocks a trade |
+| Times | Published times from the source; FOMC statement / press conference at the Fed's usual 2:00 / 2:30 PM ET, labelled "usual time, confirm" (`ECON_FOMC_VERIFIED_TIMES` marks a verified date); no time → no alert |
+| Failures | A down or changed feed keeps the last good data and is shown as "Refresh failing" / "Out of date"; nothing is invented. Without a backend: "Calendar not connected" |
+| Alerts | Optional local notifications 5 / 15 / 30 / 60 min before high-impact releases with a known time; one per release (deterministic id), moved or withdrawn releases update their alert; tapping opens Intelligence |
+| Firm rules | Only the account's verified news-trading record (e.g. Topstep); other firms: "No verified news-trading rule on file" |
+
 ## Account screenshot import
 
 Accounts → New / an account's page / onboarding → **Import account screenshot**: upload (several at once), take a photo, drag & drop or paste (desktop). Prop Guard reads the dashboard, matches firm → program → size → stage, and shows every value for review — low-confidence values highlighted, missing ones "Not detected", screenshot conflicts as choices. Nothing is saved until the trader confirms; then the balance and drawdown tracking update, the account shows **Screenshot updated · date** (not "connected") and a dated history is kept.

@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { NewsWatch } from '@/features/intelligence/NewsRiskBanner';
 import { AppHeader, AppText, Button, Card, EmptyState, ErrorState, HeaderIconButton, Input, LoadingState, NumericInput, Screen, SegmentedControl, SelectField, StatusBadge, ToggleRow } from '@/components/ui';
 import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
@@ -195,6 +196,7 @@ export default function SetupCheckScreen() {
           </View>
         </View>
       }>
+      <NewsWatch compact />
       <Card>
         <AppText variant="body">
           Prop Guard checks whether this setup satisfies <AppText variant="bodyStrong">your saved rules</AppText> and risk limits — 🟢 QUALIFIED only when every required rule and risk check is confirmed. It never predicts a winner.

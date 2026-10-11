@@ -11,8 +11,8 @@ npx supabase link --project-ref <ref>
 npx supabase db push            # applies every file in supabase/migrations, in order
 ```
 
-22 migrations (`20261003000000_init.sql` … `20261024000000_ai_audit_append_only.sql`).
-They create 36 tables, one view (`strategy_performance`, `security_invoker`), triggers and
+23 migrations (`20261003000000_init.sql` … `20261025000000_economic_calendar.sql`).
+They create 38 tables, one view (`strategy_performance`, `security_invoker`), triggers and
 the private `screenshots` storage bucket.
 
 Security model (verified locally, see §5):
@@ -22,6 +22,7 @@ Security model (verified locally, see §5):
 | User data (`accounts`, `prop_rules`, `strategies`, `strategy_rules`, `sessions`, `trades`, `trade_checklists`, `journal_entries`, `pending_trades`, `trade_plans`, `setup_checks`, `source_traders`, `copy_trades`, `copy_groups`, `practice_*` user rows, `user_preferences`, `profiles`, …) | Owner only (`user_id = auth.uid()`), read + write |
 | `ai_analysis` | Owner read + insert only (append-only so the AI hourly limit cannot be reset) |
 | `subscription_status`, `setup_validation_requests` | Owner read only; written by the service role (billing webhook / functions) |
+| `economic_events`, `economic_feed_status` | Everyone can read (public schedule); written by `economic-calendar-sync` (service role) |
 | `prop_firms`, `prop_firm_programs`, `prop_firm_rule_versions` | Everyone can read active / **verified** rows; written by `npm run firm-rules:publish` (service role) |
 | `practice_scenarios`, `practice_scenario_candles`, `strategy_templates` | Signed-in users read active rows; written server-side |
 | `historical_bars`, `historical_data_coverage`, `prop_firm_sources`, `prop_firm_source_checks`, `prop_firm_rule_reviews` | Service role only (no client policies) |
@@ -35,6 +36,7 @@ npx supabase functions deploy ai-gateway
 npx supabase functions deploy setup-validation
 npx supabase functions deploy trade-screenshot
 npx supabase functions deploy firm-rules-monitor --no-verify-jwt   # called by pg_cron with its own secret
+npx supabase functions deploy economic-calendar-sync --no-verify-jwt   # called by pg_cron with ECON_SYNC_SECRET
 ```
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are injected by Supabase.
@@ -53,6 +55,8 @@ npx supabase functions deploy firm-rules-monitor --no-verify-jwt   # called by p
 | `SETUP_CHECK_RATE_PER_HOUR`, `SETUP_CHECK_TIMEOUT_MS` | setup-validation | optional |
 | `TRADE_SCREENSHOT_RATE_PER_MINUTE/_HOUR/_DAY`, `TRADE_SCREENSHOT_TIMEOUT_MS` | trade-screenshot | optional |
 | `FIRM_RULES_MONITOR_SECRET` | firm-rules-monitor | yes, if the monitor is scheduled |
+| `ECON_SYNC_SECRET` | economic-calendar-sync | yes, if the calendar is scheduled |
+| `ECON_CONTACT`, `ECON_BEA_URL`, `ECON_BEA_TIMES_EASTERN`, `ECON_FOMC_VERIFIED_TIMES`, `ECON_BLS_URL`, `ECON_FED_URL` | economic-calendar-sync | `ECON_BEA_URL` to include BEA (GDP, PCE); the rest optional — see `.env.server.example` |
 
 Without an AI key every feature still works: Setup Check runs in MANUAL mode, account
 import uses on-device OCR / manual entry, and the AI reviews fall back to the local engines.

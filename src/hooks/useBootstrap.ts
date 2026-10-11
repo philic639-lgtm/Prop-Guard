@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 
+import { refreshEconomicCalendar } from '@/features/intelligence/useEconomicCalendar';
+import { useEconomicCalendarStore } from '@/features/intelligence/useEconomicCalendarStore';
 import { syncService } from '@/services/syncService';
 import { notificationService } from '@/services/notificationService';
 import { supabase } from '@/services/supabase/client';
@@ -17,7 +19,12 @@ export function useBootstrap() {
     void useSubscriptionStore.getState().refresh();
 
     const appStateSub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') void syncService.flush();
+      if (s === 'active') {
+        void syncService.flush();
+        // Keep the release calendar (and its phone alerts) current when the trader comes back.
+        const fetched = useEconomicCalendarStore.getState().fetchedAt;
+        if (!fetched || Date.now() - Date.parse(fetched) > 30 * 60_000) void refreshEconomicCalendar();
+      }
     });
 
     if (!supabase) return () => appStateSub.remove();

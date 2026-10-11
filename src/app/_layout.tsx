@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Button, ErrorState } from '@/components/ui';
 import { colors, spacing } from '@/constants/theme';
 import { useBootstrap } from '@/hooks/useBootstrap';
+import { useNotificationRouting } from '@/hooks/useNotificationRouting';
 import { useAppStore } from '@/store/useAppStore';
 
 void SplashScreen.preventAutoHideAsync();
@@ -31,6 +32,7 @@ export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
 export default function RootLayout() {
   const hydrated = useAppStore((s) => s.hydrated);
   useBootstrap();
+  useNotificationRouting(hydrated);
 
   useEffect(() => {
     if (hydrated) void SplashScreen.hideAsync();

@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { NewsWatch } from '@/features/intelligence/NewsRiskBanner';
 import { DailyGuardCard } from '@/components/domain/DailyGuardCard';
 import { GUARD_UI } from '@/components/domain/guardUi';
 import { ProGate } from '@/components/domain/ProGate';
@@ -117,6 +118,8 @@ export default function AnalyzeScreen() {
           </AppText>
         </Card>
       ) : null}
+
+      <NewsWatch compact />
 
       <Card onPress={() => router.push('/setup-check')} accessibilityLabel="AI Setup Check: compare a chart screenshot with your saved rules">
         <View style={styles.row}>

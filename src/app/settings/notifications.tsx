@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -65,6 +66,13 @@ export default function NotificationsScreen() {
           Pre-session reminders fire 15 minutes before your active strategy&apos;s entry window on weekdays.
         </AppText>
       </ProGate>
+      <Card>
+        <AppText variant="bodyStrong">Economic release alerts</AppText>
+        <AppText variant="caption" tone="secondary">
+          Optional alerts before CPI, jobs, FOMC and other scheduled releases — set up in Intelligence.
+        </AppText>
+        <Button label="Open Intelligence" variant="secondary" size="md" icon="economic-calendar" onPress={() => router.push('/intelligence')} style={{ marginTop: spacing.sm }} />
+      </Card>
     </Screen>
   );
 }
