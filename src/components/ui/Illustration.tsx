@@ -3,6 +3,8 @@ import Svg, { Circle, Defs, G, LinearGradient, Path, Rect, Stop } from 'react-na
 
 import { colors } from '@/constants/theme';
 
+import { DECORATIVE_SVG } from './Icon';
+
 /**
  * Small branded spot illustrations (SVG, no image assets): a soft gradient
  * tile with a line glyph. Restrained on purpose — a serious trader tool,
@@ -76,7 +78,7 @@ function Glyph({ kind }: { kind: IllustrationKind }) {
 export function Illustration({ kind, size = 80 }: { kind: IllustrationKind; size?: number }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
   return (
-    <Svg width={size} height={size} viewBox="0 0 80 80" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <Svg width={size} height={size} viewBox="0 0 80 80" {...DECORATIVE_SVG}>
       <Defs>
         <LinearGradient id={`bg${id}`} x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0" stopColor={colors.accent} stopOpacity={0.28} />
@@ -102,7 +104,7 @@ export function Illustration({ kind, size = 80 }: { kind: IllustrationKind; size
 export function BrandMark({ size = 28 }: { size?: number }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
   return (
-    <Svg width={size} height={size} viewBox="0 0 64 64" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <Svg width={size} height={size} viewBox="0 0 64 64" {...DECORATIVE_SVG}>
       <Defs>
         <LinearGradient id={`s${id}`} x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0" stopColor={BRAND.blueLight} />

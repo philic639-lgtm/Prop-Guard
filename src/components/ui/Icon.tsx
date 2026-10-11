@@ -138,7 +138,7 @@ import Wrench from 'lucide-react-native/icons/wrench';
 import X from 'lucide-react-native/icons/x';
 import Zap from 'lucide-react-native/icons/zap';
 import type { LucideIcon } from 'lucide-react-native';
-import type { StyleProp, ViewStyle } from 'react-native';
+import { Platform, type StyleProp, type ViewStyle } from 'react-native';
 
 /**
  * App icons — Lucide SVGs drawn with react-native-svg.
@@ -382,6 +382,14 @@ export interface IconProps {
   accessibilityLabel?: string;
 }
 
+/**
+ * Hides a decorative SVG from screen readers. On web the native-only props would reach the
+ * DOM as unknown attributes (a React warning, and the dev server's error toast), so web gets
+ * `aria-hidden` instead.
+ */
+export const DECORATIVE_SVG =
+  Platform.OS === 'web' ? ({ 'aria-hidden': true } as const) : ({ accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' } as const);
+
 export function Icon({ name, size = 20, color = 'currentColor', strokeWidth, style, accessibilityLabel }: IconProps) {
   const Glyph: LucideIcon = ICONS[name] ?? CircleHelp;
   const filled = FILLED.has(name);
@@ -394,7 +402,7 @@ export function Icon({ name, size = 20, color = 'currentColor', strokeWidth, sty
       style={style}
       {...(accessibilityLabel
         ? { accessible: true, accessibilityRole: 'image' as const, accessibilityLabel }
-        : { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' as const })}
+        : DECORATIVE_SVG)}
     />
   );
 }

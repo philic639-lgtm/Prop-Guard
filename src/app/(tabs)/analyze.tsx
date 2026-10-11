@@ -302,6 +302,7 @@ export default function AnalyzeScreen() {
           {savedPlans.map((p) => (
             <Card
               key={p.id}
+              hasActions
               onPress={() => {
                 setDraft({
                   ...newDraft(strategies.find((s) => s.id === p.strategyId) ?? activeStrategy, p.instrument),

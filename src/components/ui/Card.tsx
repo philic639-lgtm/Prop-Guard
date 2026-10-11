@@ -14,16 +14,22 @@ interface CardProps {
   /** A thin branded highlight along the top edge (key cards and actions). */
   accent?: Tone;
   accessibilityLabel?: string;
+  /**
+   * The card contains its own buttons. It stays tappable but is not exposed as a button
+   * itself: a button inside a button is invalid on web and hides the inner buttons from
+   * screen readers.
+   */
+  hasActions?: boolean;
 }
 
-export function Card({ children, onPress, style, tone, padded = true, raised, accent, accessibilityLabel }: CardProps) {
+export function Card({ children, onPress, style, tone, padded = true, raised, accent, accessibilityLabel, hasActions }: CardProps) {
   const toneStyle = tone && tone !== 'neutral' ? { borderColor: toneColor[tone].fg + '55' } : null;
   const base = [styles.card, raised && styles.raised, padded && styles.padded, toneStyle, accent && styles.accented, style];
   const bar = accent ? <View pointerEvents="none" style={[styles.accentBar, { backgroundColor: toneColor[accent].fg }]} /> : null;
   if (onPress) {
     return (
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={hasActions ? undefined : 'button'}
         accessibilityLabel={accessibilityLabel}
         onPress={onPress}
         style={({ pressed }) => [...base, pressed && styles.pressed]}>

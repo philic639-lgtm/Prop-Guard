@@ -17,7 +17,7 @@ interface PendingTradeCardProps {
 function PendingTradeCardBase({ pending: p, strategyName, onPress }: PendingTradeCardProps) {
   const long = p.direction === 'long';
   return (
-    <Card onPress={onPress} accessibilityLabel={`Pending ${p.instrument} ${p.direction}, add result`}>
+    <Card hasActions onPress={onPress} accessibilityLabel={`Pending ${p.instrument} ${p.direction}, add result`}>
       <View style={styles.row}>
         <View style={styles.left}>
           <View style={styles.titleRow}>

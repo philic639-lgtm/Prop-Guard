@@ -35,7 +35,7 @@ export default function StrategyTab() {
       {active ? (
         <>
           <SectionHeader title="Active strategy" />
-          <Card onPress={() => router.push({ pathname: '/strategy/review', params: { id: active.id } })}>
+          <Card hasActions onPress={() => router.push({ pathname: '/strategy/review', params: { id: active.id } })}>
             <View style={styles.head}>
               <AppText variant="title" style={styles.flex} numberOfLines={1}>
                 {active.name}
@@ -96,7 +96,7 @@ export default function StrategyTab() {
         <>
           <SectionHeader title="Saved strategies" />
           {others.map((s) => (
-            <Card key={s.id} onPress={() => router.push({ pathname: '/strategy/review', params: { id: s.id } })}>
+            <Card key={s.id} hasActions onPress={() => router.push({ pathname: '/strategy/review', params: { id: s.id } })}>
               <View style={styles.head}>
                 <View style={styles.flex}>
                   <AppText variant="heading">{s.name}</AppText>
@@ -115,7 +115,7 @@ export default function StrategyTab() {
       ) : null}
 
       <SectionHeader title="Explore strategies" />
-      <Card onPress={() => router.push('/strategy/library')} accessibilityLabel="Strategy Library — browse rule-based frameworks">
+      <Card hasActions onPress={() => router.push('/strategy/library')} accessibilityLabel="Strategy Library — browse rule-based frameworks">
         <View style={styles.head}>
           <View style={styles.exploreIcon}>
             <Icon name="library-outline" size={20} color={colors.accentBright} />

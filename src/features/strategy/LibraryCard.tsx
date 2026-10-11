@@ -40,7 +40,7 @@ function LibraryCardBase({ template: t, locked, saved, badge }: LibraryCardProps
   const open = () => router.push(locked ? '/paywall' : { pathname: '/strategy/library/[id]', params: { id: t.id } });
   const instruments = t.instruments.slice(0, 4).join(' • ') + (t.instruments.length > 4 ? ` +${t.instruments.length - 4}` : '');
   return (
-    <Card onPress={open} accessibilityLabel={`${t.shortName}, ${CATEGORY_LABEL[t.category]}${locked ? ', Pro' : ''}`}>
+    <Card hasActions onPress={open} accessibilityLabel={`${t.shortName}, ${CATEGORY_LABEL[t.category]}${locked ? ', Pro' : ''}`}>
       <View style={styles.head}>
         <View style={styles.libIcon}>
           <Icon name={CATEGORY_ICON[t.category]} size={18} color={colors.accentBright} />
