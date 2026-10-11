@@ -1,4 +1,4 @@
-import type { ExtractedField, Extraction, FieldKey, FieldMap, ImportCheck, PageExtraction } from './types';
+import type { AmbiguousReading, ExtractedField, Extraction, FieldKey, FieldMap, ImportCheck, PageExtraction } from './types';
 import { ALL_FIELDS, COUNT_FIELDS } from './types';
 
 /**
@@ -74,10 +74,46 @@ export function resolveLevels(input: FieldMap): FieldMap {
   return fields;
 }
 
+/** Values that change from day to day — never mixed across screenshots of different dates. */
+const TIME_VARYING = new Set<FieldKey>(['balance', 'netPnl', 'dailyPnl', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining', 'tradingDays', 'status', 'statementDate']);
+
+const pageDate = (p: PageExtraction) => (typeof p.fields.statementDate?.value === 'string' ? p.fields.statementDate.value : null);
+/** The newest dashboard date when the screenshots show more than one, else null. */
+function latestOfMixedDates(pages: PageExtraction[]): string | null {
+  const dates = [...new Set(pages.map(pageDate).filter((d): d is string => !!d))].sort();
+  return dates.length > 1 ? dates[dates.length - 1] : null;
+}
+
+/**
+ * Screenshot-set checks: different accounts in one import (blocks saving),
+ * and different dashboard dates (balances, P&L and the floor come only from
+ * the newest; older ones are not mixed in).
+ */
+export function screenshotChecks(pages: PageExtraction[]): ImportCheck[] {
+  const checks: ImportCheck[] = [];
+  const prints = [...new Set(pages.flatMap((p) => p.sensitive.filter((s) => s.fingerprint).map((s) => s.fingerprint!)))];
+  if (prints.length > 1)
+    checks.push({ id: 'different-accounts', status: 'conflict', fields: [], message: 'These screenshots show different accounts. Import one account at a time — remove the screenshots of the other account.' });
+  const latest = latestOfMixedDates(pages);
+  if (latest) {
+    const older = [...new Set(pages.map(pageDate).filter((d): d is string => !!d && d !== latest))].sort();
+    checks.push({ id: 'different-dates', status: 'warning', fields: ['balance'], message: `Screenshots are from different dates (${[...older, latest].join(', ')}). Balance, P&L and drawdown values come only from the newest (${latest}); the older ones were not mixed in.` });
+  }
+  return checks;
+}
+
+/** Ambiguous readings of all screenshots, minus fields that were read clearly elsewhere. */
+export function mergeAmbiguous(pages: PageExtraction[], fields: FieldMap): AmbiguousReading[] {
+  return pages.flatMap((p) => p.ambiguous ?? []).filter((a) => !fields[a.key] || fields[a.key]!.source === 'derived' || a.reason.startsWith('Progress'));
+}
+
 export function mergePages(pages: PageExtraction[]): FieldMap {
   const out: FieldMap = {};
+  const latest = latestOfMixedDates(pages);
   for (const key of ALL_FIELDS) {
-    const all = pages.map((p) => p.fields[key]).filter((f): f is ExtractedField => !!f).sort((a, b) => b.confidence - a.confidence);
+    // Different dates: day-to-day values only from the newest screenshot(s) (undated ones stay in — a mismatch shows as a conflict).
+    const usable = latest && TIME_VARYING.has(key) ? pages.filter((p) => { const d = pageDate(p); return d == null || d === latest; }) : pages;
+    const all = usable.map((p) => p.fields[key]).filter((f): f is ExtractedField => !!f).sort((a, b) => b.confidence - a.confidence);
     if (!all.length) continue;
     const best = { ...all[0] };
     const others = all.slice(1).filter((f) => !sameValue(key, f.value, best.value));
@@ -139,15 +175,22 @@ export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } =
   if (may('drawdownThreshold') && thr() == null && bal() != null && rem() != null && fields.drawdownRemaining!.source !== 'derived')
     fields.drawdownThreshold = derived('drawdownThreshold', bal()! - rem()!, [fields.balance!, fields.drawdownRemaining!], 'Calculated: current balance − remaining drawdown');
 
-  // Profit target amount ⇄ target balance, from the starting balance (or the stated account size of an evaluation).
-  const base = num(fields.startingBalance) ?? num(fields.accountSize);
-  const baseField = fields.startingBalance ?? fields.accountSize;
+  // Net P&L from a READ starting balance and balance (25,000 → 24,934 = −66). The nominal account size is never a starting balance.
+  if (may('netPnl') && num(fields.netPnl) == null && bal() != null && num(fields.startingBalance) != null)
+    fields.netPnl = derived('netPnl', bal()! - num(fields.startingBalance)!, [fields.balance!, fields.startingBalance!], 'Calculated: current balance − starting balance');
+  // Drawdown used from a read allowance and a read remaining amount.
+  if (may('currentDrawdown') && used() == null && max() != null && rem() != null && fields.drawdownRemaining!.source !== 'derived' && rem()! <= max()! + TOL && rem()! >= 0)
+    fields.currentDrawdown = derived('currentDrawdown', max()! - rem()!, [fields.maxDrawdown!, fields.drawdownRemaining!], 'Calculated: max drawdown − remaining drawdown');
+
+  // Profit target amount ⇄ target balance, only from a READ starting balance (never the nominal account size).
+  const base = num(fields.startingBalance);
+  const baseField = fields.startingBalance;
   const tgt = num(fields.profitTarget);
   const tgtBal = num(fields.profitTargetBalance);
   if (may('profitTarget') && tgt == null && tgtBal != null && base != null && tgtBal > base)
-    fields.profitTarget = derived('profitTarget', tgtBal - base, [fields.profitTargetBalance!, baseField!], `Calculated: target balance − ${fields.startingBalance ? 'starting balance' : 'account size'}`);
+    fields.profitTarget = derived('profitTarget', tgtBal - base, [fields.profitTargetBalance!, baseField!], 'Calculated: target balance − starting balance');
   if (may('profitTargetBalance') && tgtBal == null && tgt != null && base != null)
-    fields.profitTargetBalance = derived('profitTargetBalance', base + tgt, [fields.profitTarget!, baseField!], `Calculated: ${fields.startingBalance ? 'starting balance' : 'account size'} + profit target`);
+    fields.profitTargetBalance = derived('profitTargetBalance', base + tgt, [fields.profitTarget!, baseField!], 'Calculated: starting balance + profit target');
   if (tgt != null && tgtBal != null && base != null && fields.profitTarget!.source !== 'derived' && fields.profitTargetBalance!.source !== 'derived' && !close(base + tgt, tgtBal)) {
     flag(fields.profitTarget, 0.55);
     checks.push({ id: 'target-vs-target-balance', status: 'warning', fields: ['profitTarget', 'profitTargetBalance'], message: `Profit target ${money(tgt)} + ${money(base)} ≠ target balance ${money(tgtBal)}. Check both values.` });
@@ -164,7 +207,7 @@ export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } =
     }
   }
   // used + remaining = max drawdown
-  if (max() != null && used() != null && rem() != null) {
+  if (max() != null && used() != null && rem() != null && fields.currentDrawdown!.source !== 'derived') {
     if (close(used()! + rem()!, max()!)) {
       [fields.maxDrawdown, fields.currentDrawdown, fields.drawdownRemaining].forEach((f) => boost(f));
       checks.push({ id: 'used-remaining-max', status: 'consistent', fields: ['maxDrawdown', 'currentDrawdown', 'drawdownRemaining'], message: `Drawdown used + remaining = max drawdown (${money(max()!)}).` });
@@ -213,11 +256,14 @@ export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } =
 }
 
 export function reconcile(pages: PageExtraction[]): Extraction {
-  const { fields, checks } = crossCheck(mergePages(pages));
+  const { fields, checks: cc } = crossCheck(mergePages(pages));
+  const checks = [...screenshotChecks(pages), ...cc];
+  const ambiguous = mergeAmbiguous(pages, fields);
   const sensitive = pages.flatMap((p) => p.sensitive);
   const fingerprint = sensitive.find((s) => s.fingerprint)?.fingerprint ?? null;
   return {
     fields,
+    ...(ambiguous.length ? { ambiguous } : {}),
     sensitive,
     pages: pages.map((p) => ({ page: p.page, quality: p.quality, ocrConfidence: p.ocrConfidence, wordCount: p.wordCount, fieldCount: Object.keys(p.fields).length })),
     checks,

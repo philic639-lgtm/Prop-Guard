@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, Chip, DetailTable, RiskProgress, Screen, SectionHeader, StatusBadge, ToggleRow } from '@/components/ui';
@@ -57,14 +57,16 @@ export default function AccountScreenshotImport() {
 
   const session = useImportSession();
   const { images, reading } = session;
-  const review = useImportReview(mode, target, from !== 'onboarding');
+  const [pickedProgram, setPickedProgram] = useState<string | null>(null);
+  const review = useImportReview(mode, target, from !== 'onboarding', pickedProgram);
   const { extraction, match, edited, db } = review;
   const [phase, setPhase] = useState<'add' | 'review' | 'done'>('add');
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [acks, setAcks] = useState<Record<string, boolean>>({});
   const [confirmedFields, setConfirmedFields] = useState<Set<FieldKey>>(() => new Set());
-  const [checked, setChecked] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [saveRules, setSaveRules] = useState<Partial<Record<RuleKey, boolean>>>({});
   const [useProgram, setUseProgram] = useState(true);
   const [chosenOptions, setChosenOptions] = useState<Record<string, string>>({});
@@ -93,7 +95,6 @@ export default function AccountScreenshotImport() {
   };
   const read = async () => {
     setPhase('review');
-    setChecked(false);
     await useImportSession.getState().readAll(db);
   };
 
@@ -118,6 +119,19 @@ export default function AccountScreenshotImport() {
   const suggestedName = [firmName, program?.name ?? (typeof fields.program?.value === 'string' ? fields.program.value : null)].filter(Boolean).join(' ').slice(0, 60);
   const name = nameText ?? suggestedName;
 
+  // Drawdown methodology from VERIFIED rules only (new: the program's verified version; update: a verified firm link).
+  const verifiedDrawdownType = useMemo(() => {
+    const t = mode === 'new' ? (imp?.status === 'verified' ? imp.values.drawdownType : null) : target?.firmLink?.status === 'verified' ? target.rules.drawdownType : null;
+    return t === 'static' || t === 'trailing' || t === 'eod_trailing' ? t : null;
+  }, [mode, imp, target]);
+  // Update: the account's saved floor, trailed to the new balance (never lower than what the account already knows).
+  const balanceNow = num(fields.balance?.value);
+  const accountFloor = useMemo(() => {
+    if (mode !== 'update' || !target || balanceNow == null) return null;
+    return drawdownFloor({ ...target, balance: balanceNow, highWaterMark: Math.max(target.highWaterMark, balanceNow) });
+  }, [mode, target, balanceNow]);
+  const extractionFailed = images.length > 0 && images.every((i) => i.status === 'error');
+
   const model = useMemo(
     () =>
       buildReview({
@@ -134,8 +148,12 @@ export default function AccountScreenshotImport() {
         name,
         programSize: program?.accountSize ?? null,
         programName: program?.name ?? null,
+        ambiguous: extraction.ambiguous,
+        verifiedDrawdownType,
+        accountFloor,
+        extractionFailed,
       }),
-    [mode, fields, extraction.checks, match, verifiedRules, locked, edited, confirmedFields, acks, pendingOptions, name, program],
+    [mode, fields, extraction.checks, extraction.ambiguous, match, verifiedRules, locked, edited, confirmedFields, acks, pendingOptions, name, program, verifiedDrawdownType, accountFloor, extractionFailed],
   );
 
   const duplicateHard = mode === 'new' && match.duplicate?.reason === 'same_account_number';
@@ -144,7 +162,8 @@ export default function AccountScreenshotImport() {
   const idItem = extraction.sensitive.find((s) => s.kind === 'account_id');
   const resetIssue = model.issues.find((i) => i.kind === 'reset');
   const ready = model.blockers.length === 0 && !reading && !duplicateHard && (!duplicateSoft || differentAccount);
-  const canSave = ready && checked;
+  // Confirming IS the trader's confirmation of the extracted values; only unresolved mandatory data disables it.
+  const canSave = ready && !saving;
 
   // Screenshot rule values that are plausible and confirmed — kept unless the trader turns them off.
   const ruleUpdates = () => {
@@ -153,13 +172,21 @@ export default function AccountScreenshotImport() {
     return out;
   };
 
-  const edit = (k: FieldKey, v: number | null) => {
-    session.setEdit(k, v);
-    setChecked(false);
-  };
+  const edit = (k: FieldKey, v: number | null) => session.setEdit(k, v);
 
   const confirm = () => {
-    if (!canSave) return;
+    // One save per tap: a double click never creates two accounts or applies twice.
+    if (!canSave || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      save();
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+  const save = () => {
     setSaveError(null);
     const values = { ...fields };
     // A size from the matched program is the account's size.
@@ -336,8 +363,8 @@ export default function AccountScreenshotImport() {
               {model.blockers[0]}
             </AppText>
           ) : null}
-          <Button label={readingNow ? 'Reading…' : 'Confirm & Save Account'} icon="checkmark-done" disabled={!canSave} onPress={confirm} />
-          <Button label="Add or change screenshots" variant="ghost" onPress={() => setPhase('add')} />
+          <Button label={readingNow ? 'Reading…' : saving ? 'Saving…' : mode === 'update' ? 'Confirm & Update Account' : 'Confirm & Save Account'} icon="checkmark-done" disabled={!canSave} onPress={confirm} />
+          <Button label="Add or Change Screenshots" variant="ghost" onPress={() => setPhase('add')} />
         </>
       }>
       {readingNow ? (
@@ -362,9 +389,9 @@ export default function AccountScreenshotImport() {
 
       {!readingNow && anyRead && !failed.length ? (
         <View style={styles.row} accessibilityRole="alert">
-          <Ionicons name="checkmark-circle" size={16} color={colors.positive} />
-          <AppText variant="caption" tone="positive" style={styles.flex}>
-            {images.length > 1 ? `${images.length} screenshots read.` : 'Screenshot read.'} Check the values below.
+          <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
+          <AppText variant="caption" tone="secondary" style={styles.flex}>
+            {images.length > 1 ? `${images.length} screenshots read.` : 'Screenshot read.'} Check the values below — nothing is saved until you confirm.
           </AppText>
         </View>
       ) : null}
@@ -394,14 +421,20 @@ export default function AccountScreenshotImport() {
 
       {!readingNow ? (
         <ImportReviewCard
-          title={mode === 'update' ? (target?.name ?? 'Account') : name}
+          title={mode === 'update' ? (target?.name ?? 'Account') : program?.name ?? (name || 'Imported account')}
           subtitle={subtitle}
+          state={model.state}
+          notice={model.notice}
           name={mode === 'new' && from !== 'onboarding' ? name : null}
           onName={setNameText}
-          rows={model.rows}
+          summary={model.summary}
+          details={model.details}
+          extraRows={model.rows.filter((r) => r.required && r.key !== 'balance' && r.status !== 'ok')}
           issues={model.issues}
           acks={acks}
           onAck={(id, v) => setAcks((a) => ({ ...a, [id]: v }))}
+          programChoices={mode === 'new' && !match.program ? match.alternatives.filter((a) => a.score >= (match.alternatives[0]?.score ?? 0) - 1 && a.score >= 5) : []}
+          onPickProgram={setPickedProgram}
           options={pendingOptions}
           chosen={options}
           onChoose={(id, c) => setChosenOptions((o) => ({ ...o, [id]: c }))}
@@ -412,7 +445,6 @@ export default function AccountScreenshotImport() {
 
       {!readingNow ? (
         <>
-          <ToggleRow label="These values match my dashboard" value={checked} onChange={setChecked} />
           {saveError ? (
             <AppText variant="caption" tone="danger" accessibilityRole="alert">
               {saveError}
@@ -421,7 +453,7 @@ export default function AccountScreenshotImport() {
 
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: more }} onPress={() => setMore((m) => !m)} style={styles.moreHead}>
             <AppText variant="bodyStrong" style={styles.flex}>
-              More details
+              Screenshot evidence, all fields & privacy
             </AppText>
             <Ionicons name={more ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
           </Pressable>

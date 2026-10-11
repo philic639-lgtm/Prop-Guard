@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 
-import { AppText, Card, Chip, ToggleRow } from '@/components/ui';
+import { AppText, Chip, StatusBadge, ToggleRow } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
 import type { ProgramOption } from '@/data/propFirms/types';
-import type { FieldKey, ReviewIssue, ReviewRow, ReviewSource } from '@/lib/engines/accountImport';
+import { REVIEW_STATE_LABEL, type CardStatus, type DetailRow, type FieldKey, type ReviewIssue, type ReviewRow, type ReviewSource, type ReviewState, type SummaryCard } from '@/lib/engines/accountImport';
 import { parseNum } from '@/utils/format';
 
 import { displayValue } from './ImportFieldRow';
@@ -111,16 +111,120 @@ function ValueRow({ row, onEdit, onConfirm }: { row: ReviewRow; onEdit: (k: Fiel
   );
 }
 
+type Tone = { fg: string; bg: string; border: string };
+/** Only verified firm rules are green. OCR readings are neutral until confirmed; problems are amber. */
+const TONE: Record<CardStatus, Tone> = {
+  verified: { fg: colors.positive, bg: colors.surface, border: colors.border },
+  extracted: { fg: colors.textSecondary, bg: colors.surface, border: colors.border },
+  confirmed: { fg: colors.accentBright, bg: colors.surface, border: colors.border },
+  entered: { fg: colors.accentBright, bg: colors.surface, border: colors.border },
+  calculated: { fg: colors.textSecondary, bg: colors.surface, border: colors.border },
+  missing: { fg: colors.textTertiary, bg: colors.surface, border: colors.border },
+  conflict: { fg: colors.warning, bg: colors.warningMuted, border: colors.warning },
+  review: { fg: colors.warning, bg: colors.warningMuted, border: colors.warning },
+};
+const STATE_TONE: Record<ReviewState, 'positive' | 'warning' | 'danger'> = { ready: 'positive', needs_review: 'warning', missing_info: 'warning', failed: 'danger' };
+const STATE_ICON: Record<ReviewState, 'checkmark-circle' | 'alert-circle' | 'help-circle' | 'close-circle'> = { ready: 'checkmark-circle', needs_review: 'alert-circle', missing_info: 'help-circle', failed: 'close-circle' };
+
+/** One of the four summary cards: label, amount, status and an edit control. */
+function SummaryTile({ card, onEdit, onConfirm, editThreshold }: { card: SummaryCard; onEdit: (k: FieldKey, v: number | null) => void; onConfirm: (k: FieldKey) => void; editThreshold: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+  const t = TONE[card.status];
+  // Remaining drawdown is calculated: the trader edits its input (the liquidation threshold) instead.
+  const editKey: FieldKey | null = card.editable ? card.key : card.key === 'drawdownRemaining' && editThreshold ? 'drawdownThreshold' : null;
+  const editLabel = card.key === 'drawdownRemaining' ? 'Enter threshold' : card.value == null ? 'Add' : 'Edit';
+  const save = () => {
+    const raw = text.replace(/[$,\s]/g, '');
+    setEditing(false);
+    if (!editKey) return;
+    if (!raw) return onEdit(editKey, null);
+    const n = parseNum(raw);
+    if (n != null) onEdit(editKey, n);
+  };
+  return (
+    <View style={[styles.tile, { backgroundColor: t.bg, borderColor: t.border }]} accessibilityLabel={`${card.label}: ${card.value == null ? 'missing' : displayValue(card.key, card.value)}. ${card.statusLabel}`}>
+      <AppText variant="caption" tone="secondary" numberOfLines={1}>
+        {card.label}
+      </AppText>
+      {editing ? (
+        <TextInput
+          autoFocus
+          accessibilityLabel={`Enter ${card.key === 'drawdownRemaining' ? 'liquidation threshold' : card.label}`}
+          value={text}
+          onChangeText={setText}
+          onSubmitEditing={save}
+          onBlur={save}
+          keyboardType="decimal-pad"
+          inputMode="decimal"
+          placeholder={card.key === 'drawdownRemaining' ? 'Threshold, e.g. 24270' : '0.00'}
+          placeholderTextColor={colors.textTertiary}
+          style={styles.tileInput}
+        />
+      ) : (
+        <AppText variant="heading" style={[styles.amount, card.value == null && styles.missing]} numberOfLines={1} adjustsFontSizeToFit>
+          {card.value == null ? '—' : displayValue(card.key, card.value)}
+        </AppText>
+      )}
+      <View style={styles.statusRow}>
+        {card.status === 'verified' ? <Ionicons name="shield-checkmark" size={12} color={t.fg} /> : null}
+        <AppText variant="caption" style={[styles.flex, { color: t.fg }]}>
+          {card.statusLabel}
+        </AppText>
+      </View>
+      {card.note ? (
+        <AppText variant="caption" tone="tertiary">
+          {card.note}
+        </AppText>
+      ) : null}
+      {card.choices?.length ? (
+        <View style={styles.choices}>
+          {card.choices.map((c) => (
+            <Chip key={`${c.value}-${c.screenshot}`} label={`${displayValue(card.key, c.value)} · #${c.screenshot}`} onPress={() => onEdit(card.key, c.value)} />
+          ))}
+        </View>
+      ) : null}
+      <View style={styles.choices}>
+        {card.confirmKey && !editing ? <Chip label="Looks right" icon="checkmark" onPress={() => onConfirm(card.confirmKey!)} /> : null}
+        {editKey && !editing ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${editLabel} ${card.key === 'drawdownRemaining' ? 'liquidation threshold' : card.label}`}
+            onPress={() => {
+              setText(card.key !== 'drawdownRemaining' && card.value != null ? String(card.value) : '');
+              setEditing(true);
+            }}
+            hitSlop={8}
+            style={styles.link}>
+            <AppText variant="caption" tone="accent">
+              {editLabel}
+            </AppText>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 export interface ImportReviewCardProps {
+  /** "Lucid 25K" — program or account name. */
   title: string;
   subtitle: string | null;
+  state: ReviewState;
+  notice: string | null;
   /** New accounts: editable name. */
   name: string | null;
   onName: (v: string) => void;
-  rows: ReviewRow[];
+  summary: SummaryCard[];
+  details: DetailRow[];
+  /** Required values outside the four cards (e.g. account size when no program matched). */
+  extraRows: ReviewRow[];
   issues: ReviewIssue[];
   acks: Record<string, boolean>;
   onAck: (id: string, v: boolean) => void;
+  /** Tied programs to pick from (the screenshot shows no stage, e.g. Evaluation vs Funded). */
+  programChoices: { programId: string; name: string }[];
+  onPickProgram: (id: string) => void;
   options: ProgramOption[];
   chosen: Record<string, string>;
   onChoose: (id: string, choice: string) => void;
@@ -128,22 +232,53 @@ export interface ImportReviewCardProps {
   onConfirm: (k: FieldKey) => void;
 }
 
-/** The essential account values — detected or required only — each with its source. */
+/** Compact review: header + status, smart notice, four summary cards, collapsible details. */
 export function ImportReviewCard(p: ImportReviewCardProps) {
+  const { width } = useWindowDimensions();
+  const [open, setOpen] = useState(false);
+  const oneColumn = width < 360;
   return (
-    <Card style={styles.card}>
+    <View style={styles.card}>
       <View style={styles.gap}>
+        <AppText variant="caption" tone="secondary">
+          Review Imported Account
+        </AppText>
         {p.name != null ? (
           <TextInput accessibilityLabel="Account name" value={p.name} onChangeText={p.onName} placeholder="Account name" placeholderTextColor={colors.textTertiary} style={styles.name} maxLength={60} />
         ) : (
           <AppText variant="title">{p.title}</AppText>
         )}
         {p.subtitle ? (
-          <AppText variant="caption" tone="secondary">
+          <AppText variant="caption" tone="tertiary">
             {p.subtitle}
           </AppText>
         ) : null}
+        <View style={styles.rowHead}>
+          <StatusBadge label={REVIEW_STATE_LABEL[p.state]} tone={STATE_TONE[p.state]} icon={STATE_ICON[p.state]} size="sm" />
+        </View>
       </View>
+
+      {p.notice ? (
+        <View style={styles.notice} accessibilityRole="alert">
+          <Ionicons name="alert-circle-outline" size={16} color={colors.warning} />
+          <AppText variant="caption" style={[styles.flex, { color: colors.warning }]}>
+            {p.notice}
+          </AppText>
+        </View>
+      ) : null}
+
+      {p.programChoices.length > 1 ? (
+        <View style={styles.gap}>
+          <AppText variant="caption" tone="warning">
+            Which plan is this? The screenshot does not show it — your choice loads that plan’s verified rules.
+          </AppText>
+          <View style={styles.choices}>
+            {p.programChoices.map((c) => (
+              <Chip key={c.programId} label={c.name} onPress={() => p.onPickProgram(c.programId)} />
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {p.options.map((o) => (
         <View key={o.id} style={styles.gap}>
@@ -158,9 +293,17 @@ export function ImportReviewCard(p: ImportReviewCardProps) {
         </View>
       ))}
 
-      {p.rows.map((r) => (
+      {p.extraRows.map((r) => (
         <ValueRow key={r.key} row={r} onEdit={p.onEdit} onConfirm={p.onConfirm} />
       ))}
+
+      <View style={styles.grid}>
+        {p.summary.map((c) => (
+          <View key={c.key} style={oneColumn ? styles.full : styles.half}>
+            <SummaryTile card={c} onEdit={p.onEdit} onConfirm={p.onConfirm} editThreshold />
+          </View>
+        ))}
+      </View>
 
       {p.issues.length ? (
         <View style={[styles.gap, styles.issues]}>
@@ -178,12 +321,52 @@ export function ImportReviewCard(p: ImportReviewCardProps) {
           ))}
         </View>
       ) : null}
-    </Card>
+
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen((o) => !o)} style={styles.detailsHead}>
+        <AppText variant="bodyStrong" style={styles.flex}>
+          Additional Account Details
+        </AppText>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
+      </Pressable>
+      {open ? (
+        <View style={styles.details}>
+          {p.details.map((d) => (
+            <View key={d.key} style={styles.detailRow}>
+              <View style={styles.rowHead}>
+                <AppText variant="caption" tone="secondary" style={styles.flex}>
+                  {d.label}
+                </AppText>
+                <AppText variant="bodyStrong" style={styles.num}>
+                  {d.value}
+                </AppText>
+              </View>
+              {d.note ? (
+                <AppText variant="caption" tone="tertiary">
+                  {d.note}
+                </AppText>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: { gap: spacing.md },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -spacing.xs / 2, rowGap: spacing.sm },
+  half: { width: '50%', paddingHorizontal: spacing.xs / 2 },
+  full: { width: '100%', paddingHorizontal: spacing.xs / 2 },
+  tile: { flex: 1, gap: 4, padding: spacing.sm, borderRadius: radius.md, borderWidth: 1, minWidth: 0 },
+  amount: { fontVariant: ['tabular-nums'] },
+  tileInput: { color: colors.text, fontSize: 18, fontWeight: '700', paddingVertical: 2, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.accent, minWidth: 0 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  notice: { flexDirection: 'row', gap: spacing.xs, alignItems: 'center', padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.warningMuted },
+  detailsHead: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  details: { gap: spacing.sm },
+  detailRow: { gap: 2 },
+  num: { fontVariant: ['tabular-nums'] },
   gap: { gap: spacing.xs },
   flex: { flex: 1 },
   name: { color: colors.text, fontSize: 20, fontWeight: '700', paddingVertical: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderStrong },

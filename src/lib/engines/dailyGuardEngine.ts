@@ -41,6 +41,8 @@ export interface DailyGuard {
   dailyPnlSource: 'journal' | 'unknown';
   /** Set when the balance / floor come from a confirmed screenshot (not a live connection). */
   snapshot: { at: string; ageHours: number; stale: boolean; missing: string[] } | null;
+  /** Prop account whose drawdown floor is not known — no buffer is shown or used. */
+  drawdownUnknown: boolean;
 }
 
 export interface DailyGuardInput {
@@ -135,6 +137,9 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
   }
   if (cooldown.active) cautionReasons.push('Cooldown active after a loss.');
   if (losses >= 2 && stopReasons.length === 0) cautionReasons.push(`${losses} losses in a row.`);
+  // Unknown drawdown floor (no verified allowance, no confirmed threshold): never treated as room to lose.
+  const drawdownUnknown = account.kind === 'prop' && buffer == null;
+  if (drawdownUnknown) cautionReasons.push('Drawdown floor unknown — additional account information required. Add the liquidation threshold (MLL / NLL) before relying on risk room.');
   if (buffer != null && buffer > 0 && buffer < rules.maxRiskPerTrade * 2) {
     cautionReasons.push('Drawdown buffer is less than two full-risk trades.');
   }
@@ -187,6 +192,7 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
     consecutiveLosses: losses,
     cooldown,
     drawdownBuffer: buffer,
+    drawdownUnknown,
     personalDailyStop,
     personalRoom: personalDailyStop != null ? Math.max(0, personalDailyStop - riskUsed) : null,
     firmDailyLimit: accountDaily,

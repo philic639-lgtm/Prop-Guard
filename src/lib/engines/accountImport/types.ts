@@ -145,9 +145,24 @@ export interface SensitiveItem {
   fingerprint: string | null;
 }
 
+/**
+ * A value found next to a label but NOT assigned to it, with the reason —
+ * e.g. "−$66.00" under "Profit target" (a loss is never a target), or the
+ * "−$66 / $1,250" progress part of a target card. Shown to the trader as
+ * "needs review", never used as the field's value.
+ */
+export interface AmbiguousReading {
+  key: FieldKey;
+  value: number;
+  evidence: string;
+  reason: string;
+  page: number;
+}
+
 export interface PageExtraction {
   page: number;
   fields: FieldMap;
+  ambiguous?: AmbiguousReading[];
   sensitive: SensitiveItem[];
   quality: 'good' | 'fair' | 'poor';
   ocrConfidence: number;
@@ -158,6 +173,8 @@ export interface PageExtraction {
 
 export interface Extraction {
   fields: FieldMap;
+  /** Values next to a label that were not assigned (see `AmbiguousReading`). */
+  ambiguous?: AmbiguousReading[];
   sensitive: SensitiveItem[];
   pages: { page: number; quality: PageExtraction['quality']; ocrConfidence: number; wordCount: number; fieldCount: number }[];
   /** Cross-check results shown to the trader. */

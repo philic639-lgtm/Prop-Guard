@@ -154,9 +154,9 @@ export default function HomeScreen() {
           <MetricTile label="Account balance" value={money(account.balance)} />
           <MetricTile
             label="Drawdown remaining"
-            value={money(guard.drawdownBuffer)}
-            sub={drawdownFloor(account) != null ? `Floor ${money(drawdownFloor(account))}` : undefined}
-            tone={guard.drawdownBuffer != null && guard.drawdownBuffer < 500 ? 'warning' : 'primary'}
+            value={guard.drawdownUnknown ? 'Unknown' : money(guard.drawdownBuffer)}
+            sub={guard.drawdownUnknown ? 'Additional account information required' : drawdownFloor(account) != null ? `Floor ${money(drawdownFloor(account))}` : undefined}
+            tone={guard.drawdownUnknown || (guard.drawdownBuffer != null && guard.drawdownBuffer < 500) ? 'warning' : 'primary'}
           />
           {guard.dailyPnlSource === 'unknown' ? (
             <MetricTile label="Daily P&L" value="Unknown" sub="Not in the snapshot" />

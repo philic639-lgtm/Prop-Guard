@@ -1,6 +1,6 @@
 import type { Account, AccountImportRecord, AccountImportState } from '@/types/domain';
 
-import { drawdownFloor, maxDrawdownAmount, ruleFloor } from '../propRuleEngine';
+import { drawdownFloor, maxDrawdownAmount, observedFloor, ruleFloor } from '../propRuleEngine';
 import { DRAWDOWN_TYPES, type ExtractedField, type FieldKey, type FieldSource } from './types';
 
 /**
@@ -143,6 +143,11 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
     else if (!matches) notes.push(`The firm shows a threshold of $${firmFloor.toLocaleString('en-US')}; the account’s rules calculate $${calculated.toLocaleString('en-US')}. Check the drawdown rules or the screenshot.`);
   }
 
+  // No threshold on this screenshot: the account's last confirmed floor stays (never silently dropped
+  // to a lower, rule-only floor); the rule trail can still raise it via drawdownFloor.
+  const keptFloor = firmFloor ?? (c.reset ? null : observedFloor(account));
+  if (firmFloor == null && keptFloor != null) notes.push(`No liquidation threshold on this screenshot — the account’s last confirmed floor ($${keptFloor.toLocaleString('en-US')}) is kept.`);
+
   const record: AccountImportRecord = {
     id,
     at: c.confirmedAt,
@@ -163,9 +168,9 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
     reported: {
       at: c.confirmedAt,
       balance,
-      drawdownThreshold: firmFloor,
+      drawdownThreshold: keptFloor,
       // Remaining cushion = balance − current floor (the dashboard's own number when it agrees).
-      drawdownRemaining: firmFloor != null ? Math.round((bal - firmFloor) * 100) / 100 : reportedRemaining,
+      drawdownRemaining: keptFloor != null ? Math.round((bal - keptFloor) * 100) / 100 : reportedRemaining,
       maxDrawdown: n(c.values.maxDrawdown),
       dailyLossLimit: n(c.values.dailyLossLimit),
       profitTarget: n(c.values.profitTarget),

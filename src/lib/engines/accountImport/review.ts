@@ -1,5 +1,5 @@
 import type { ImportMatch } from './match';
-import { LOW_CONFIDENCE, type ExtractedField, type FieldKey, type FieldMap, type ImportCheck } from './types';
+import { DRAWDOWN_TYPE_LABEL, LOW_CONFIDENCE, type AmbiguousReading, type ExtractedField, type FieldKey, type FieldMap, type ImportCheck } from './types';
 
 /**
  * The trader-facing review: a few essential rows, each with WHERE its value
@@ -65,9 +65,77 @@ export interface ReviewInput {
   /** Account size from the matched program, when one is loaded. */
   programSize: number | null;
   programName: string | null;
+  /** Values found next to a label but not assigned (e.g. a loss next to "Profit target"). */
+  ambiguous?: AmbiguousReading[];
+  /** Drawdown methodology from the VERIFIED program rules (new) or the account (update). */
+  verifiedDrawdownType?: 'eod_trailing' | 'trailing' | 'static' | null;
+  /** Update: the account's current floor from its saved, confirmed configuration. */
+  accountFloor?: number | null;
+  /** No screenshot could be read and nothing was entered. */
+  extractionFailed?: boolean;
 }
 
+/** Status of a summary card. Only `verified` is ever shown as verified (green); OCR readings never are. */
+export type CardStatus = 'verified' | 'extracted' | 'calculated' | 'entered' | 'confirmed' | 'missing' | 'conflict' | 'review';
+export const CARD_STATUS_LABEL: Record<CardStatus, string> = {
+  verified: 'Verified',
+  extracted: 'Extracted — needs confirmation',
+  calculated: 'Calculated from verified inputs',
+  entered: 'Entered by you',
+  confirmed: 'Confirmed by you',
+  missing: 'Missing',
+  conflict: 'Conflicting information',
+  review: 'Needs review',
+};
+
+export interface SummaryCard {
+  key: 'balance' | 'drawdownRemaining' | 'dailyLossLimit' | 'profitTarget';
+  label: string;
+  value: number | null;
+  status: CardStatus;
+  /** Overrides the default status label (e.g. "Calculated from screenshot values"). */
+  statusLabel: string;
+  note?: string;
+  /** The trader may type a value (never verified rules). */
+  editable: boolean;
+  /** Counted in "N fields need review". */
+  needsReview: boolean;
+  choices?: { value: number; screenshot: number }[];
+  /** The underlying field to confirm with "Looks right". */
+  confirmKey?: FieldKey;
+}
+
+export interface DetailRow {
+  key: string;
+  label: string;
+  value: string;
+  note?: string;
+}
+
+/** Remaining drawdown and how it was (or could not be) determined. */
+export interface DrawdownState {
+  status: 'available' | 'unavailable' | 'breached';
+  remaining: number | null;
+  threshold: number | null;
+  basis: 'screenshot' | 'calculated' | 'account' | 'verified_static' | null;
+  note: string;
+}
+
+export type ReviewState = 'ready' | 'needs_review' | 'missing_info' | 'failed';
+export const REVIEW_STATE_LABEL: Record<ReviewState, string> = { ready: 'Ready to confirm', needs_review: 'Needs review', missing_info: 'Missing information', failed: 'Extraction failed' };
+
+export const ADDITIONAL_INFO_REQUIRED = 'Additional account information required';
+
 export interface ReviewModel {
+  /** Header status. */
+  state: ReviewState;
+  /** "2 fields need review: Profit Target and Remaining Drawdown." (null when nothing does). */
+  notice: string | null;
+  /** The four summary cards: balance, remaining drawdown, daily loss limit, profit target. */
+  summary: SummaryCard[];
+  /** "Additional Account Details". */
+  details: DetailRow[];
+  drawdown: DrawdownState;
   rows: ReviewRow[];
   issues: ReviewIssue[];
   /** Why "Confirm & Save Account" is disabled (empty = ready, apart from the final confirmation). */
@@ -188,5 +256,155 @@ export function buildReview(input: ReviewInput): ReviewModel {
   for (const o of input.missingOptions) blockers.push(`Choose the ${o.label} option.`);
   for (const i of issues) if (!input.acks[i.id]) blockers.push(i.kind === 'reset' ? 'Confirm the reset or correct the liquidation threshold.' : 'Resolve the item marked “Needs your attention”.');
 
-  return { rows, issues, blockers: [...new Set(blockers)], saveableRules, rejected };
+  // Different accounts in one import: never saved together.
+  if (input.checks.some((c) => c.id === 'different-accounts')) blockers.push('Remove the screenshots of the other account — import one account at a time.');
+
+  const drawdown = drawdownState(input, bal, thr);
+  const summary = summaryCards(input, rows, drawdown);
+  const details = detailRows(input, rows, drawdown);
+  const review = summary.filter((c) => c.needsReview).map((c) => c.label);
+  const notice = review.length ? `${review.length} field${review.length > 1 ? 's' : ''} need${review.length > 1 ? '' : 's'} review: ${review.length > 1 ? `${review.slice(0, -1).join(', ')} and ${review[review.length - 1]}` : review[0]}.` : null;
+  const uniqueBlockers = [...new Set(blockers)];
+  const hasData = Object.values(fields).some((f) => f && f.source !== 'derived');
+  const requiredMissing = rows.some((r) => r.required && r.status === 'missing') || input.missingOptions.length > 0;
+  const state: ReviewState =
+    input.extractionFailed && !hasData ? 'failed' : requiredMissing ? 'missing_info' : uniqueBlockers.length || review.length ? 'needs_review' : 'ready';
+
+  return { state, notice, summary, details, drawdown, rows, issues: issues.filter((i) => i.id !== 'c:different-accounts'), blockers: uniqueBlockers, saveableRules, rejected };
+}
+
+const usd = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * Remaining drawdown, in this order — never from the account size or the plan name:
+ * 1. balance − liquidation threshold, both read / entered for this account;
+ * 2. a remaining amount read on the screenshot;
+ * 3. update: balance − the account's saved floor;
+ * 4. STATIC drawdown (verified rule): threshold = read starting balance − verified allowance;
+ * otherwise unavailable — "Additional account information required".
+ * Trailing drawdowns need the current threshold (it depends on the high-water mark).
+ */
+function drawdownState(input: ReviewInput, bal: number | null, thr: number | null): DrawdownState {
+  const f = input.fields;
+  const out = (status: DrawdownState['status'], remaining: number | null, threshold: number | null, basis: DrawdownState['basis'], note: string): DrawdownState => ({ status, remaining: remaining == null ? null : Math.round(remaining * 100) / 100, threshold, basis, note });
+  const breachedOr = (rem: number, threshold: number | null, basis: DrawdownState['basis'], note: string) =>
+    rem < 0 ? out('breached', rem, threshold, basis, 'The balance is below the liquidation threshold — the account may be breached, or a value is misread. Check both.') : out('available', rem, threshold, basis, note);
+  if (bal != null && thr != null) return breachedOr(bal - thr, thr, 'calculated', `Balance ${usd(bal)} − liquidation threshold ${usd(thr)}.`);
+  const remRead = f.drawdownRemaining && f.drawdownRemaining.source !== 'derived' && typeof f.drawdownRemaining.value === 'number' ? f.drawdownRemaining.value : null;
+  if (remRead != null) return breachedOr(remRead, null, 'screenshot', 'Read on your screenshot.');
+  if (bal != null && input.accountFloor != null) return breachedOr(bal - input.accountFloor, input.accountFloor, 'account', `Balance − your account’s saved floor ${usd(input.accountFloor)}.`);
+  const start = f.startingBalance && f.startingBalance.source !== 'derived' && typeof f.startingBalance.value === 'number' ? f.startingBalance.value : null;
+  const allowance = input.verifiedRules.maxDrawdown;
+  if (input.verifiedDrawdownType === 'static' && bal != null && start != null && allowance != null)
+    return breachedOr(bal - (start - allowance), start - allowance, 'verified_static', `Static drawdown (verified rule): threshold = starting balance ${usd(start)} − ${usd(allowance)}.`);
+  const why =
+    bal == null
+      ? 'Enter the current balance first.'
+      : input.verifiedDrawdownType === 'eod_trailing' || input.verifiedDrawdownType === 'trailing'
+        ? 'Your plan’s drawdown trails your highest balance, so the threshold cannot be worked out from the balance alone. Add a screenshot showing the liquidation threshold (MLL / NLL), or enter it.'
+        : 'Add a screenshot that shows the liquidation threshold (MLL / NLL / minimum balance), or enter it.';
+  return out('unavailable', null, null, null, `${ADDITIONAL_INFO_REQUIRED}. ${why}`);
+}
+
+function cardFromRow(r: ReviewRow | undefined, key: SummaryCard['key'], label: string): SummaryCard {
+  if (!r || r.value == null || r.status === 'missing')
+    return { key, label, value: null, status: 'missing', statusLabel: CARD_STATUS_LABEL.missing, editable: true, needsReview: !!r?.required, ...(r?.required ? { note: 'Required — enter it from your dashboard.' } : {}) };
+  const value = typeof r.value === 'number' ? r.value : null;
+  if (r.status === 'conflict')
+    return { key, label, value, status: 'conflict', statusLabel: CARD_STATUS_LABEL.conflict, editable: true, needsReview: true, note: 'Your screenshots disagree — pick the right value.', choices: (r.choices ?? []).filter((c): c is { value: number; screenshot: number } => typeof c.value === 'number') };
+  if (r.status === 'uncertain') return { key, label, value, status: 'review', statusLabel: 'Needs review — unclear reading', editable: true, needsReview: true, confirmKey: r.key, note: 'Compare with your dashboard, then tap “Looks right” or edit.' };
+  const status: CardStatus = r.source === 'verified_rule' ? 'verified' : r.source === 'edited' ? 'entered' : r.source === 'calculated' ? 'calculated' : 'extracted';
+  return { key, label, value, status, statusLabel: status === 'extracted' && r.screenshot ? `Extracted — needs confirmation (screenshot ${r.screenshot})` : CARD_STATUS_LABEL[status], editable: status !== 'verified', needsReview: false, ...(r.note && status === 'verified' && r.note.startsWith('Your screenshot') ? { note: r.note } : {}) };
+}
+
+function summaryCards(input: ReviewInput, rows: ReviewRow[], dd: DrawdownState): SummaryCard[] {
+  const row = (k: FieldKey) => rows.find((r) => r.key === k);
+  const amb = (k: FieldKey) => (input.ambiguous ?? []).filter((a) => a.key === k);
+  const balance = cardFromRow(row('balance'), 'balance', 'Current Balance');
+  if (input.confirmedFields.has('balance') && balance.status === 'extracted') Object.assign(balance, { status: 'confirmed', statusLabel: CARD_STATUS_LABEL.confirmed });
+
+  const thrRow = row('drawdownThreshold');
+  const fromVerified = dd.basis === 'verified_static' || (dd.basis === 'calculated' && thrRow?.source === 'edited' && (row('balance')?.source === 'edited' || input.confirmedFields.has('balance')));
+  const remaining: SummaryCard =
+    dd.status === 'unavailable'
+      ? { key: 'drawdownRemaining', label: 'Remaining Drawdown', value: null, status: 'missing', statusLabel: ADDITIONAL_INFO_REQUIRED, editable: false, needsReview: true, note: dd.note.replace(`${ADDITIONAL_INFO_REQUIRED}. `, '') }
+      : {
+          key: 'drawdownRemaining',
+          label: 'Remaining Drawdown',
+          value: dd.remaining,
+          status: dd.status === 'breached' || thrRow?.status === 'conflict' ? 'conflict' : thrRow?.status === 'uncertain' ? 'review' : dd.basis === 'screenshot' ? 'extracted' : 'calculated',
+          statusLabel:
+            dd.status === 'breached'
+              ? 'Check values — below threshold'
+              : thrRow?.status === 'conflict'
+                ? CARD_STATUS_LABEL.conflict
+                : thrRow?.status === 'uncertain'
+                  ? 'Needs review — unclear threshold'
+                  : dd.basis === 'screenshot'
+                    ? CARD_STATUS_LABEL.extracted
+                    : dd.basis === 'account'
+                      ? 'Calculated from your saved account'
+                      : fromVerified
+                        ? CARD_STATUS_LABEL.calculated
+                        : 'Calculated from extracted values',
+          editable: false,
+          needsReview: dd.status === 'breached' || thrRow?.status === 'conflict' || thrRow?.status === 'uncertain',
+          note: dd.note,
+          ...(thrRow?.status === 'uncertain' ? { confirmKey: 'drawdownThreshold' as FieldKey } : {}),
+        };
+
+  const ruleCard = (k: 'dailyLossLimit' | 'profitTarget', label: string, missingNote: string): SummaryCard => {
+    const r = row(k);
+    const c = cardFromRow(r, k, label);
+    const a = amb(k);
+    if (c.status === 'missing') {
+      if (a.length) return { ...c, status: 'review', statusLabel: 'Missing — unclear value nearby', needsReview: true, note: a[0].reason };
+      return { ...c, note: missingNote };
+    }
+    if (input.confirmedFields.has(k) && c.status === 'extracted') return { ...c, status: 'confirmed', statusLabel: CARD_STATUS_LABEL.confirmed };
+    return c;
+  };
+  return [
+    balance,
+    remaining,
+    ruleCard('dailyLossLimit', 'Daily Loss Limit', 'Not shown — add it if your plan has one.'),
+    ruleCard('profitTarget', 'Profit Target', 'Not shown — add it if your plan has one.'),
+  ];
+}
+
+function detailRows(input: ReviewInput, rows: ReviewRow[], dd: DrawdownState): DetailRow[] {
+  const f = input.fields;
+  const out: DetailRow[] = [];
+  const val = (k: FieldKey) => (f[k] && typeof f[k]!.value === 'number' ? (f[k]!.value as number) : null);
+  const tag = (k: FieldKey) => (f[k]?.source === 'derived' ? 'Calculated' : f[k]?.source === 'user' || input.edited.has(k) ? 'Entered by you' : f[k] ? `Extracted (screenshot ${f[k]!.page + 1})` : undefined);
+  const money = (k: FieldKey, label: string, missing = 'Not shown') => {
+    const v = val(k);
+    out.push({ key: k, label, value: v == null ? missing : usd(v), ...(v != null ? { note: tag(k) } : {}) });
+  };
+  money('startingBalance', 'Starting balance');
+  money('netPnl', 'Net P&L');
+  money('dailyPnl', 'Today’s P&L');
+  const type = (typeof f.drawdownType?.value === 'string' ? f.drawdownType.value : null) as keyof typeof DRAWDOWN_TYPE_LABEL | null;
+  const verifiedType = input.verifiedDrawdownType ?? null;
+  out.push({
+    key: 'drawdownType',
+    label: 'Drawdown methodology',
+    value: verifiedType ? DRAWDOWN_TYPE_LABEL[verifiedType] : type && DRAWDOWN_TYPE_LABEL[type] ? DRAWDOWN_TYPE_LABEL[type] : 'Not shown',
+    ...(verifiedType ? { note: type && type !== verifiedType ? `Verified firm rule (screenshot says ${DRAWDOWN_TYPE_LABEL[type] ?? type})` : 'Verified firm rule' } : type ? { note: tag('drawdownType') } : {}),
+  });
+  const thr = dd.threshold ?? val('drawdownThreshold');
+  out.push({ key: 'drawdownThreshold', label: 'Failure threshold (liquidation balance)', value: thr == null ? 'Not shown' : usd(thr), ...(thr != null ? { note: dd.basis === 'account' ? 'Your saved account' : dd.basis === 'verified_static' ? 'Calculated from verified rule' : tag('drawdownThreshold') } : {}) });
+  const maxRow = rows.find((r) => r.key === 'maxDrawdown');
+  const allowance = typeof maxRow?.value === 'number' ? maxRow.value : null;
+  out.push({ key: 'maxDrawdown', label: 'Max drawdown allowance', value: allowance == null ? 'Not shown' : usd(allowance), ...(maxRow ? { note: maxRow.source === 'verified_rule' ? 'Verified firm rule' : tag('maxDrawdown') } : {}) });
+  // Drawdown used: read, or allowance − remaining only when the remaining is known and within the allowance.
+  const usedRead = val('currentDrawdown');
+  const used = usedRead ?? (allowance != null && dd.remaining != null && dd.status === 'available' && dd.remaining <= allowance ? allowance - dd.remaining : null);
+  out.push({ key: 'currentDrawdown', label: 'Drawdown used', value: used == null ? 'Not available' : usd(used), note: used == null ? 'Needs the allowance and the remaining drawdown' : usedRead != null ? tag('currentDrawdown') : 'Calculated: allowance − remaining (meaningful only while the threshold has not stopped trailing)' });
+  // Remaining daily loss: only from today's P&L on the screenshot.
+  const dll = rows.find((r) => r.key === 'dailyLossLimit');
+  const today = val('dailyPnl');
+  if (typeof dll?.value === 'number' && today != null)
+    out.push({ key: 'dailyLossRemaining', label: 'Daily loss remaining', value: usd(Math.max(0, dll.value + Math.min(0, today))), note: 'Daily loss limit − today’s loss shown (open positions may not be included)' });
+  return out;
 }

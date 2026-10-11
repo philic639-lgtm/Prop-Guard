@@ -90,7 +90,8 @@ describe('LucidFlex 25K — extraction from real OCR', () => {
     expect(v(x, 'maxDrawdown')).toBeUndefined(); // "MLL $24,270" is a level, not a $24,270 allowance
     expect(v(x, 'dailyLossLimit')).toBe(600);
     expect(v(x, 'profitTarget')).toBe(1_250);
-    expect(v(x, 'profitTargetBalance')).toBe(26_250);
+    // Not calculated: the nominal account size is never proof of the starting balance.
+    expect(v(x, 'profitTargetBalance')).toBeUndefined();
     expect(v(x, 'netPnl')).toBe(-66);
     expect(v(x, 'tradingDays')).toBe(5);
     expect(v(x, 'drawdownType')).toBe('eod_trailing');
@@ -191,12 +192,21 @@ describe('LucidFlex 25K — saved account and dashboard numbers', () => {
 });
 
 describe('multiple / repeated screenshots', () => {
-  it('conflicting screenshots (older balance) are flagged for review, never silently merged', () => {
-    const x = run(overview, older);
-    const seen = (k: FieldKey) => [x.fields[k]!.value, ...(x.fields[k]!.alternatives ?? []).map((a) => a.value)];
+  it('F: screenshots from different dates are never mixed — day-to-day values from the newest, with a visible warning', () => {
+    const x = run(older, overview);
+    expect(v(x, 'statementDate')).toBe('2026-10-10');
+    expect(x.fields.balance).toMatchObject({ value: 24_934 });
+    expect(x.fields.balance!.alternatives).toBeUndefined();
+    expect(v(x, 'tradingDays')).toBe(5);
+    expect(v(x, 'netPnl')).toBe(-66);
+    expect(x.checks.find((c) => c.id === 'different-dates')).toMatchObject({ status: 'warning' });
+    expect(x.checks.find((c) => c.id === 'different-dates')!.message).toMatch(/2026-10-09, 2026-10-10/);
+    // Same-date screenshots that disagree are still a conflict for the trader.
+    const sameDayOlderBalance = { ...older, lines: (older as OcrPage).lines.map((l) => (l.text.includes('Oct 9') ? { ...l, words: l.words.map((w) => (w.text === '9,' ? { ...w, text: '10,' } : w)), text: l.text.replace('Oct 9', 'Oct 10') } : l)) };
+    const y = run(overview, sameDayOlderBalance);
+    const seen = (k: FieldKey) => [y.fields[k]!.value, ...(y.fields[k]!.alternatives ?? []).map((a) => a.value)];
     expect(seen('balance')).toEqual(expect.arrayContaining([24_934, 24_500]));
-    expect(seen('tradingDays')).toEqual(expect.arrayContaining([5, 4]));
-    expect(x.checks.filter((c) => c.status === 'conflict').map((c) => c.id)).toEqual(expect.arrayContaining(['conflict:balance', 'conflict:tradingDays']));
+    expect(y.checks.filter((c) => c.status === 'conflict').map((c) => c.id)).toEqual(expect.arrayContaining(['conflict:balance', 'conflict:tradingDays']));
   });
 
   it('the same screenshot twice agrees (no conflict) and re-applying it is idempotent', () => {

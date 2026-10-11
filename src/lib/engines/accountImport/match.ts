@@ -104,7 +104,7 @@ function scoreProgram(p: PropFirmProgram, text: string, size: number | null, sta
 
 export function matchImport(
   x: Extraction,
-  ctx: { db: FirmRulesDatabase; accounts: Account[]; target?: Account | null; today: string; mode: 'new' | 'update' },
+  ctx: { db: FirmRulesDatabase; accounts: Account[]; target?: Account | null; today: string; mode: 'new' | 'update'; /** The trader picked the program (e.g. Evaluation vs Funded when the screenshot shows no stage). */ programId?: string | null },
 ): ImportMatch {
   const conflicts: ImportConflict[] = [];
   const firmName = typeof val(x, 'firm') === 'string' ? (val(x, 'firm') as string) : null;
@@ -122,8 +122,10 @@ export function matchImport(
       .map((p) => scoreProgram(p, text, size, stage))
       .filter((s) => s.score > 0)
       .sort((a, b) => b.score - a.score);
-    if (scored.length && (scored.length === 1 || scored[0].score > scored[1].score) && scored[0].score >= 5) program = scored[0];
-    alternatives = scored.filter((s) => s !== program).slice(0, 3);
+    const picked = ctx.programId ? scored.find((s) => s.programId === ctx.programId) : undefined;
+    if (picked) program = { ...picked, reasons: [...picked.reasons, 'Chosen by you'] };
+    else if (scored.length && (scored.length === 1 || scored[0].score > scored[1].score) && scored[0].score >= 5) program = scored[0];
+    alternatives = scored.filter((s) => s.programId !== program?.programId).slice(0, 3);
   }
 
   // Purchase options the screenshot can tell us (only DLL on/off today).

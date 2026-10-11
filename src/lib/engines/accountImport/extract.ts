@@ -1,5 +1,5 @@
 import { resolveLevels } from './reconcile';
-import type { DateField, ExtractedField, FieldKey, FieldMap, MoneyField, OcrBox, OcrLine, OcrPage, OcrWord, PageExtraction, SensitiveItem, TextField } from './types';
+import { FIELD_LABEL, type AmbiguousReading, type DateField, type ExtractedField, type FieldKey, type FieldMap, type MoneyField, type OcrBox, type OcrLine, type OcrPage, type OcrWord, type PageExtraction, type SensitiveItem, type TextField } from './types';
 
 /**
  * Label- and layout-aware extraction from one OCR page.
@@ -75,7 +75,19 @@ const parseCount = (raw: string): number | null => {
   const m = /^(\d{1,4})(?:\/\d{1,4})?$/.exec(raw.trim().replace(/[,;:.]+$/, ''));
   return m ? Number(m[1]) : null;
 };
-const SIGNED = new Set<FieldKey>(['netPnl', 'dailyPnl']);
+/**
+ * Signs. P&L and remaining drawdown keep their sign (a negative remaining
+ * drawdown is a breached account). Loss limits and drawdown used are often
+ * printed as "−$600": kept as the amount, but marked for confirmation.
+ * Every other money field is never negative — a negative reading next to its
+ * label (e.g. "−$66.00" under "Profit target") is a different figure, so it
+ * is NOT assigned: it becomes an ambiguous reading for the trader.
+ */
+const SIGNED = new Set<FieldKey>(['netPnl', 'dailyPnl', 'drawdownRemaining']);
+const LOSS_AMOUNT = new Set<FieldKey>(['maxDrawdown', 'dailyLossLimit', 'currentDrawdown']);
+/** Fields whose card can show "progress / limit" ("−$66 / $1,250"): the LIMIT is the value. */
+const LIMIT_PAIR = new Set<FieldKey>(['profitTarget', 'profitTargetBalance', 'maxDrawdown', 'dailyLossLimit']);
+const NEGATIVE_LOSS_CONFIDENCE = 0.62;
 const DATES = new Set<FieldKey>(['startDate', 'statementDate']);
 
 // ───────────────────────────── Tokens ─────────────────────────────
@@ -275,6 +287,37 @@ const CONNECTORS = new Set(['', '$', 'usd', ':', '-', '—', '=', '|']);
 /** Separators and "ⓘ" info icons, which OCR reads as "(©", "@", "(0", "®"… */
 const isFiller = (t: string) => CONNECTORS.has(normWord(t)) || /^[(\[{]?[©@®ⓘ*][)\]}]?$/.test(t) || /^[(\[{][0oOi]?[)\]}]?$/.test(t);
 
+/**
+ * The money value for `key` starting at `words[i]`, with its sign policy and
+ * "progress / limit" pairs ("−$66.00 / $1,250.00", "$400 of $600"): for a
+ * limit field the LIMIT is the value and the progress part is reported as
+ * ambiguous. `used` = word indices consumed.
+ */
+type MoneyRead = { value: number; factor: number; used: number[]; ambiguous?: { value: number; reason: string } } | { rejected: { value: number; reason: string }; used: number[] } | null;
+function readMoney(key: FieldKey, words: OcrWord[], i: number, label: string): MoneyRead {
+  const w = words[i];
+  if (!w) return null;
+  let first = parseMoney(w.text, key === 'accountSize');
+  let limit: number | null = null;
+  let used = [i];
+  const glued = /^(.+?)\/(.+)$/.exec(w.text);
+  if (first == null && glued && LIMIT_PAIR.has(key)) {
+    first = parseMoney(glued[1]);
+    limit = parseMoney(glued[2]);
+  } else if (first != null && LIMIT_PAIR.has(key) && words[i + 1] && /^(\/|of)$/i.test(words[i + 1].text) && words[i + 2]) {
+    limit = parseMoney(words[i + 2].text);
+    if (limit != null) used = [i, i + 1, i + 2];
+  }
+  if (first == null) return null;
+  if (limit != null && limit > 0) {
+    return { value: limit, factor: 0.95, used, ambiguous: { value: first, reason: `Progress shown with ${label} (${fmtMoney(first)} of ${fmtMoney(limit)}) — not used as the ${label}.` } };
+  }
+  if (first >= 0 || SIGNED.has(key)) return { value: first, factor: 1, used };
+  if (LOSS_AMOUNT.has(key)) return { value: Math.abs(first), factor: NEGATIVE_LOSS_CONFIDENCE, used };
+  return { rejected: { value: first, reason: `${fmtMoney(first)} is a negative amount (a loss) next to “${label}” — it cannot be the ${label}. Not used.` }, used };
+}
+const fmtMoney = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions = {}): PageExtraction {
   const fields: FieldMap = {};
   const sensitive: SensitiveItem[] = [];
@@ -287,6 +330,8 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
 
   // Every reading is kept; several DIFFERENT readings of one field on a page are an ambiguity, not a choice.
   const cands: Partial<Record<FieldKey, ExtractedField[]>> = {};
+  const ambiguous: AmbiguousReading[] = [];
+  const labelText = (h: LabelHit) => page.lines[h.line].words.slice(h.w0, h.w1).map((x) => x.text).join(' ');
   const put = (key: FieldKey, value: number | string, confidence: number, evidence: string) => {
     const c = Math.max(0, Math.min(1, confidence * qualityFactor));
     (cands[key] ??= []).push({ key, value, confidence: Math.round(c * 100) / 100, source: 'ocr', evidence, page: pageIndex });
@@ -344,13 +389,18 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
         claimed.add(`${li}:${startIdx}`);
         put(key, v, (words[0].confidence / 100) * h.weight, `“${redactText(line.text)}”`);
       } else if (MONEY.has(key)) {
-        const v = parseMoney(words[0].text, key === 'accountSize');
-        if (v == null) {
+        const r = readMoney(key, words, 0, FIELD_LABEL[key].replace(/ \(.*\)$/, '').toLowerCase());
+        if (r == null) {
           pending.push(h);
           return;
         }
-        claimed.add(`${li}:${startIdx}`);
-        put(key, SIGNED.has(key) ? v : Math.abs(v), (words[0].confidence / 100) * h.weight, `“${redactText(line.text)}”`);
+        for (const u of r.used) claimed.add(`${li}:${line.words.indexOf(words[u])}`);
+        if ('rejected' in r) {
+          ambiguous.push({ key, value: r.rejected.value, reason: r.rejected.reason, evidence: `“${redactText(line.text)}”`, page: pageIndex });
+          return;
+        }
+        if (r.ambiguous) ambiguous.push({ key, ...r.ambiguous, evidence: `“${redactText(line.text)}”`, page: pageIndex });
+        put(key, r.value, (words[0].confidence / 100) * h.weight * r.factor, `“${redactText(line.text)}”`);
       } else if (DATES.has(key)) {
         const d = parseDate(words.map((w) => w.text));
         if (d) put(key as DateField, d.iso, (Math.min(...words.slice(0, d.used).map((w) => w.confidence)) / 100) * h.weight, `“${redactText(line.text)}”`);
@@ -377,7 +427,9 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     const parseFor = (t: string) => (key === 'tradingDays' ? parseCount(t) : parseMoney(t, key === 'accountSize'));
     const lh = Math.max(8, h.bbox.y1 - h.bbox.y0);
     const siblings = labels[h.line];
-    let best: { li: number; wi: number; w: OcrWord; v: number; score: number; layout: number } | null = null;
+    let best: { li: number; wi: number; w: OcrWord; v: number; score: number; layout: number; used: number[]; factor: number; amb?: { value: number; reason: string } } | null = null;
+    let refused: { value: number; reason: string; evidence: string } | null = null;
+    const lbl = key === 'ignore' || key === 'tradingDays' ? '' : FIELD_LABEL[key].replace(/ \(.*\)$/, '').toLowerCase();
     for (const dir of [1, -1]) {
       for (let step = 1; step <= 2; step++) {
         const li = h.line + dir * step;
@@ -387,7 +439,23 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
         if (gap > Math.max(3.5 * lh, 70) || gap < -lh) continue;
         line.words.forEach((w, wi) => {
           if (claimed.has(`${li}:${wi}`)) return;
-          const v = parseFor(w.text) ?? (key === 'ignore' && /^[+-]?[\d,.]+%$/.test(w.text) ? 0 : null);
+          // The limit half of a "progress / limit" pair is reached through its first half.
+          if (wi >= 2 && /^(\/|of)$/i.test(line.words[wi - 1].text) && parseMoney(line.words[wi - 2].text) != null && MONEY.has(key as FieldKey) && key !== 'ignore') return;
+          let v = parseFor(w.text) ?? (key === 'ignore' && /^[+-]?[\d,.]+%$/.test(w.text) ? 0 : null);
+          let used = [wi];
+          let factor = 1;
+          let amb: { value: number; reason: string } | undefined;
+          if (key !== 'ignore' && key !== 'tradingDays') {
+            const r = readMoney(key, line.words, wi, lbl);
+            if (r == null) return;
+            if ('rejected' in r) {
+              // Not this label's value — leave it for its own label ("Total P&L").
+              refused ??= { ...r.rejected, evidence: `“${labelText(h)}” → ${w.text}` };
+              return;
+            }
+            ({ value: v, used, factor } = r);
+            amb = r.ambiguous;
+          }
           if (v == null) return;
           // The value belongs to the label in this row it overlaps most.
           const overlapWith = (b: OcrBox) => Math.max(0, Math.min(b.x1, w.bbox.x1) - Math.max(b.x0, w.bbox.x0));
@@ -398,15 +466,20 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
           if (rival) return;
           const score = (mine > 0 ? 1 : 0.6) - step * 0.05;
           const layout = (dir === 1 ? 0.95 : 0.85) - (step - 1) * 0.07;
-          if (!best || score > best.score) best = { li, wi, w, v, score, layout };
+          if (!best || score > best.score) best = { li, wi, w, v, score, layout, used, factor, amb };
         });
       }
       if (best) break;
     }
     if (best) {
-      const b = best as { li: number; wi: number; w: OcrWord; v: number; layout: number };
-      claimed.add(`${b.li}:${b.wi}`);
-      if (key !== 'ignore') put(key, SIGNED.has(key as FieldKey) ? b.v : Math.abs(b.v), (b.w.confidence / 100) * h.weight * b.layout, `“${page.lines[h.line].words.slice(h.w0, h.w1).map((x) => x.text).join(' ')}” → ${b.w.text}`);
+      const b = best as { li: number; wi: number; w: OcrWord; v: number; layout: number; used: number[]; factor: number; amb?: { value: number; reason: string } };
+      for (const u of b.used) claimed.add(`${b.li}:${u}`);
+      const ev = `“${labelText(h)}” → ${b.used.map((u) => page.lines[b.li].words[u].text).join(' ')}`;
+      if (b.amb && key !== 'ignore') ambiguous.push({ key: key as FieldKey, ...b.amb, evidence: ev, page: pageIndex });
+      if (key !== 'ignore') put(key, b.v, (b.w.confidence / 100) * h.weight * b.layout * b.factor, ev);
+    } else if (refused && key !== 'ignore') {
+      const r = refused as { value: number; reason: string; evidence: string };
+      ambiguous.push({ key: key as FieldKey, value: r.value, reason: r.reason, evidence: r.evidence, page: pageIndex });
     }
   }
 
@@ -533,6 +606,23 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     fields[key] = best;
   }
 
+  // Dashboard date: a date WITH a time on a header line ("… - Oct 10, 2026 4:05 PM") — the moment shown.
+  if (!fields.statementDate) {
+    for (const line of page.lines) {
+      if (isTableRow(line) || isTableHeader(line)) continue;
+      const ws = line.words.map((w) => w.text);
+      for (let i = 0; i < ws.length; i++) {
+        const d = parseDate(ws.slice(i, i + 3));
+        if (!d) continue;
+        const after = ws.slice(i + d.used, i + d.used + 2).join(' ');
+        if (!/^(at\s)?\d{1,2}:\d{2}(\s?[ap]m)?/i.test(after)) continue;
+        fields.statementDate = { key: 'statementDate', value: d.iso, confidence: Math.round((line.confidence / 100) * 0.8 * qualityFactor * 100) / 100, source: 'ocr', evidence: `“${redactText(line.text)}”`, page: pageIndex };
+        break;
+      }
+      if (fields.statementDate) break;
+    }
+  }
+
   // Drawdown type stated on the page ("EOD Trailing", "End of day drawdown", "Static drawdown").
   if (!fields.drawdownType) {
     for (const line of page.lines) {
@@ -553,7 +643,9 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
   }
 
   const labelsFound = labels.flat().filter((h) => h.target !== 'ignore' && !h.target.startsWith('sensitive:')).length;
-  return { page: pageIndex, fields: resolveLevels(fields), sensitive, quality, ocrConfidence: Math.round(page.confidence), wordCount, labelsFound };
+  // A refused reading that another label claimed later ("−$66" → Total P&L) is no longer ambiguous.
+  const stillAmbiguous = ambiguous.filter((a) => !Object.values(fields).some((f) => f && f.key !== a.key && typeof f.value === 'number' && Math.abs(f.value - a.value) < 0.005 && a.value < 0 && !LIMIT_PAIR.has(f.key)));
+  return { page: pageIndex, fields: resolveLevels(fields), ...(stillAmbiguous.length ? { ambiguous: stillAmbiguous } : {}), sensitive, quality, ocrConfidence: Math.round(page.confidence), wordCount, labelsFound };
 }
 
 export type { ExtractedField, TextField };
