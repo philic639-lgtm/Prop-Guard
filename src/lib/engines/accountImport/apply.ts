@@ -1,7 +1,7 @@
 import type { Account, AccountImportRecord, AccountImportState } from '@/types/domain';
 
-import { drawdownFloor, maxDrawdownAmount } from '../propRuleEngine';
-import type { ExtractedField, FieldKey, FieldSource } from './types';
+import { drawdownFloor, maxDrawdownAmount, ruleFloor } from '../propRuleEngine';
+import { DRAWDOWN_TYPES, type ExtractedField, type FieldKey, type FieldSource } from './types';
 
 /**
  * Apply a CONFIRMED screenshot import to an account.
@@ -27,7 +27,12 @@ export interface ConfirmedImport {
   engine: AccountImportRecord['engine'];
   pages: number;
   confirmedAt: string;
+  /** The trader confirmed the account was reset: the floor starts over from this screenshot (it may be lower). */
+  reset?: boolean;
 }
+
+/** Values a dashboard snapshot should show; the ones it did not are listed as unknown on the account. */
+const SNAPSHOT_FIELDS: FieldKey[] = ['balance', 'drawdownThreshold', 'maxDrawdown', 'dailyLossLimit', 'profitTarget', 'netPnl', 'tradingDays'];
 
 const HISTORY_CAP = 30;
 const TOL = 1;
@@ -38,7 +43,9 @@ export function lockedRuleFields(account: Account | null): Set<'maxDrawdown' | '
   const out = new Set<'maxDrawdown' | 'dailyLossLimit' | 'profitTarget'>();
   const link = account?.firmLink;
   if (!link || link.status !== 'verified') return out;
-  for (const k of ['maxDrawdown', 'dailyLossLimit', 'profitTarget'] as const) if (!link.overrides.includes(k)) out.add(k);
+  // Only rules the verified program actually states. An optional setting it leaves to the account
+  // (e.g. LucidFlex's DLL amount) is the trader's / the screenshot's to set.
+  for (const k of ['maxDrawdown', 'dailyLossLimit', 'profitTarget'] as const) if (!link.overrides.includes(k) && String(link.imported?.[k] ?? '').trim() !== '') out.add(k);
   // A verified "no daily loss limit" is also a verified value.
   if (link.calc?.dailyLossMode === 'none') out.add('dailyLossLimit');
   return out;
@@ -49,6 +56,7 @@ export function confirmImport(input: {
   fields: Partial<Record<FieldKey, ExtractedField | null>>;
   edited: Set<FieldKey>;
   ruleUpdates?: ConfirmedImport['ruleUpdates'];
+  reset?: boolean;
   fingerprint: string | null;
   maskedId: string | null;
   engine: ConfirmedImport['engine'];
@@ -63,7 +71,7 @@ export function confirmImport(input: {
     const edited = input.edited.has(k);
     sources[k] = { source: edited ? 'user' : f.source, confidence: edited ? null : f.confidence, edited };
   }
-  return { values, sources, ruleUpdates: input.ruleUpdates ?? {}, fingerprint: input.fingerprint, maskedId: input.maskedId, engine: input.engine, pages: input.pages, confirmedAt: input.now.toISOString() };
+  return { values, sources, ruleUpdates: input.ruleUpdates ?? {}, fingerprint: input.fingerprint, maskedId: input.maskedId, engine: input.engine, pages: input.pages, confirmedAt: input.now.toISOString(), ...(input.reset ? { reset: true } : {}) };
 }
 
 export interface ApplyResult {
@@ -95,20 +103,30 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
   if (balance != null) next.balance = balance;
   const bal = next.balance;
 
-  // Drawdown tracking.
+  // Drawdown tracking. The floor the firm shows is the account's floor — never recomputed from the
+  // starting balance. A trailing floor never moves down unless the trader confirmed a reset.
   const maxDd = maxDrawdownAmount(next);
   const reportedThreshold = n(c.values.drawdownThreshold);
   const reportedRemaining = n(c.values.drawdownRemaining);
   const used = n(c.values.currentDrawdown);
-  const firmFloor = reportedThreshold ?? (reportedRemaining != null ? bal - reportedRemaining : null);
-  let hwm = Math.max(account.highWaterMark, bal);
-  if (next.rules.drawdownType !== 'static' && maxDd) {
+  const shownFloor = reportedThreshold ?? (reportedRemaining != null ? bal - reportedRemaining : null);
+  const trailing = next.rules.drawdownType !== 'static';
+  const prevFloor = c.reset ? null : drawdownFloor(account);
+  let firmFloor = shownFloor;
+  if (firmFloor != null && trailing && prevFloor != null && firmFloor < prevFloor - TOL) {
+    notes.push(`The screenshot's minimum balance ($${firmFloor.toLocaleString('en-US')}) is below the account's floor ($${prevFloor.toLocaleString('en-US')}); a trailing floor does not move down, so the higher floor is kept. Confirm a reset to start over.`);
+    firmFloor = prevFloor;
+  }
+  if (c.reset) notes.push('Account reset confirmed: the drawdown floor starts over from this screenshot.');
+  const prevHwm = c.reset ? next.startingBalance : account.highWaterMark;
+  let hwm = Math.max(prevHwm, bal);
+  if (trailing && maxDd) {
     const lockOffset = next.rules.calc?.trailingLockOffset ?? (next.rules.trailingLocksAtStart ? 0 : null);
     const lock = lockOffset != null ? next.startingBalance + lockOffset : null;
     if (firmFloor != null) {
       const fromFloor = firmFloor + maxDd;
       // At the lock the floor no longer tells us the peak; keep what we know.
-      hwm = lock != null && firmFloor >= lock - TOL ? Math.max(account.highWaterMark, bal, fromFloor) : Math.max(next.startingBalance, fromFloor, bal);
+      hwm = lock != null && firmFloor >= lock - TOL ? Math.max(prevHwm, bal, fromFloor) : Math.max(next.startingBalance, fromFloor, bal);
     } else if (used != null) {
       hwm = Math.max(next.startingBalance, bal + used);
     }
@@ -117,7 +135,8 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
 
   let floorCheck: ApplyResult['floorCheck'] = null;
   if (firmFloor != null) {
-    const calculated = drawdownFloor(next);
+    // Compare with the RULES (not with the observed floor itself).
+    const calculated = ruleFloor(next);
     const matches = calculated != null && Math.abs(calculated - firmFloor) <= TOL;
     floorCheck = { reported: firmFloor, calculated, matches };
     if (calculated == null) notes.push('No max drawdown on this account — the firm’s threshold is shown as reported.');
@@ -145,9 +164,17 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
       at: c.confirmedAt,
       balance,
       drawdownThreshold: firmFloor,
-      drawdownRemaining: reportedRemaining ?? (firmFloor != null ? Math.round((bal - firmFloor) * 100) / 100 : null),
+      // Remaining cushion = balance − current floor (the dashboard's own number when it agrees).
+      drawdownRemaining: firmFloor != null ? Math.round((bal - firmFloor) * 100) / 100 : reportedRemaining,
       maxDrawdown: n(c.values.maxDrawdown),
       dailyLossLimit: n(c.values.dailyLossLimit),
+      profitTarget: n(c.values.profitTarget),
+      profitTargetBalance: n(c.values.profitTargetBalance),
+      netPnl: n(c.values.netPnl),
+      tradingDays: n(c.values.tradingDays),
+      drawdownType: (DRAWDOWN_TYPES as readonly string[]).includes(String(c.values.drawdownType)) ? (c.values.drawdownType as (typeof DRAWDOWN_TYPES)[number]) : null,
+      missing: SNAPSHOT_FIELDS.filter((k) => c.values[k] == null),
+      ...(c.reset ? { reset: true } : {}),
     },
     history: [record, ...prev.history].slice(0, HISTORY_CAP),
   };

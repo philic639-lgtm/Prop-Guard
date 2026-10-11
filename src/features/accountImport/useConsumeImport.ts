@@ -32,6 +32,8 @@ export function useConsumeImport(opts: {
     if (!loaded) {
       if (pending.firmName) set('firm', pending.firmName);
       if (pending.size) set('size', String(pending.size));
+      const dd = pending.confirmed.values.drawdownType;
+      if (dd === 'eod_trailing' || dd === 'trailing' || dd === 'static') set('drawdownType', dd);
     }
     // Only present when no verified rule version applies and the trader chose to save them.
     for (const [k, v] of Object.entries(pending.rules)) if (v) set(k as keyof AccountFormValues, String(v));

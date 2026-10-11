@@ -26,6 +26,8 @@ import {
 import { colors, GUTTER, radius, spacing, toneColor } from '@/constants/theme';
 import { CoachCard } from '@/features/home/CoachCard';
 import { screenshotLabel } from '@/features/accountImport/ScreenshotStatus';
+import { FIELD_LABEL, type FieldKey } from '@/lib/engines/accountImport';
+import { drawdownFloor } from '@/lib/engines/propRuleEngine';
 import { HomeModeCard } from '@/features/learning/HomeModeCard';
 import { TradingPlanCard } from '@/features/home/TradingPlanCard';
 import { useAccountTrades, useActiveAccount, useActiveStrategy, useDailyGuard, useDiscipline, useOpenTrade, usePendingTrades } from '@/hooks/useAppData';
@@ -103,9 +105,14 @@ export default function HomeScreen() {
             <View style={styles.connRow}>
               <View style={[styles.connDot, { backgroundColor: connection === 'connected' ? colors.positive : colors.accentBright }]} />
               <AppText variant="caption" style={{ color: connection === 'connected' ? colors.positive : colors.accentBright }}>
-                {account.importState?.reported ? `Screenshot updated · ${screenshotLabel(account.importState.reported.at)}` : CONNECTION_LABEL[connection]}
+                {account.importState?.reported ? `Snapshot-based — not live verified · ${screenshotLabel(account.importState.reported.at)}` : CONNECTION_LABEL[connection]}
               </AppText>
             </View>
+            {account.importState?.reported?.missing?.length ? (
+              <AppText variant="caption" tone="tertiary" numberOfLines={2}>
+                Not in the snapshot: {account.importState.reported.missing.map((k) => FIELD_LABEL[k as FieldKey] ?? k).join(', ')}
+              </AppText>
+            ) : null}
           </View>
           <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
         </View>
@@ -145,10 +152,29 @@ export default function HomeScreen() {
       {guard ? (
         <TileGrid>
           <MetricTile label="Account balance" value={money(account.balance)} />
-          <MetricTile label="Daily P&L" value={money(guard.realizedPnlToday, { sign: true })} tone={guard.realizedPnlToday > 0 ? 'positive' : guard.realizedPnlToday < 0 ? 'danger' : 'primary'} />
-          <MetricTile label="Daily risk remaining" value={money(guard.riskRemaining)} tone={guard.riskRemaining <= 0 ? 'danger' : guard.riskUsedPct >= 0.6 ? 'warning' : 'primary'} />
+          <MetricTile
+            label="Drawdown remaining"
+            value={money(guard.drawdownBuffer)}
+            sub={drawdownFloor(account) != null ? `Floor ${money(drawdownFloor(account))}` : undefined}
+            tone={guard.drawdownBuffer != null && guard.drawdownBuffer < 500 ? 'warning' : 'primary'}
+          />
+          {guard.dailyPnlSource === 'unknown' ? (
+            <MetricTile label="Daily P&L" value="Unknown" sub="Not in the snapshot" />
+          ) : (
+            <MetricTile label="Daily P&L" value={money(guard.realizedPnlToday, { sign: true })} sub={guard.snapshot ? 'Journaled trades' : undefined} tone={guard.realizedPnlToday > 0 ? 'positive' : guard.realizedPnlToday < 0 ? 'danger' : 'primary'} />
+          )}
+          <MetricTile
+            label="Firm daily loss limit"
+            value={guard.firmDailyLimit != null ? money(guard.firmDailyLimit) : 'Not set'}
+            sub={guard.firmDailyLimit != null ? (guard.dailyPnlSource === 'unknown' ? "Today's use unknown" : `${money(guard.firmDailyRoom)} left`) : undefined}
+          />
+          <MetricTile
+            label="Your daily budget"
+            value={guard.personalRoom != null ? money(guard.personalRoom) : 'Not set'}
+            sub={guard.personalDailyStop != null ? `left of ${money(guard.personalDailyStop)} (your plan)` : undefined}
+            tone={guard.personalRoom != null && guard.personalRoom <= 0 ? 'danger' : 'primary'}
+          />
           <MetricTile label="Trades remaining" value={`${guard.tradesRemaining} / ${guard.maxTrades}`} tone={guard.tradesRemaining === 0 ? 'danger' : 'primary'} />
-          <MetricTile label="Drawdown remaining" value={money(guard.drawdownBuffer)} tone={guard.drawdownBuffer != null && guard.drawdownBuffer < 500 ? 'warning' : 'primary'} />
           <MetricTile
             label={consistency ? 'Consistency' : 'Discipline'}
             value={consistency ? (consistency.status === 'warning' || consistency.status === 'breached' ? 'Watch' : 'On Track') : String(score.score)}

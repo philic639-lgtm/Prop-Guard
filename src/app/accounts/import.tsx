@@ -26,9 +26,9 @@ import { uuid } from '@/utils/id';
 
 const GROUPS: { title: string; keys: FieldKey[] }[] = [
   { title: 'Account', keys: ['firm', 'program', 'stage', 'status', 'accountSize', 'startDate', 'statementDate'] },
-  { title: 'Balance', keys: ['balance', 'startingBalance', 'netPnl', 'dailyPnl'] },
-  { title: 'Drawdown', keys: ['maxDrawdown', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining'] },
-  { title: 'Limits', keys: ['dailyLossLimit', 'profitTarget'] },
+  { title: 'Balance', keys: ['balance', 'startingBalance', 'netPnl', 'dailyPnl', 'tradingDays'] },
+  { title: 'Drawdown', keys: ['drawdownThreshold', 'drawdownRemaining', 'maxDrawdown', 'currentDrawdown', 'drawdownType'] },
+  { title: 'Limits', keys: ['dailyLossLimit', 'profitTarget', 'profitTargetBalance'] },
 ];
 const RULE_KEYS = ['maxDrawdown', 'dailyLossLimit', 'profitTarget'] as const;
 /** Values `applyImport` writes into the account (balance + drawdown tracking). */
@@ -89,6 +89,12 @@ export default function AccountScreenshotImport() {
   const locked = useMemo(() => (mode === 'update' ? lockedRuleFields(target) : new Set<RuleKey>()), [mode, target]);
   // Rules come from the program only when it has a verified version for the purchase date.
   const verifiedProgram = mode === 'new' && useProgram && match.program != null && match.rulesStatus !== 'not_verified';
+  /** The verified program states this rule (then it wins; the screenshot is only compared). */
+  const programStates = (k: RuleKey) => verifiedProgram && match.ruleComparisons.find((r) => r.field === k)?.verified != null;
+  /** A screenshot rule value that can be saved: read, not locked, and not stated by a verified program (e.g. LucidFlex's optional DLL). */
+  const saveable = (k: RuleKey) => typeof fields[k]?.value === 'number' && !locked.has(k) && !programStates(k);
+  /** The screenshot shows a floor below the account's current floor: only a confirmed reset may lower it. */
+  const floorDrop = match.conflicts.find((c) => c.field === 'drawdownThreshold' && c.severity === 'conflict');
   const blocking = [
     ...match.conflicts.filter((c) => c.severity === 'conflict').map((c) => ({ id: `m:${c.field}:${c.message}`, message: c.message })),
     ...extraction.checks.filter((c) => c.status === 'conflict').map((c) => ({ id: `c:${c.id}`, message: c.message })),
@@ -108,14 +114,12 @@ export default function AccountScreenshotImport() {
   const engine = images.some((i) => i.image.sample) ? 'sample' : images.some((i) => i.reader === 'vision') ? 'vision' : images.some((i) => i.page) ? 'ocr' : 'manual';
   const idItem = extraction.sensitive.find((s) => s.kind === 'account_id');
   // Not asked for in the "still to check" list: rules that come from a verified program, and the identity of an account being updated.
-  const skipFields = new Set<FieldKey>([...(verifiedProgram ? RULE_KEYS : []), ...locked, ...(mode === 'update' ? (['program', 'accountSize', 'stage'] as FieldKey[]) : [])]);
+  const skipFields = new Set<FieldKey>([...RULE_KEYS.filter(programStates), ...locked, ...(mode === 'update' ? (['program', 'accountSize', 'stage'] as FieldKey[]) : [])]);
 
+  // Explicit screenshot values are saved unless the trader turns them off — a form default never wins over them.
   const ruleUpdates = () => {
     const out: Partial<Record<RuleKey, number>> = {};
-    for (const k of RULE_KEYS) {
-      const v = fields[k]?.value;
-      if (saveRules[k] && typeof v === 'number' && !locked.has(k) && !verifiedProgram) out[k] = v;
-    }
+    for (const k of RULE_KEYS) if (saveable(k) && saveRules[k] !== false) out[k] = fields[k]!.value as number;
     return out;
   };
 
@@ -125,6 +129,7 @@ export default function AccountScreenshotImport() {
       fields,
       edited,
       ruleUpdates: ruleUpdates(),
+      reset: !!(floorDrop && ack[`m:${floorDrop.field}:${floorDrop.message}`]),
       fingerprint: rememberAccount ? extraction.fingerprint : null,
       maskedId: keepMasked && idItem ? idItem.masked : null,
       engine,
@@ -270,7 +275,8 @@ export default function AccountScreenshotImport() {
     if (locked.has(rk)) return 'Account uses verified program rules — kept; this reading is for comparison only.';
     if (verifiedProgram) {
       const cmp = match.ruleComparisons.find((r) => r.field === rk);
-      return cmp?.verified != null ? `Verified ${match.program!.name} rule: ${money(cmp.verified)} — this is what will be saved.` : 'Loaded from the verified program when you save.';
+      if (cmp?.verified != null) return `Verified ${match.program!.name} rule: ${money(cmp.verified)} — this is what will be saved.`;
+      return fields[rk] ? `Not stated by the verified ${match.program!.name} rules (an account setting) — your screenshot’s value is saved.` : `Not stated by the verified ${match.program!.name} rules — enter the value shown in your account.`;
     }
     return undefined;
   };
@@ -409,7 +415,11 @@ export default function AccountScreenshotImport() {
           {blocking.map((b) => (
             <View key={b.id} style={styles.gap}>
               <AppText variant="caption">{b.message}</AppText>
-              <ToggleRow label="I checked this" value={!!ack[b.id]} onChange={(v) => setAck((a) => ({ ...a, [b.id]: v }))} />
+              <ToggleRow
+                label={floorDrop && b.id === `m:${floorDrop.field}:${floorDrop.message}` ? 'The account was reset — start the floor over from this screenshot' : 'I checked this'}
+                value={!!ack[b.id]}
+                onChange={(v) => setAck((a) => ({ ...a, [b.id]: v }))}
+              />
             </View>
           ))}
         </Card>
@@ -446,8 +456,12 @@ export default function AccountScreenshotImport() {
                 onReset={() => session.resetEdit(k)}
                 note={ruleNote(k)}
               />
-              {(RULE_KEYS as readonly string[]).includes(k) && typeof fields[k]?.value === 'number' && !locked.has(k as RuleKey) && !verifiedProgram ? (
-                <ToggleRow label={`Save as this account’s ${k === 'maxDrawdown' ? 'max drawdown' : k === 'dailyLossLimit' ? 'daily loss limit' : 'profit target'} (unverified)`} value={!!saveRules[k as RuleKey]} onChange={(v) => setSaveRules((s) => ({ ...s, [k]: v }))} />
+              {(RULE_KEYS as readonly string[]).includes(k) && saveable(k as RuleKey) ? (
+                <ToggleRow
+                  label={`Save as this account’s ${k === 'maxDrawdown' ? 'max loss allowance' : k === 'dailyLossLimit' ? 'daily loss limit' : 'profit target'} (from your screenshot)`}
+                  value={saveRules[k as RuleKey] !== false}
+                  onChange={(v) => setSaveRules((s) => ({ ...s, [k]: v }))}
+                />
               ) : null}
             </View>
           ))}

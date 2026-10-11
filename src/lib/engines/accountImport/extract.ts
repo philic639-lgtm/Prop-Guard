@@ -1,3 +1,4 @@
+import { resolveLevels } from './reconcile';
 import type { DateField, ExtractedField, FieldKey, FieldMap, MoneyField, OcrBox, OcrLine, OcrPage, OcrWord, PageExtraction, SensitiveItem, TextField } from './types';
 
 /**
@@ -22,7 +23,7 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   { target: 'balance', phrases: ['balance'], weight: 0.92 },
   { target: 'startingBalance', phrases: ['starting balance', 'start balance', 'initial balance', 'starting capital', 'beginning balance', 'opening balance'], weight: 1 },
   // Drawdown: four different things — never interchangeable.
-  { target: 'drawdownThreshold', phrases: ['liquidation threshold', 'auto-liquidate threshold', 'auto liquidate threshold', 'auto-liquidation threshold', 'auto liquidation threshold', 'trailing threshold', 'drawdown threshold', 'max loss threshold', 'loss limit threshold', 'liquidation level', 'liquidation balance', 'drawdown level', 'drawdown balance', 'mll balance', 'mll level', 'loss limit level', 'max loss level', 'minimum balance', 'min balance', 'account threshold'], weight: 1 },
+  { target: 'drawdownThreshold', phrases: ['liquidation threshold', 'auto-liquidate threshold', 'auto liquidate threshold', 'auto-liquidation threshold', 'auto liquidation threshold', 'trailing threshold', 'drawdown threshold', 'max loss threshold', 'loss limit threshold', 'liquidation level', 'liquidation balance', 'drawdown level', 'drawdown balance', 'mll balance', 'mll level', 'current mll', 'trailing mll', 'loss limit level', 'max loss level', 'minimum balance', 'min balance', 'account threshold'], weight: 1 },
   { target: 'drawdownThreshold', phrases: ['threshold'], weight: 0.8 },
   { target: 'drawdownRemaining', phrases: ['remaining drawdown', 'drawdown remaining', 'drawdown left', 'available drawdown', 'drawdown available', 'distance to mll', 'distance to max loss', 'distance to liquidation', 'distance to threshold', 'distance to drawdown', 'room to max loss', 'max loss remaining', 'loss limit remaining', 'remaining loss allowance', 'remaining allowance'], weight: 1 },
   { target: 'drawdownRemaining', phrases: ['buffer'], weight: 0.65 },
@@ -37,6 +38,8 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   { target: 'netPnl', phrases: ['realized p&l'], weight: 0.8 },
   { target: 'netPnl', phrases: ['p&l'], weight: 0.85 },
   { target: 'profitTarget', phrases: ['profit target', 'profit goal', 'target profit'], weight: 1 },
+  { target: 'profitTargetBalance', phrases: ['target balance', 'profit target balance', 'passing balance', 'pass balance'], weight: 1 },
+  { target: 'tradingDays', phrases: ['trading days', 'days traded', 'traded days', 'days trading'], weight: 1 },
   { target: 'accountSize', phrases: ['account size', 'plan size', 'starting size', 'evaluation size'], weight: 1 },
   { target: 'program', phrases: ['plan', 'program', 'account type', 'product', 'plan name', 'account plan'], weight: 0.95 },
   { target: 'firm', phrases: ['prop firm', 'firm', 'firm name', 'provider', 'company'], weight: 0.9 },
@@ -52,6 +55,8 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
       'buying power', 'available funds', 'available margin', 'excess liquidity', 'margin used', 'initial margin', 'maintenance margin', 'equity', 'net equity',
       'profit target remaining', 'remaining profit target', 'remaining target', 'target remaining', 'to target', 'distance to target', 'profit remaining', 'profit needed', 'needed to pass',
       'high water mark', 'highest balance', 'peak balance', 'max balance', 'highest eod balance', 'trailing high',
+      // Rules shown next to progress ("Min trading days 5") are not the days traded.
+      'minimum trading days', 'min trading days', 'required trading days', 'min. trading days', 'trading days required',
       'win rate', 'avg win', 'avg loss', 'average win', 'average loss', 'largest win', 'largest loss', 'commissions', 'fees', 'total trades', 'trades', 'contracts traded', 'volume',
     ],
     weight: 1,
@@ -63,7 +68,13 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
 const COMPILED = LABELS.flatMap((l) => l.phrases.map((p) => ({ target: l.target, phrase: p, weight: l.weight, words: p.split(' ').length })))
   .sort((a, b) => b.phrase.length - a.phrase.length);
 
-const MONEY = new Set<FieldKey>(['accountSize', 'balance', 'startingBalance', 'netPnl', 'dailyPnl', 'maxDrawdown', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining', 'dailyLossLimit', 'profitTarget']);
+const MONEY = new Set<FieldKey>(['accountSize', 'balance', 'startingBalance', 'netPnl', 'dailyPnl', 'maxDrawdown', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining', 'dailyLossLimit', 'profitTarget', 'profitTargetBalance']);
+const COUNT = new Set<FieldKey>(['tradingDays']);
+/** A count token: "5", or "5/10" (days traded of days required). */
+const parseCount = (raw: string): number | null => {
+  const m = /^(\d{1,4})(?:\/\d{1,4})?$/.exec(raw.trim().replace(/[,;:.]+$/, ''));
+  return m ? Number(m[1]) : null;
+};
 const SIGNED = new Set<FieldKey>(['netPnl', 'dailyPnl']);
 const DATES = new Set<FieldKey>(['startDate', 'statementDate']);
 
@@ -324,7 +335,15 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
         pending.push(h);
         return;
       }
-      if (MONEY.has(key)) {
+      if (COUNT.has(key)) {
+        const v = parseCount(words[0].text);
+        if (v == null) {
+          pending.push(h);
+          return;
+        }
+        claimed.add(`${li}:${startIdx}`);
+        put(key, v, (words[0].confidence / 100) * h.weight, `“${redactText(line.text)}”`);
+      } else if (MONEY.has(key)) {
         const v = parseMoney(words[0].text, key === 'accountSize');
         if (v == null) {
           pending.push(h);
@@ -353,8 +372,9 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
   // Pass 2 — card / grid layouts: value in the same column on a nearby label-free line.
   const valueLines = page.lines.map((l, i) => labels[i].length === 0 && !isTableHeader(l) && !isTableRow(l));
   for (const h of pending) {
-    if (!MONEY.has(h.target as FieldKey) && h.target !== 'ignore') continue;
-    const key = h.target as MoneyField | 'ignore';
+    if (!MONEY.has(h.target as FieldKey) && !COUNT.has(h.target as FieldKey) && h.target !== 'ignore') continue;
+    const key = h.target as MoneyField | 'tradingDays' | 'ignore';
+    const parseFor = (t: string) => (key === 'tradingDays' ? parseCount(t) : parseMoney(t, key === 'accountSize'));
     const lh = Math.max(8, h.bbox.y1 - h.bbox.y0);
     const siblings = labels[h.line];
     let best: { li: number; wi: number; w: OcrWord; v: number; score: number; layout: number } | null = null;
@@ -367,7 +387,7 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
         if (gap > Math.max(3.5 * lh, 70) || gap < -lh) continue;
         line.words.forEach((w, wi) => {
           if (claimed.has(`${li}:${wi}`)) return;
-          const v = parseMoney(w.text, key === 'accountSize') ?? (key === 'ignore' && /^[+-]?[\d,.]+%$/.test(w.text) ? 0 : null);
+          const v = parseFor(w.text) ?? (key === 'ignore' && /^[+-]?[\d,.]+%$/.test(w.text) ? 0 : null);
           if (v == null) return;
           // The value belongs to the label in this row it overlaps most.
           const overlapWith = (b: OcrBox) => Math.max(0, Math.min(b.x1, w.bbox.x1) - Math.max(b.x0, w.bbox.x0));
@@ -386,7 +406,7 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     if (best) {
       const b = best as { li: number; wi: number; w: OcrWord; v: number; layout: number };
       claimed.add(`${b.li}:${b.wi}`);
-      if (key !== 'ignore') put(key, SIGNED.has(key) ? b.v : Math.abs(b.v), (b.w.confidence / 100) * h.weight * b.layout, `“${page.lines[h.line].words.slice(h.w0, h.w1).map((x) => x.text).join(' ')}” → ${b.w.text}`);
+      if (key !== 'ignore') put(key, SIGNED.has(key as FieldKey) ? b.v : Math.abs(b.v), (b.w.confidence / 100) * h.weight * b.layout, `“${page.lines[h.line].words.slice(h.w0, h.w1).map((x) => x.text).join(' ')}” → ${b.w.text}`);
     }
   }
 
@@ -513,8 +533,27 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     fields[key] = best;
   }
 
+  // Drawdown type stated on the page ("EOD Trailing", "End of day drawdown", "Static drawdown").
+  if (!fields.drawdownType) {
+    for (const line of page.lines) {
+      if (isTableRow(line) || isTableHeader(line)) continue;
+      const t = line.text.toLowerCase();
+      const type = /\b(eod|end[ -]of[ -]day)\b/.test(t) && /(trail|drawdown|mll|max loss|loss limit)/.test(t)
+        ? 'eod_trailing'
+        : /\b(intraday|real[ -]?time)\b.*trail/.test(t)
+          ? 'trailing'
+          : /\bstatic\b.*(drawdown|mll|max loss|loss limit)|(drawdown|mll|max loss)[^a-z]*\bstatic\b/.test(t)
+            ? 'static'
+            : null;
+      if (type) {
+        fields.drawdownType = { key: 'drawdownType', value: type, confidence: Math.round((line.confidence / 100) * 0.9 * qualityFactor * 100) / 100, source: 'ocr', evidence: `“${redactText(line.text)}”`, page: pageIndex };
+        break;
+      }
+    }
+  }
+
   const labelsFound = labels.flat().filter((h) => h.target !== 'ignore' && !h.target.startsWith('sensitive:')).length;
-  return { page: pageIndex, fields, sensitive, quality, ocrConfidence: Math.round(page.confidence), wordCount, labelsFound };
+  return { page: pageIndex, fields: resolveLevels(fields), sensitive, quality, ocrConfidence: Math.round(page.confidence), wordCount, labelsFound };
 }
 
 export type { ExtractedField, TextField };

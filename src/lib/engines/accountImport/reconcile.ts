@@ -1,5 +1,5 @@
 import type { ExtractedField, Extraction, FieldKey, FieldMap, ImportCheck, PageExtraction } from './types';
-import { ALL_FIELDS } from './types';
+import { ALL_FIELDS, COUNT_FIELDS } from './types';
 
 /**
  * Merge one or more screenshots and cross-check the numbers.
@@ -21,11 +21,57 @@ const close = (a: number, b: number) => Math.abs(a - b) <= TOL;
 const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
 function sameValue(key: FieldKey, a: number | string, b: number | string): boolean {
-  if (typeof a === 'number' && typeof b === 'number') return close(a, b);
+  // Counts are exact (4 trading days ≠ 5); money allows OCR rounding.
+  if (typeof a === 'number' && typeof b === 'number') return (COUNT_FIELDS as FieldKey[]).includes(key) ? a === b : close(a, b);
   const x = String(a).toLowerCase().replace(/[^a-z0-9]/g, '');
   const y = String(b).toLowerCase().replace(/[^a-z0-9]/g, '');
   // "LucidPro" and "LucidPro 50K Evaluation" describe the same program.
   return key === 'program' ? x.includes(y) || y.includes(x) : x === y;
+}
+
+/**
+ * Dashboards use the same words for an AMOUNT and a BALANCE LEVEL: Lucid's
+ * "MLL" card shows the current minimum balance ($24,270), other pages show
+ * the Max Loss Limit as an allowance ($1,000); "Profit target" can be $1,250
+ * or the $26,250 balance that passes it. No firm's loss allowance or target
+ * is half the account, so a reading at or above half the balance (or account
+ * size) is a level: max drawdown → drawdown threshold, profit target →
+ * target balance. Readings are moved, never invented; a level that disagrees
+ * with a threshold already read stays a conflict for the trader.
+ */
+export function resolveLevels(input: FieldMap): FieldMap {
+  const fields: FieldMap = { ...input };
+  const ref = num(fields.balance) ?? num(fields.accountSize) ?? num(fields.startingBalance);
+  if (ref == null || ref <= 0) return fields;
+  const move = (from: 'maxDrawdown' | 'profitTarget', to: 'drawdownThreshold' | 'profitTargetBalance', why: string) => {
+    const f = fields[from];
+    if (!f || f.source === 'user') return;
+    const readings = [{ value: f.value, confidence: f.confidence, page: f.page, evidence: f.evidence }, ...(f.alternatives ?? []).map((a) => ({ ...a, evidence: `Read on screenshot ${a.page + 1}` }))];
+    const isLevel = (v: number | string) => typeof v === 'number' && v >= ref * 0.5;
+    const levels = readings.filter((r) => isLevel(r.value));
+    if (!levels.length) return;
+    const amounts = readings.filter((r) => !isLevel(r.value));
+    // What stays an amount.
+    if (amounts.length) {
+      const [best, ...rest] = amounts;
+      const kept: ExtractedField = { ...f, value: best.value, confidence: best.confidence, page: best.page, evidence: best.evidence };
+      delete kept.alternatives;
+      if (rest.length) kept.alternatives = rest.map((r) => ({ value: r.value, confidence: r.confidence, page: r.page }));
+      fields[from] = kept;
+    } else delete fields[from];
+    // What becomes the level.
+    for (const l of levels) {
+      const cur = fields[to];
+      const reading: ExtractedField = { key: to, value: l.value, confidence: l.confidence, source: f.source, evidence: `${l.evidence} — ${why}`, page: l.page };
+      if (!cur) fields[to] = reading;
+      else if (sameValue(to, cur.value, l.value)) fields[to] = { ...cur, confidence: Math.min(1, Math.max(cur.confidence, l.confidence) + 0.04) };
+      else if (!cur.alternatives?.some((a) => sameValue(to, a.value, l.value)) && cur.source !== 'user')
+        fields[to] = { ...cur, confidence: Math.min(cur.confidence, 0.6), alternatives: [...(cur.alternatives ?? []), { value: l.value, confidence: l.confidence, page: l.page }] };
+    }
+  };
+  move('maxDrawdown', 'drawdownThreshold', 'a balance level, so read as the current minimum balance (MLL), not the loss allowance');
+  move('profitTarget', 'profitTargetBalance', 'a balance level, so read as the target balance, not the target amount');
+  return fields;
 }
 
 export function mergePages(pages: PageExtraction[]): FieldMap {
@@ -69,7 +115,7 @@ const derived = (key: FieldKey, value: number, from: ExtractedField[], evidence:
  */
 export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } = {}): { fields: FieldMap; checks: ImportCheck[] } {
   const fields: FieldMap = {};
-  for (const [k, f] of Object.entries(input) as [FieldKey, ExtractedField][]) if (f && f.source !== 'derived') fields[k] = { ...f };
+  for (const [k, f] of Object.entries(resolveLevels(input)) as [FieldKey, ExtractedField][]) if (f && f.source !== 'derived') fields[k] = { ...f };
   const checks: ImportCheck[] = [];
   const may = (k: FieldKey) => !opts.noDerive?.has(k);
 
@@ -92,6 +138,20 @@ export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } =
     fields.drawdownRemaining = derived('drawdownRemaining', max()! - used()!, [fields.maxDrawdown!, fields.currentDrawdown!], 'Calculated: max drawdown − drawdown used');
   if (may('drawdownThreshold') && thr() == null && bal() != null && rem() != null && fields.drawdownRemaining!.source !== 'derived')
     fields.drawdownThreshold = derived('drawdownThreshold', bal()! - rem()!, [fields.balance!, fields.drawdownRemaining!], 'Calculated: current balance − remaining drawdown');
+
+  // Profit target amount ⇄ target balance, from the starting balance (or the stated account size of an evaluation).
+  const base = num(fields.startingBalance) ?? num(fields.accountSize);
+  const baseField = fields.startingBalance ?? fields.accountSize;
+  const tgt = num(fields.profitTarget);
+  const tgtBal = num(fields.profitTargetBalance);
+  if (may('profitTarget') && tgt == null && tgtBal != null && base != null && tgtBal > base)
+    fields.profitTarget = derived('profitTarget', tgtBal - base, [fields.profitTargetBalance!, baseField!], `Calculated: target balance − ${fields.startingBalance ? 'starting balance' : 'account size'}`);
+  if (may('profitTargetBalance') && tgtBal == null && tgt != null && base != null)
+    fields.profitTargetBalance = derived('profitTargetBalance', base + tgt, [fields.profitTarget!, baseField!], `Calculated: ${fields.startingBalance ? 'starting balance' : 'account size'} + profit target`);
+  if (tgt != null && tgtBal != null && base != null && fields.profitTarget!.source !== 'derived' && fields.profitTargetBalance!.source !== 'derived' && !close(base + tgt, tgtBal)) {
+    flag(fields.profitTarget, 0.55);
+    checks.push({ id: 'target-vs-target-balance', status: 'warning', fields: ['profitTarget', 'profitTargetBalance'], message: `Profit target ${money(tgt)} + ${money(base)} ≠ target balance ${money(tgtBal)}. Check both values.` });
+  }
 
   // balance − threshold = remaining
   if (bal() != null && thr() != null && rem() != null && fields.drawdownRemaining!.source !== 'derived' && fields.drawdownThreshold!.source !== 'derived') {

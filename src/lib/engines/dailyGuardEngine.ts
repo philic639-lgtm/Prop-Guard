@@ -31,6 +31,16 @@ export interface DailyGuard {
   drawdownBuffer: number | null;
   maxContracts: number | null;
   openTrades: number;
+  /** The trader's own daily stop (personal plan) and what is left of it — not a firm rule. */
+  personalDailyStop: number | null;
+  personalRoom: number | null;
+  /** The firm's daily loss limit for this account and what is left of it (from journaled trades). */
+  firmDailyLimit: number | null;
+  firmDailyRoom: number | null;
+  /** Where today's P&L comes from: journaled trades, or unknown (a screenshot-only account with nothing journaled today). */
+  dailyPnlSource: 'journal' | 'unknown';
+  /** Set when the balance / floor come from a confirmed screenshot (not a live connection). */
+  snapshot: { at: string; ageHours: number; stale: boolean; missing: string[] } | null;
 }
 
 export interface DailyGuardInput {
@@ -132,6 +142,24 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
     cautionReasons.push('One trade remaining today.');
   }
 
+  // Screenshot-only accounts are a snapshot, not live data: they are never "safe to trade" on the strength
+  // of a personal budget alone, and the age of the snapshot is always visible.
+  const reported = account.importState?.reported ?? null;
+  const snapshot = reported
+    ? (() => {
+        const ageHours = Math.max(0, (now.getTime() - Date.parse(reported.at)) / 3_600_000);
+        const stale = dayKey(reported.at) !== today;
+        return { at: reported.at, ageHours: Math.round(ageHours * 10) / 10, stale, missing: reported.missing ?? [] };
+      })()
+    : null;
+  if (snapshot) {
+    cautionReasons.unshift(
+      snapshot.stale
+        ? 'Snapshot-based — from an earlier day. Update the screenshot: the balance and floor may have moved.'
+        : 'Snapshot-based — not live verified. Trades since the screenshot count only if journaled.',
+    );
+  }
+
   let status: GuardStatus = 'SAFE';
   let headline = 'Safe to trade';
   if (stopReasons.length > 0) {
@@ -139,8 +167,9 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
     headline = 'Stop trading';
   } else if (cautionReasons.length > 0) {
     status = 'CAUTION';
-    headline = cooldown.active ? 'Cooldown active' : 'Trade with caution';
+    headline = cooldown.active ? 'Cooldown active' : snapshot ? 'Snapshot-based — not live verified' : 'Trade with caution';
   }
+  const personalDailyStop = rules.dailyStop > 0 ? rules.dailyStop : null;
 
   return {
     status,
@@ -158,6 +187,12 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
     consecutiveLosses: losses,
     cooldown,
     drawdownBuffer: buffer,
+    personalDailyStop,
+    personalRoom: personalDailyStop != null ? Math.max(0, personalDailyStop - riskUsed) : null,
+    firmDailyLimit: accountDaily,
+    firmDailyRoom: accountDaily != null ? Math.max(0, accountDaily - riskUsed) : null,
+    dailyPnlSource: snapshot && todaysClosed.length === 0 ? 'unknown' : 'journal',
+    snapshot,
     maxContracts,
     openTrades: open.length,
   };

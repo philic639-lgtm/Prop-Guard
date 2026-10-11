@@ -50,10 +50,13 @@ export type MoneyField =
   | 'currentDrawdown'
   | 'drawdownRemaining'
   | 'dailyLossLimit'
-  | 'profitTarget';
-export type TextField = 'firm' | 'program' | 'stage' | 'status';
+  | 'profitTarget'
+  | 'profitTargetBalance';
+export type TextField = 'firm' | 'program' | 'stage' | 'status' | 'drawdownType';
 export type DateField = 'startDate' | 'statementDate';
-export type FieldKey = MoneyField | TextField | DateField;
+/** Whole-number counts. */
+export type CountField = 'tradingDays';
+export type FieldKey = MoneyField | TextField | DateField | CountField;
 
 export const MONEY_FIELDS: MoneyField[] = [
   'accountSize',
@@ -67,10 +70,16 @@ export const MONEY_FIELDS: MoneyField[] = [
   'drawdownRemaining',
   'dailyLossLimit',
   'profitTarget',
+  'profitTargetBalance',
 ];
-export const TEXT_FIELDS: TextField[] = ['firm', 'program', 'stage', 'status'];
+export const TEXT_FIELDS: TextField[] = ['firm', 'program', 'stage', 'status', 'drawdownType'];
 export const DATE_FIELDS: DateField[] = ['startDate', 'statementDate'];
-export const ALL_FIELDS: FieldKey[] = [...TEXT_FIELDS, ...MONEY_FIELDS, ...DATE_FIELDS];
+export const COUNT_FIELDS: CountField[] = ['tradingDays'];
+export const ALL_FIELDS: FieldKey[] = [...TEXT_FIELDS, ...MONEY_FIELDS, ...DATE_FIELDS, ...COUNT_FIELDS];
+
+/** Drawdown types a screenshot can state (same values as the account's `drawdownType`). */
+export const DRAWDOWN_TYPES = ['eod_trailing', 'trailing', 'static'] as const;
+export const DRAWDOWN_TYPE_LABEL: Record<(typeof DRAWDOWN_TYPES)[number], string> = { eod_trailing: 'End-of-day trailing', trailing: 'Intraday trailing', static: 'Static' };
 
 /** Display labels. Balance, drawdown amount, threshold and remaining are deliberately distinct. */
 export const FIELD_LABEL: Record<FieldKey, string> = {
@@ -88,7 +97,10 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
   currentDrawdown: 'Current drawdown (used)',
   drawdownRemaining: 'Remaining drawdown allowance',
   dailyLossLimit: 'Daily loss limit',
-  profitTarget: 'Profit target',
+  profitTarget: 'Profit target (amount)',
+  profitTargetBalance: 'Profit target (balance level)',
+  drawdownType: 'Drawdown type',
+  tradingDays: 'Trading days',
   startDate: 'Start / purchase date',
   statementDate: 'Dashboard date',
 };
@@ -99,6 +111,9 @@ export const FIELD_HELP: Partial<Record<FieldKey, string>> = {
   drawdownThreshold: 'The balance at which the account fails (e.g. $48,000).',
   currentDrawdown: 'How much of the allowance is used.',
   drawdownRemaining: 'How much more you can lose before the threshold.',
+  profitTarget: 'Profit still to make in total (e.g. $1,250) — not a balance.',
+  profitTargetBalance: 'The balance that passes the target (e.g. $26,250).',
+  tradingDays: 'Days traded so far, as the dashboard shows it.',
 };
 
 export type FieldSource = 'ocr' | 'vision' | 'derived' | 'user';

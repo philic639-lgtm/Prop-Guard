@@ -36,7 +36,8 @@ const money = (n: number) =>
  * Lowest balance the account may reach before breaching max drawdown.
  * Supports static, trailing (intraday high-water) and EOD trailing styles.
  */
-export function drawdownFloor(account: Account): number | null {
+/** The floor from the account's rules alone: starting balance / high-water mark − max loss allowance. */
+export function ruleFloor(account: Account): number | null {
   const { drawdownType, trailingLocksAtStart, calc } = account.rules;
   const maxDrawdown = maxDrawdownAmount(account);
   if (maxDrawdown == null || maxDrawdown <= 0) return null;
@@ -45,6 +46,27 @@ export function drawdownFloor(account: Account): number | null {
   // Lock point: firm-specific offset (e.g. Lucid: start + $100), else the starting balance.
   const lockOffset = calc?.trailingLockOffset ?? (trailingLocksAtStart ? 0 : null);
   return lockOffset != null ? Math.min(trailing, account.startingBalance + lockOffset) : trailing;
+}
+
+/** The minimum balance the firm last showed on a confirmed screenshot (Lucid's current MLL), if any. */
+export function observedFloor(account: Account): number | null {
+  const v = account.importState?.reported?.drawdownThreshold;
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * The account's current drawdown floor. A floor the firm showed is never
+ * replaced by one calculated from the starting balance: a trailing floor is
+ * the higher of the observed floor and the rule-based trail (so later
+ * journaled gains can still raise it); a static floor or an account without a
+ * known loss allowance uses the observed floor as shown.
+ */
+export function drawdownFloor(account: Account): number | null {
+  const observed = observedFloor(account);
+  const fromRules = ruleFloor(account);
+  if (observed == null) return fromRules;
+  if (fromRules == null || account.rules.drawdownType === 'static') return observed;
+  return Math.max(observed, fromRules);
 }
 
 /** Max drawdown in dollars — fixed amount, or a percentage of the starting balance. */
@@ -136,6 +158,18 @@ export function evaluateAccount(account: Account, accountTrades: Trade[], now = 
   const floor = drawdownFloor(account);
   const buffer = drawdownBuffer(account);
   const mdd = maxDrawdownAmount(account);
+  if (floor != null && buffer != null && !mdd) {
+    // Floor known (shown on a screenshot) but not the allowance: breach and cushion are exact, proximity is not.
+    evaluations.push({
+      id: 'max_drawdown',
+      label: rules.drawdownType === 'static' ? 'Static drawdown' : rules.drawdownType === 'eod_trailing' ? 'EOD trailing drawdown' : 'Trailing drawdown',
+      status: buffer <= 0 ? 'breached' : 'info',
+      current: `${money(buffer)} buffer`,
+      limit: `Floor ${money(floor)}`,
+      proximity: null,
+      message: buffer <= 0 ? 'Drawdown floor breached.' : `${money(buffer)} above the drawdown floor shown on your screenshot. Add the max loss allowance to see how close that is.`,
+    });
+  }
   if (floor != null && buffer != null && mdd) {
     const p = 1 - buffer / mdd;
     const label =

@@ -4,12 +4,20 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText, Chip, SegmentedControl } from '@/components/ui';
 import { colors, radius, spacing } from '@/constants/theme';
-import { confidenceBand, DATE_FIELDS, FIELD_HELP, FIELD_LABEL, MONEY_FIELDS, type ExtractedField, type FieldKey } from '@/lib/engines/accountImport';
+import { confidenceBand, COUNT_FIELDS, DATE_FIELDS, DRAWDOWN_TYPE_LABEL, FIELD_HELP, FIELD_LABEL, MONEY_FIELDS, type ExtractedField, type FieldKey } from '@/lib/engines/accountImport';
 import { parseNum } from '@/utils/format';
 
 const fmtMoney = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
 export const displayValue = (key: FieldKey, v: number | string) =>
-  typeof v === 'number' ? `${key === 'netPnl' || key === 'dailyPnl' ? (v < 0 ? '−' : '+') : ''}$${fmtMoney(Math.abs(v))}` : key === 'stage' ? String(v).charAt(0).toUpperCase() + String(v).slice(1) : String(v);
+  (COUNT_FIELDS as FieldKey[]).includes(key)
+    ? String(v)
+    : typeof v === 'number'
+      ? `${key === 'netPnl' || key === 'dailyPnl' ? (v < 0 ? '−' : '+') : ''}$${fmtMoney(Math.abs(v))}`
+      : key === 'drawdownType'
+        ? (DRAWDOWN_TYPE_LABEL[v as keyof typeof DRAWDOWN_TYPE_LABEL] ?? String(v))
+        : key === 'stage'
+          ? String(v).charAt(0).toUpperCase() + String(v).slice(1)
+          : String(v);
 
 const SOURCE_LABEL = { ocr: 'Read', vision: 'Advanced reader', derived: 'Calculated', user: 'You edited' } as const;
 
@@ -27,6 +35,7 @@ interface Props {
 export function ImportFieldRow({ k, field, edited, onChange, onReset, note }: Props) {
   const isMoney = (MONEY_FIELDS as FieldKey[]).includes(k);
   const isDate = (DATE_FIELDS as FieldKey[]).includes(k);
+  const isCount = (COUNT_FIELDS as FieldKey[]).includes(k);
   const value = field?.value;
   const [text, setText] = useState<string | null>(null);
   const shown = text ?? (value == null ? '' : typeof value === 'number' ? String(value) : String(value));
@@ -41,6 +50,8 @@ export function ImportFieldRow({ k, field, edited, onChange, onReset, note }: Pr
     if (isMoney) {
       const n = parseNum(trimmed.replace(/[$,\s]/g, ''));
       if (n != null) onChange(n);
+    } else if (isCount) {
+      if (/^\d{1,4}$/.test(trimmed)) onChange(Number(trimmed));
     } else if (isDate) {
       if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) onChange(trimmed);
     } else onChange(trimmed.slice(0, 60));
@@ -67,7 +78,17 @@ export function ImportFieldRow({ k, field, edited, onChange, onReset, note }: Pr
           {FIELD_HELP[k]}
         </AppText>
       ) : null}
-      {k === 'stage' ? (
+      {k === 'drawdownType' ? (
+        <SegmentedControl
+          options={[
+            { value: 'eod_trailing', label: 'EOD trailing' },
+            { value: 'trailing', label: 'Intraday' },
+            { value: 'static', label: 'Static' },
+          ]}
+          value={(value as 'eod_trailing' | 'trailing' | 'static' | undefined) ?? null}
+          onChange={(v) => onChange(v)}
+        />
+      ) : k === 'stage' ? (
         <SegmentedControl
           options={[
             { value: 'evaluation', label: 'Evaluation' },
@@ -92,8 +113,8 @@ export function ImportFieldRow({ k, field, edited, onChange, onReset, note }: Pr
             onChangeText={setText}
             onBlur={() => text != null && commit(text)}
             onSubmitEditing={() => text != null && commit(text)}
-            keyboardType={isMoney ? 'decimal-pad' : 'default'}
-            inputMode={isMoney ? 'decimal' : 'text'}
+            keyboardType={isMoney ? 'decimal-pad' : isCount ? 'number-pad' : 'default'}
+            inputMode={isMoney ? 'decimal' : isCount ? 'numeric' : 'text'}
             style={styles.input}
           />
           {edited ? (

@@ -2,7 +2,8 @@ import type { FirmRulesDatabase, PropFirm, PropFirmProgram } from '@/data/propFi
 import type { Account } from '@/types/domain';
 
 import { findFirm, getProgram, importProgramRules } from '../firmRulesEngine';
-import type { Extraction, FieldKey } from './types';
+import { drawdownFloor } from '../propRuleEngine';
+import { DRAWDOWN_TYPE_LABEL, type Extraction, type FieldKey } from './types';
 
 /**
  * Match an extraction to the rules database and the trader's accounts.
@@ -64,6 +65,8 @@ const numVal = (x: Extraction, k: FieldKey) => {
   return typeof v === 'number' ? v : null;
 };
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+/** Without spaces: "Lucid Flex", "LUCIDFLEX" and "LucidFlex" are the same program line. */
+const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
 /** Account size from the screenshot: stated size, else a round starting balance. */
 export function detectedSize(x: Extraction): number | null {
@@ -84,8 +87,8 @@ function scoreProgram(p: PropFirmProgram, text: string, size: number | null, sta
     score += 2;
     reasons.push(`Stage: ${stage}`);
   } else if (stage) score -= 2;
-  const line = p.line ? norm(p.line) : null;
-  if (line && text.includes(line)) {
+  const line = p.line ? compact(p.line) : null;
+  if (line && compact(text).includes(line)) {
     score += 4;
     reasons.push(`“${p.line}” on the screenshot`);
   } else {
@@ -149,6 +152,10 @@ export function matchImport(
         ['dailyLossLimit', 'Daily loss limit', 'dailyLossLimit'],
         ['profitTarget', 'Profit target', 'profitTarget'],
       ];
+      const shotType = val(x, 'drawdownType');
+      const ruleType = imp.values.drawdownType;
+      if (typeof shotType === 'string' && ruleType && shotType !== ruleType)
+        conflicts.push({ field: 'drawdownType', severity: 'warning', message: `Drawdown type: the screenshot shows ${DRAWDOWN_TYPE_LABEL[shotType as keyof typeof DRAWDOWN_TYPE_LABEL] ?? shotType}, verified ${prog.name} rules say ${DRAWDOWN_TYPE_LABEL[ruleType as keyof typeof DRAWDOWN_TYPE_LABEL] ?? ruleType}. Check the program.` });
       for (const [field, label, k] of fields) {
         const v = imp.values[k];
         const verified = v != null && v !== '' ? Number(v) : null;
@@ -186,6 +193,15 @@ export function matchImport(
       conflicts.push({ field: 'accountSize', severity: 'conflict', message: `Screenshot shows a ${money(size)} account; this account is ${money(t.size)}.` });
     if (stage && t.firmLink?.stage && t.firmLink.stage !== stage)
       conflicts.push({ field: 'stage', severity: 'conflict', message: `Screenshot shows the ${stage} stage; this account is set up as ${t.firmLink.stage}.` });
+    // A trailing floor never moves down. A lower minimum balance than the account's current floor is a reset — or a misread.
+    const shotFloor = numVal(x, 'drawdownThreshold');
+    const curFloor = drawdownFloor(t);
+    if (shotFloor != null && curFloor != null && t.rules.drawdownType !== 'static' && shotFloor < curFloor - 1)
+      conflicts.push({
+        field: 'drawdownThreshold',
+        severity: 'conflict',
+        message: `The screenshot shows a minimum balance of ${money(shotFloor)}, lower than this account's current floor of ${money(curFloor)}. A trailing floor never moves down — if the account was reset, confirm the reset; otherwise check the value.`,
+      });
     if (program && t.firmLink?.programId && t.firmLink.programId !== program.programId && !conflicts.some((c) => c.field === 'accountSize' || c.field === 'stage'))
       conflicts.push({ field: 'program', severity: 'warning', message: `Screenshot looks like ${program.name}; this account is set up as ${t.firmLink.programName ?? t.firmLink.programId}.` });
   } else if (duplicate) {

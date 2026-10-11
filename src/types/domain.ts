@@ -207,10 +207,21 @@ export interface AccountImportState {
   reported: {
     at: string;
     balance: number | null;
+    /** Current minimum balance (trailing floor / MLL level) the firm showed — the account's observed floor. */
     drawdownThreshold: number | null;
     drawdownRemaining: number | null;
+    /** Max loss allowance (an amount), when shown. */
     maxDrawdown: number | null;
     dailyLossLimit: number | null;
+    profitTarget?: number | null;
+    profitTargetBalance?: number | null;
+    netPnl?: number | null;
+    tradingDays?: number | null;
+    drawdownType?: DrawdownType | null;
+    /** Values the screenshots did not show (shown as unknown, never filled in). */
+    missing?: string[];
+    /** True for a confirmed reset: the floor starts over from this snapshot. */
+    reset?: boolean;
   } | null;
   /** Confirmed updates, newest first (capped). */
   history: AccountImportRecord[];

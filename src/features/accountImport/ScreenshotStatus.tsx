@@ -3,7 +3,8 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, DetailTable, StatusBadge } from '@/components/ui';
 import { spacing } from '@/constants/theme';
-import { drawdownBuffer, drawdownFloor } from '@/lib/engines/propRuleEngine';
+import { FIELD_LABEL, type FieldKey } from '@/lib/engines/accountImport';
+import { dailyLossLimitFor, drawdownBuffer, drawdownFloor, maxDrawdownAmount, ruleFloor } from '@/lib/engines/propRuleEngine';
 import type { Account } from '@/types/domain';
 import { money } from '@/utils/format';
 
@@ -28,11 +29,16 @@ export function ScreenshotStatus({ account }: { account: Account }) {
       </Card>
     );
   }
-  const floorDiff = rep.drawdownThreshold != null && floor != null && Math.abs(rep.drawdownThreshold - floor) > 1;
+  // The firm's own floor vs what the account's rules alone would calculate (a mismatch means the rules need a look).
+  const fromRules = ruleFloor(account);
+  const floorDiff = rep.drawdownThreshold != null && fromRules != null && Math.abs(rep.drawdownThreshold - fromRules) > 1;
+  const maxLoss = maxDrawdownAmount(account);
+  const dll = dailyLossLimitFor(account);
+  const target = account.rules.profitTarget;
   return (
     <Card style={styles.gap}>
       <View style={styles.row}>
-        <StatusBadge label="Screenshot updated" tone="accent" icon="camera-outline" size="sm" />
+        <StatusBadge label="Snapshot-based — not live verified" tone="accent" icon="camera-outline" size="sm" />
         <AppText variant="caption" style={styles.flex}>
           {screenshotLabel(rep.at)}
           {st?.maskedId ? ` · ${st.maskedId}` : ''}
@@ -44,14 +50,24 @@ export function ScreenshotStatus({ account }: { account: Account }) {
       <DetailTable
         rows={[
           ...(rep.balance != null ? [{ label: 'Balance on screenshot', value: money(rep.balance) }] : []),
-          ...(rep.drawdownThreshold != null ? [{ label: 'Firm threshold on screenshot', value: money(rep.drawdownThreshold) }] : []),
-          { label: 'Drawdown floor (account rules)', value: floor != null ? money(floor) : 'No drawdown rule', tone: floorDiff ? 'warning' : 'primary' },
-          { label: 'Drawdown remaining now', value: buffer != null ? money(buffer) : '—', bold: true },
+          ...(rep.drawdownThreshold != null ? [{ label: 'Minimum balance (MLL) on screenshot', value: money(rep.drawdownThreshold) }] : []),
+          { label: 'Current drawdown floor', value: floor != null ? money(floor) : 'Unknown', tone: floorDiff ? 'warning' : 'primary' },
+          { label: 'Remaining drawdown now', value: buffer != null ? money(buffer) : 'Unknown', bold: true },
+          { label: 'Max loss allowance', value: maxLoss != null ? money(maxLoss) : 'Unknown' },
+          { label: 'Daily loss limit', value: dll?.mode === 'none' ? 'None' : dll?.limit != null ? money(dll.limit) : 'Unknown' },
+          { label: 'Profit target', value: target != null ? `${money(target)} (balance ${money(account.startingBalance + target)})` : 'Unknown' },
+          ...(rep.netPnl != null ? [{ label: 'Total P&L on screenshot', value: money(rep.netPnl, { sign: true }) }] : []),
+          ...(rep.tradingDays != null ? [{ label: 'Trading days on screenshot', value: String(rep.tradingDays) }] : []),
         ]}
       />
+      {rep.missing?.length ? (
+        <AppText variant="caption" tone="tertiary">
+          Not in the snapshot (unknown): {rep.missing.map((k) => FIELD_LABEL[k as FieldKey] ?? k).join(', ')}.
+        </AppText>
+      ) : null}
       {floorDiff ? (
         <AppText variant="caption" tone="warning">
-          The firm’s threshold differs from the account’s rules — check the drawdown settings.
+          The firm’s minimum balance differs from what the account’s rules alone would calculate ({money(fromRules)}) — the firm’s value is used; check the drawdown settings.
         </AppText>
       ) : null}
       {st && st.history.length > 1 ? (

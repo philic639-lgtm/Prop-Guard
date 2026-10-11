@@ -164,8 +164,12 @@ describe('extraction — other layouts', () => {
   it('a "max drawdown" that looks like a balance is flagged, never trusted', () => {
     const page = swap(topstep, ['2,000.00', '48,000.00']);
     const x = run(page);
-    expect(x.checks.find((c) => c.id === 'max-looks-like-balance')?.status).toBe('conflict');
-    expect(x.fields.maxDrawdown!.confidence).toBeLessThan(0.5);
+    // A balance-sized "max loss" is a balance LEVEL: it is not kept as the allowance…
+    expect(x.fields.maxDrawdown).toBeUndefined();
+    // …it is read as the threshold, and since balance − threshold ≠ the "Distance to MLL" on the page, it is flagged.
+    expect(x.fields.drawdownThreshold?.value).toBe(48_000);
+    expect(x.checks.find((c) => c.id === 'balance-threshold-remaining')?.status).toBe('conflict');
+    expect(x.fields.drawdownThreshold!.confidence).toBeLessThanOrEqual(0.6);
   });
 });
 
@@ -231,7 +235,7 @@ describe('apply (after confirmation)', () => {
       balance: 50000,
       cycleStartBalance: 50000,
       highWaterMark: 50000,
-      firmLink: { status: 'verified', overrides: [], calc: { trailingLockOffset: 100 }, stage: 'evaluation', programId: 'lucid:pro-eval:50k' } as never,
+      firmLink: { status: 'verified', overrides: [], imported: { maxDrawdown: '2000', dailyLossLimit: '1200', profitTarget: '3000' }, calc: { trailingLockOffset: 100 }, stage: 'evaluation', programId: 'lucid:pro-eval:50k' } as never,
       ...over,
       rules: { maxDrawdown: 2000, drawdownType: 'eod_trailing', dailyLossLimit: 1200, profitTarget: 3000, maxContracts: 4, trailingLocksAtStart: false, calc: { trailingLockOffset: 100 } } as never,
     });
