@@ -31,6 +31,7 @@ import { FIELD_LABEL, type FieldKey } from '@/lib/engines/accountImport';
 import { LIMIT_SOURCE_SHORT } from '@/lib/engines/dailyGuardEngine';
 import { NewsWatch } from '@/features/intelligence/NewsRiskBanner';
 import { drawdownFloor } from '@/lib/engines/propRuleEngine';
+import { accountFreshness, missingCritical } from '@/lib/engines/accountDetails';
 import { HomeModeCard } from '@/features/learning/HomeModeCard';
 import { TradingPlanCard } from '@/features/home/TradingPlanCard';
 import { useAccountTrades, useActiveAccount, useActiveStrategy, useDailyGuard, useDiscipline, useOpenTrade, usePendingTrades } from '@/hooks/useAppData';
@@ -95,6 +96,8 @@ export default function HomeScreen() {
       : 'Link accounts or follow traders';
   const profit = account.balance - account.cycleStartBalance;
   const consistency = evaluation?.rules.find((r) => r.id === 'consistency');
+  const freshness = accountFreshness(account, new Date());
+  const missing = missingCritical(account);
   const ui = guard ? GUARD_UI[guard.status] : null;
 
   return (
@@ -122,6 +125,9 @@ export default function HomeScreen() {
               {account.importState?.reported ? `Snapshot-based — not live verified · ${screenshotLabel(account.importState.reported.at)}` : CONNECTION_LABEL[connection]}
             </AppText>
           </View>
+          <AppText variant="caption" tone="tertiary" numberOfLines={1}>
+            Last updated: {freshness.label}
+          </AppText>
           {account.importState?.reported?.missing?.length ? (
             <AppText variant="caption" tone="tertiary" numberOfLines={2}>
               Not in the snapshot: {account.importState.reported.missing.map((k) => FIELD_LABEL[k as FieldKey] ?? k).join(', ')}
@@ -130,6 +136,25 @@ export default function HomeScreen() {
         </View>
         <Icon name="chevron-forward" size={18} color={colors.textTertiary} />
       </Pressable>
+
+      {/* Stale data and missing data are different problems — shown separately. */}
+      {freshness.staleMessage ? (
+        <View style={styles.dataNote} accessibilityRole="alert">
+          <Icon name="time-outline" size={14} color={colors.warning} />
+          <AppText variant="caption" tone="warning" style={styles.flex}>
+            {freshness.staleMessage}
+          </AppText>
+        </View>
+      ) : null}
+      {missing.length ? (
+        <View style={styles.dataNote} accessibilityRole="alert">
+          <Icon name="alert-circle-outline" size={14} color={colors.warning} />
+          <AppText variant="caption" tone="warning" style={styles.flex}>
+            Missing data: {missing.map((m) => (m.key === 'drawdownThreshold' ? 'current liquidation threshold' : 'drawdown type')).join(' and ')} — risk checks for this account are limited until you add {missing.length > 1 ? 'them' : 'it'}.
+          </AppText>
+        </View>
+      ) : null}
+      <Button label="Edit Account Details" icon="create-outline" variant="secondary" size="md" onPress={() => router.push({ pathname: '/accounts/details', params: { id: account.id } })} />
 
       {/* The four numbers that matter: balance, profit target, daily risk, drawdown. */}
       {guard ? (
@@ -149,8 +174,8 @@ export default function HomeScreen() {
           <MetricTile
             label="Drawdown left"
             icon="trending-down-outline"
-            value={guard.drawdownUnknown ? 'Unknown' : money(guard.drawdownBuffer)}
-            sub={guard.drawdownUnknown ? 'Additional account information required' : drawdownFloor(account) != null ? `Floor ${money(drawdownFloor(account))}` : undefined}
+            value={guard.drawdownUnknown ? 'Needs verification' : money(guard.drawdownBuffer)}
+            sub={guard.drawdownUnknown ? 'Add the liquidation threshold' : drawdownFloor(account) != null ? `Floor ${money(drawdownFloor(account))}` : undefined}
             tone={guard.drawdownUnknown || (guard.drawdownBuffer != null && guard.drawdownBuffer < 500) ? 'warning' : 'primary'}
           />
         </TileGrid>
@@ -344,6 +369,7 @@ function ActionCard({ icon, title, subtitle, onPress, tone = 'accent', compact }
 const styles = StyleSheet.create({
   overview: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xs },
   pressed: { opacity: 0.8 },
+  dataNote: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs, padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.warningMuted },
   actions: { flexDirection: 'row', gap: spacing.sm },
   action: { flex: 1, minWidth: 0, gap: 4, padding: spacing.md, minHeight: 112, borderRadius: radius.lg, backgroundColor: colors.card },
   actionCompact: { minHeight: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },

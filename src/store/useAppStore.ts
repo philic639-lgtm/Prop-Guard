@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { createDemoData, DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES, EMPTY_DATA, type AppData } from '@/data/demo';
 import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
+import { withJournalBalance } from '@/lib/engines/accountDetails';
 import type { BrokerImportAction } from '@/lib/engines/journalEngine';
 import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
@@ -352,8 +353,7 @@ export const useAppStore = create<AppState>()(
           trades: s.trades.map((t) => (t.id === id ? closed : t)),
           accounts: s.accounts.map((a) => {
             if (a.id !== trade.accountId) return a;
-            const balance = Math.round((a.balance + pnl) * 100) / 100;
-            return { ...a, balance, highWaterMark: Math.max(a.highWaterMark, balance) };
+            return withJournalBalance(a, Math.round((a.balance + pnl) * 100) / 100, closed.closedAt ?? new Date().toISOString());
           }),
         }));
         syncService.upsertTrade(closed);
@@ -511,8 +511,7 @@ export const useAppStore = create<AppState>()(
           trades: [...s.trades, trade],
           accounts: s.accounts.map((a) => {
             if (a.id !== trade.accountId || trade.pnl == null) return a;
-            const balance = Math.round((a.balance + trade.pnl) * 100) / 100;
-            return { ...a, balance, highWaterMark: Math.max(a.highWaterMark, balance) };
+            return withJournalBalance(a, Math.round((a.balance + trade.pnl) * 100) / 100, trade.closedAt ?? new Date().toISOString());
           }),
         }));
         syncService.upsertTrade(trade);

@@ -186,7 +186,15 @@ export function formToAccount(v: AccountFormValues, base: Account | null, id: st
       ...(termsOf(v) ? { terms: termsOf(v) } : {}),
     },
     ...(firmLink ? { firmLink } : base?.firmLink ? { firmLink: base.firmLink } : {}),
-    // Screenshot-import history and fingerprint survive edits to the account.
+    // Screenshot-import history, fingerprint and confirmed values survive edits to the account.
     ...(base?.importState ? { importState: base.importState } : {}),
+    // An entered "drawdown remaining" IS the trader's confirmation of the current threshold.
+    ...(drawdownRemaining != null && Number.isFinite(drawdownRemaining) ? { importState: withManualThreshold(base?.importState, Math.round((balance - drawdownRemaining) * 100) / 100) } : {}),
   };
+}
+
+function withManualThreshold(st: Account['importState'], value: number): NonNullable<Account['importState']> {
+  const at = new Date().toISOString();
+  const prev = st ?? { fingerprint: null, maskedId: null, reported: null, history: [] };
+  return { ...prev, threshold: { value, source: 'manual', at }, origins: { ...prev.origins, drawdownThreshold: { source: 'manual', at } } };
 }

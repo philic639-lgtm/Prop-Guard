@@ -13,6 +13,7 @@ export const SHARED_FILES: [string, string][] = [
   ['src/lib/engines/setupCheck/vision.ts', 'supabase/functions/_shared/setupCheck/vision.ts'],
   ['src/lib/engines/setupCheck/rules.ts', 'supabase/functions/_shared/setupCheck/rules.ts'],
   ['src/lib/engines/setupCheck/context.ts', 'supabase/functions/_shared/setupCheck/context.ts'],
+  ['src/lib/engines/setupCheck/drawdown.ts', 'supabase/functions/_shared/setupCheck/drawdown.ts'],
   ['src/lib/engines/setupCheck/risk.ts', 'supabase/functions/_shared/setupCheck/risk.ts'],
   ['src/lib/engines/setupCheck/decision.ts', 'supabase/functions/_shared/setupCheck/decision.ts'],
   ['src/lib/engines/setupCheck/events.ts', 'supabase/functions/_shared/setupCheck/events.ts'],

@@ -1,7 +1,7 @@
 import { accountToForm, formToAccount } from '@/features/accounts/accountSchema';
 import { NOW, makeAccount, makeTrade } from '@/test/fixtures';
 
-import { drawdownBuffer, drawdownFloor, evaluateAccount } from '../propRuleEngine';
+import { drawdownBuffer, drawdownFloor, evaluateAccount, floorStatus, ruleFloor } from '../propRuleEngine';
 
 describe('drawdown', () => {
   it('static drawdown floor never moves', () => {
@@ -10,15 +10,47 @@ describe('drawdown', () => {
     expect(drawdownBuffer(a)).toBe(2000);
   });
 
-  it('trailing drawdown follows the high-water mark', () => {
+  // A trailing threshold depends on the peak balance, which Prop Guard cannot see: it is never
+  // assumed from the high-water mark — it needs a confirmed threshold (screenshot / entered).
+  const confirmed = (value: number, source: 'manual' | 'screenshot' = 'manual') => ({ fingerprint: null, maskedId: null, reported: null, history: [], threshold: { value, source, at: '2026-10-01T12:00:00Z' } });
+
+  it('trailing drawdown above the start without a confirmed threshold: needs verification, no buffer', () => {
     const a = makeAccount({ highWaterMark: 25800, balance: 25500, rules: { trailingLocksAtStart: false } as never });
+    expect(drawdownFloor(a)).toBeNull();
+    expect(drawdownBuffer(a)).toBeNull();
+    expect(floorStatus(a)).toMatchObject({ needs: ['threshold'], reason: expect.stringMatching(/Needs verification/) });
+    expect(ruleFloor(a)).toBe(24300); // the rule math itself is unchanged (used only to cross-check)
+  });
+
+  it('a trailing account never above its start: threshold = start − allowance', () => {
+    const a = makeAccount({ highWaterMark: 25000, balance: 24600 });
+    expect(floorStatus(a)).toMatchObject({ floor: 23500, basis: 'untouched_trailing' });
+  });
+
+  it('trailing drawdown follows the high-water mark from a confirmed threshold (never below it)', () => {
+    const a = makeAccount({ highWaterMark: 25800, balance: 25500, rules: { trailingLocksAtStart: false } as never, importState: confirmed(24300) });
     expect(drawdownFloor(a)).toBe(24300);
     expect(drawdownBuffer(a)).toBe(1200);
+    // A later journaled peak raises it…
+    expect(floorStatus({ ...a, highWaterMark: 26200, balance: 26000 })).toMatchObject({ floor: 24700, basis: 'confirmed_trailed' });
+    // …a lower rule trail never lowers it.
+    expect(drawdownFloor({ ...a, highWaterMark: 25000 })).toBe(24300);
   });
 
   it('trailing drawdown locks at starting balance when configured', () => {
-    const a = makeAccount({ highWaterMark: 27000, balance: 26800, rules: { trailingLocksAtStart: true } as never });
+    const a = makeAccount({ highWaterMark: 27000, balance: 26800, rules: { trailingLocksAtStart: true } as never, importState: confirmed(24800) });
     expect(drawdownFloor(a)).toBe(25000);
+  });
+
+  it('an entered threshold is used as entered and keeps its manual source', () => {
+    const a = makeAccount({ highWaterMark: 25800, balance: 25500, importState: confirmed(24400) });
+    expect(floorStatus(a)).toMatchObject({ floor: 24400, basis: 'confirmed', reason: expect.stringMatching(/entered by you/) });
+    expect(drawdownBuffer(a)).toBe(1100);
+  });
+
+  it('a defaulted (unconfirmed) drawdown type is never used to calculate a threshold', () => {
+    const a = makeAccount({ rules: { drawdownType: 'static' } as never, importState: { fingerprint: null, maskedId: null, reported: null, history: [], unconfirmed: ['drawdownType'] } });
+    expect(floorStatus(a)).toMatchObject({ floor: null, needs: ['threshold', 'drawdown_method'] });
   });
 
   it('returns null when no max drawdown configured', () => {
@@ -84,9 +116,15 @@ describe('evaluateAccount', () => {
 });
 
 describe('drawdown remaining import', () => {
-  it('reproduces an imported drawdown buffer', () => {
+  it('reproduces an entered drawdown buffer (stored as a manually confirmed threshold)', () => {
     const form = { ...accountToForm(null), size: '25000', balance: '26420', maxDrawdown: '1500', drawdownType: 'eod_trailing' as const };
     const a = formToAccount(form, null, 'x', 1300);
     expect(drawdownBuffer(a)).toBe(1300);
+    expect(a.importState?.threshold).toMatchObject({ value: 25120, source: 'manual' });
+  });
+
+  it('a new trailing account above its start without a threshold is not given a guessed floor', () => {
+    const form = { ...accountToForm(null), size: '25000', balance: '26420', maxDrawdown: '1500', drawdownType: 'eod_trailing' as const };
+    expect(drawdownFloor(formToAccount(form, null, 'x'))).toBeNull();
   });
 });

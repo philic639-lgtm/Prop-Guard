@@ -197,8 +197,36 @@ export interface Account {
   createdAt: string;
 }
 
-/** Screenshot-import state of an account. Screenshots themselves are never stored. */
+/** Account values Prop Guard tracks provenance for (screenshot / verified program / calculated / trader). */
+export type AccountDetailKey =
+  | 'name'
+  | 'firm'
+  | 'accountSize'
+  | 'balance'
+  | 'startingBalance'
+  | 'profitTarget'
+  | 'drawdownThreshold'
+  | 'maxDrawdown'
+  | 'dailyLossLimit'
+  | 'drawdownType'
+  | 'status';
+
+export type AccountValueSource = 'screenshot' | 'verified_program' | 'calculated' | 'manual';
+
+/**
+ * Where an account's numbers come from: dashboard screenshots and the trader's own
+ * corrections. Stored with the account (Supabase `import_state` jsonb). Screenshots
+ * are never uploaded or synced; an optional redacted reference copy stays on the device.
+ */
 export interface AccountImportState {
+  /** Latest confirmed liquidation threshold — read from a screenshot or entered by the trader. */
+  threshold?: { value: number; source: 'screenshot' | 'manual'; at: string } | null;
+  /** Source of each value's latest change. Manual corrections are never overwritten by a later import without the trader's choice. */
+  origins?: Partial<Record<AccountDetailKey, { source: AccountValueSource; at: string }>>;
+  /** Values that were defaulted rather than stated (e.g. a drawdown type nobody confirmed) — shown as "needs confirmation". */
+  unconfirmed?: AccountDetailKey[];
+  /** Last time the trader edited the account details by hand. */
+  editedAt?: string | null;
   /** Non-reversible fingerprint of the account number seen on the dashboard (duplicate detection). */
   fingerprint: string | null;
   /** Masked account number for display, e.g. "••••4917" (only if the trader kept it). */
@@ -206,6 +234,8 @@ export interface AccountImportState {
   /** Latest confirmed dashboard values. */
   reported: {
     at: string;
+    /** The date the dashboard showed (YYYY-MM-DD), when read — staleness is measured from it, not from the import time. */
+    asOf?: string | null;
     balance: number | null;
     /** Current minimum balance (trailing floor / MLL level) the firm showed — the account's observed floor. */
     drawdownThreshold: number | null;

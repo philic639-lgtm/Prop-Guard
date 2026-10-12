@@ -1,6 +1,7 @@
-import type { Account, AccountImportRecord, AccountImportState } from '@/types/domain';
+import type { Account, AccountDetailKey, AccountImportRecord, AccountImportState } from '@/types/domain';
 
-import { drawdownFloor, maxDrawdownAmount, observedFloor, ruleFloor } from '../propRuleEngine';
+import { stampImportOrigins } from '../accountDetails';
+import { confirmedThreshold, drawdownFloor, maxDrawdownAmount, observedFloor, ruleFloor } from '../propRuleEngine';
 import { DRAWDOWN_TYPES, type ExtractedField, type FieldKey, type FieldSource } from './types';
 
 /**
@@ -29,6 +30,8 @@ export interface ConfirmedImport {
   confirmedAt: string;
   /** The trader confirmed the account was reset: the floor starts over from this screenshot (it may be lower). */
   reset?: boolean;
+  /** Values the trader corrected by hand and chose to KEEP over this screenshot (see `manualConflicts`). */
+  keepManual?: AccountDetailKey[];
 }
 
 /** Values a dashboard snapshot should show; the ones it did not are listed as unknown on the account. */
@@ -62,6 +65,7 @@ export function confirmImport(input: {
   engine: ConfirmedImport['engine'];
   pages: number;
   now: Date;
+  keepManual?: AccountDetailKey[];
 }): ConfirmedImport {
   const values: ConfirmedImport['values'] = {};
   const sources: ConfirmedImport['sources'] = {};
@@ -71,7 +75,7 @@ export function confirmImport(input: {
     const edited = input.edited.has(k);
     sources[k] = { source: edited ? 'user' : f.source, confidence: edited ? null : f.confidence, edited };
   }
-  return { values, sources, ruleUpdates: input.ruleUpdates ?? {}, fingerprint: input.fingerprint, maskedId: input.maskedId, engine: input.engine, pages: input.pages, confirmedAt: input.now.toISOString(), ...(input.reset ? { reset: true } : {}) };
+  return { values, sources, ruleUpdates: input.ruleUpdates ?? {}, fingerprint: input.fingerprint, maskedId: input.maskedId, engine: input.engine, pages: input.pages, confirmedAt: input.now.toISOString(), ...(input.reset ? { reset: true } : {}), ...(input.keepManual?.length ? { keepManual: input.keepManual } : {}) };
 }
 
 export interface ApplyResult {
@@ -85,29 +89,56 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
   const notes: string[] = [];
   const before = { balance: account.balance, highWaterMark: account.highWaterMark };
   const next: Account = { ...account, rules: { ...account.rules } };
+  const keep = new Set(c.keepManual ?? []);
+  const applied: AccountDetailKey[] = [];
+  for (const k of keep) notes.push(`${k}: your manual correction was kept (the screenshot value was not applied).`);
 
-  // Rule values: only ones the trader chose, never verified ones.
+  // Rule values: only ones the trader chose, never verified ones, never a kept manual correction.
   const locked = lockedRuleFields(account);
   for (const [k, v] of Object.entries(c.ruleUpdates) as ['maxDrawdown' | 'dailyLossLimit' | 'profitTarget', number][]) {
     if (locked.has(k)) {
       notes.push(`${k} kept from the verified program rules.`);
       continue;
     }
+    if (keep.has(k)) continue;
     if (v > 0) {
       next.rules[k] = v;
+      applied.push(k);
       notes.push(`${k} set from the screenshot (unverified).`);
     }
   }
 
-  const balance = n(c.values.balance);
-  if (balance != null) next.balance = balance;
+  // Drawdown type / starting balance read on the screenshot (never over a verified rule or a kept correction).
+  const ddType = c.values.drawdownType;
+  const verifiedType = account.firmLink?.status === 'verified' && !account.firmLink.overrides.includes('drawdownType') && String(account.firmLink.imported?.drawdownType ?? '').trim() !== '';
+  if ((DRAWDOWN_TYPES as readonly string[]).includes(String(ddType)) && !verifiedType && !keep.has('drawdownType')) {
+    next.rules.drawdownType = ddType as (typeof DRAWDOWN_TYPES)[number];
+    applied.push('drawdownType');
+  }
+  // Starting balance: only when the account is created from this import ("opening balance" on some
+  // dashboards is the start of the DAY) — an existing account's start is changed in Edit Account Details.
+  const start = n(c.values.startingBalance);
+  const fresh = !account.importState;
+  if (fresh && start != null && start > 0 && !keep.has('startingBalance') && c.sources.startingBalance?.source !== 'derived') {
+    if (Math.abs(account.cycleStartBalance - account.startingBalance) < 0.005) next.cycleStartBalance = start;
+    next.startingBalance = start;
+    applied.push('startingBalance');
+  }
+
+  const balance = keep.has('balance') ? null : n(c.values.balance);
+  if (balance != null) {
+    next.balance = balance;
+    applied.push('balance');
+  }
   const bal = next.balance;
 
   // Drawdown tracking. The floor the firm shows is the account's floor — never recomputed from the
   // starting balance. A trailing floor never moves down unless the trader confirmed a reset.
   const maxDd = maxDrawdownAmount(next);
-  const reportedThreshold = n(c.values.drawdownThreshold);
-  const reportedRemaining = n(c.values.drawdownRemaining);
+  // A kept manual threshold is not replaced by the screenshot's.
+  const keepThreshold = keep.has('drawdownThreshold');
+  const reportedThreshold = keepThreshold ? null : n(c.values.drawdownThreshold);
+  const reportedRemaining = keepThreshold ? null : n(c.values.drawdownRemaining);
   const used = n(c.values.currentDrawdown);
   const shownFloor = reportedThreshold ?? (reportedRemaining != null ? bal - reportedRemaining : null);
   const trailing = next.rules.drawdownType !== 'static';
@@ -120,7 +151,7 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
   if (c.reset) notes.push('Account reset confirmed: the drawdown floor starts over from this screenshot.');
   const prevHwm = c.reset ? next.startingBalance : account.highWaterMark;
   let hwm = Math.max(prevHwm, bal);
-  if (trailing && maxDd) {
+  if (trailing && maxDd && !keepThreshold) {
     const lockOffset = next.rules.calc?.trailingLockOffset ?? (next.rules.trailingLocksAtStart ? 0 : null);
     const lock = lockOffset != null ? next.startingBalance + lockOffset : null;
     if (firmFloor != null) {
@@ -162,15 +193,26 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
   };
 
   const prev: AccountImportState = account.importState ?? { fingerprint: null, maskedId: null, reported: null, history: [] };
+  const prevThreshold = confirmedThreshold(account);
+  const statementDate = typeof c.values.statementDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c.values.statementDate) ? c.values.statementDate : null;
   next.importState = {
+    ...prev,
     fingerprint: prev.fingerprint ?? c.fingerprint,
     maskedId: c.maskedId ?? prev.maskedId,
+    // The account's confirmed threshold: the screenshot's (or the higher floor the account already had),
+    // unless the trader kept a manual one.
+    threshold: keepThreshold
+      ? (prev.threshold ?? prevThreshold)
+      : keptFloor != null
+        ? { value: keptFloor, source: firmFloor != null && shownFloor != null && Math.abs(firmFloor - shownFloor) <= TOL ? 'screenshot' : (prevThreshold?.source ?? 'screenshot'), at: c.confirmedAt }
+        : (prev.threshold ?? null),
     reported: {
       at: c.confirmedAt,
+      asOf: statementDate,
       balance,
-      drawdownThreshold: keptFloor,
+      drawdownThreshold: keepThreshold ? (prevThreshold?.value ?? null) : keptFloor,
       // Remaining cushion = balance − current floor (the dashboard's own number when it agrees).
-      drawdownRemaining: keptFloor != null ? Math.round((bal - keptFloor) * 100) / 100 : reportedRemaining,
+      drawdownRemaining: keepThreshold ? null : keptFloor != null ? Math.round((bal - keptFloor) * 100) / 100 : reportedRemaining,
       maxDrawdown: n(c.values.maxDrawdown),
       dailyLossLimit: n(c.values.dailyLossLimit),
       profitTarget: n(c.values.profitTarget),
@@ -184,5 +226,9 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
     },
     history: [record, ...prev.history].slice(0, HISTORY_CAP),
   };
+  if (!keepThreshold && firmFloor != null) applied.push('drawdownThreshold');
+  const typed = new Set(Object.entries(c.sources).filter(([, v]) => v?.source === 'user' || v?.edited).map(([k]) => k));
+  const stamped = stampImportOrigins(next, applied, c.confirmedAt, typed);
+  Object.assign(next, stamped);
   return { account: next, record, floorCheck };
 }

@@ -9,6 +9,7 @@ import { evaluateSetup, type AnalysisMode, type Evidence, type Input, type Prop,
 import { decideSetup, type SetupDecision } from './decision.ts';
 import { iccEvidence, iccSummary, parseIccManual, resolveIccStages, type IccManual, type IccObservation, type IccSummary } from './icc.ts';
 import { NONBINDING_DAILY_LIMIT } from './risk.ts';
+import { resolveFloor, type ConfirmedThreshold } from './drawdown.ts';
 import { sanitizeText, type SetupRule } from './rules.ts';
 
 // ───────────────────────────── Client payload (untrusted) ─────────────────────────────
@@ -125,6 +126,10 @@ export interface AccountRiskState {
   dailyLossMode?: 'none' | 'fixed' | 'scaling' | null;
   /** True only when balance / P&L come from a live broker feed (none is connected yet). */
   liveData?: boolean;
+  /** Latest liquidation threshold the trader confirmed (screenshot or entered). Absent = none. */
+  confirmedFloor?: ConfirmedThreshold | null;
+  /** False when the drawdown type was defaulted rather than stated (verified rule, screenshot or trader). */
+  drawdownMethodKnown?: boolean;
 }
 
 /**
@@ -133,18 +138,18 @@ export interface AccountRiskState {
  * their stops (worst case); live unrealized P&L is not available here.
  */
 export function propBuffers(a: AccountRiskState, noDailyLimitConfirmed: boolean): { drawdownBuffer?: number; dailyLossRemaining?: number } {
-  let drawdownBuffer: number | undefined;
-  if (a.maxDrawdown != null && a.maxDrawdown > 0) {
-    const floor =
-      a.drawdownType === 'static'
-        ? a.startingBalance - a.maxDrawdown
-        : (() => {
-            const trailing = Math.max(a.highWaterMark, a.startingBalance) - a.maxDrawdown;
-            const lock = a.trailingLockOffset ?? (a.trailingLocksAtStart ? 0 : null);
-            return lock != null ? Math.min(trailing, a.startingBalance + lock) : trailing;
-          })();
-    drawdownBuffer = a.balance - floor - a.openRisk;
-  }
+  // Same policy as the app (drawdown.ts): a trailing floor that depends on an unconfirmed peak is unknown — no buffer.
+  const { floor } = resolveFloor({
+    method: a.drawdownType,
+    methodKnown: a.drawdownMethodKnown !== false,
+    startingBalance: a.startingBalance,
+    balance: a.balance,
+    highWaterMark: a.highWaterMark,
+    maxDrawdown: a.maxDrawdown,
+    lockOffset: a.trailingLockOffset ?? (a.trailingLocksAtStart ? 0 : null),
+    confirmed: a.confirmedFloor ?? null,
+  });
+  const drawdownBuffer = floor != null ? a.balance - floor - a.openRisk : undefined;
   let dailyLossRemaining: number | undefined;
   if (a.dailyLossLimit != null && a.dailyLossLimit > 0) dailyLossRemaining = a.dailyLossLimit + Math.min(0, a.realizedPnlToday) - a.openRisk;
   else if (noDailyLimitConfirmed || a.dailyLossMode === 'none') dailyLossRemaining = NONBINDING_DAILY_LIMIT;

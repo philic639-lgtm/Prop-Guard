@@ -26,6 +26,7 @@ export function ScreenshotStatus({ account }: { account: Account }) {
         <AppText variant="bodyStrong">Update from a screenshot</AppText>
         <AppText variant="caption">Upload your firm dashboard to update the balance and drawdown — you review every value first.</AppText>
         <Button label="Import account screenshot" icon="camera-outline" variant="secondary" onPress={update} />
+        <Button label="Edit Account Details" icon="create-outline" variant="ghost" onPress={() => router.push({ pathname: '/accounts/details', params: { id: account.id } })} />
       </Card>
     );
   }
@@ -53,8 +54,8 @@ export function ScreenshotStatus({ account }: { account: Account }) {
         rows={[
           ...(rep.balance != null ? [{ label: enteredByYou('balance') ? 'Balance (entered by you)' : 'Balance on screenshot', value: money(rep.balance) }] : []),
           ...(rep.drawdownThreshold != null ? [{ label: enteredByYou('drawdownThreshold') ? 'Liquidation threshold (entered by you)' : 'Liquidation threshold (MLL) on screenshot', value: money(rep.drawdownThreshold) }] : []),
-          { label: 'Current drawdown floor', value: floor != null ? money(floor) : 'Unknown', tone: floorDiff ? 'warning' : 'primary' },
-          { label: 'Remaining drawdown now', value: buffer != null ? money(buffer) : 'Unknown', bold: true },
+          { label: account.importState?.threshold?.source === 'manual' ? 'Current drawdown floor (entered by you)' : 'Current drawdown floor', value: floor != null ? money(floor) : 'Needs verification', tone: floorDiff || floor == null ? 'warning' : 'primary' },
+          { label: 'Remaining drawdown now', value: buffer != null ? money(buffer) : 'Needs verification', bold: true },
           { label: 'Max loss allowance', value: maxLoss != null ? money(maxLoss) : 'Unknown' },
           { label: 'Daily loss limit', value: dll?.mode === 'none' ? 'None' : dll?.limit != null ? money(dll.limit) : 'Unknown' },
           { label: 'Profit target', value: target != null ? `${money(target)} (balance ${money(account.startingBalance + target)})` : 'Unknown' },
@@ -78,6 +79,7 @@ export function ScreenshotStatus({ account }: { account: Account }) {
         </AppText>
       ) : null}
       <Button label="Update from screenshot" icon="camera-outline" variant="secondary" onPress={update} />
+      <Button label="Edit Account Details" icon="create-outline" variant="ghost" onPress={() => router.push({ pathname: '/accounts/details', params: { id: account.id } })} />
     </Card>
   );
 }

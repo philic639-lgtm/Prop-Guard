@@ -176,8 +176,13 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
   const reported = account.importState?.reported ?? null;
   const snapshot = reported
     ? (() => {
-        const ageHours = Math.max(0, (now.getTime() - Date.parse(reported.at)) / 3_600_000);
-        const stale = dayKey(reported.at) !== today;
+        // A screenshot is as old as the dashboard date it shows (when read), not the moment it was imported.
+        const shot = reported.asOf && reported.asOf < dayKey(reported.at) ? `${reported.asOf}T12:00:00` : reported.at;
+        // …and a later correction by the trader (Edit Account Details) is newer data.
+        const edited = account.importState?.editedAt;
+        const asOf = edited && Date.parse(edited) > Date.parse(shot) ? edited : shot;
+        const ageHours = Math.max(0, (now.getTime() - Date.parse(asOf)) / 3_600_000);
+        const stale = dayKey(asOf) !== today;
         return { at: reported.at, ageHours: Math.round(ageHours * 10) / 10, stale, missing: reported.missing ?? [] };
       })()
     : null;

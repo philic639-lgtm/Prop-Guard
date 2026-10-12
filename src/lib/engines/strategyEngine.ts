@@ -162,6 +162,13 @@ export function evaluateSetup(input: SetupEvaluationInput): SetupEvaluation {
     }
   }
 
+  // No risk verdict on a prop account whose liquidation threshold is not confirmed: the remaining
+  // drawdown is unknown, so "within limits" cannot be established.
+  if (guard.drawdownUnknown) {
+    checks.push({ id: 'account_drawdown', label: 'Account drawdown threshold confirmed', passed: false, severity: 'rule', detail: 'Needs verification' });
+    violations.push('Your account’s liquidation threshold needs verification — Prop Guard cannot check this trade against your drawdown. Update it in Edit Account Details.');
+  }
+
   if (guard.maxContracts != null && guard.maxContracts > 0) {
     const ok = contracts <= guard.maxContracts;
     checks.push({ id: 'max_contracts', label: 'Within max contracts', passed: ok, severity: 'rule' });

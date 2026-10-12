@@ -1,6 +1,8 @@
 import type { Account, PropRules, Trade } from '@/types/domain';
 import { dayKey } from '@/utils/dates';
 
+import { resolveFloor, type ConfirmedThreshold, type FloorResult } from './setupCheck/drawdown';
+
 export type RuleStatus = 'ok' | 'warning' | 'breached' | 'info';
 
 export interface RuleEvaluation {
@@ -33,10 +35,10 @@ const money = (n: number) =>
   `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 
 /**
- * Lowest balance the account may reach before breaching max drawdown.
- * Supports static, trailing (intraday high-water) and EOD trailing styles.
+ * The floor from the account's rules alone (static: start − allowance; trailing: peak − allowance,
+ * with the lock). Used only to cross-check a firm-reported threshold — the account's floor is
+ * `drawdownFloor`, which never relies on an unconfirmed peak.
  */
-/** The floor from the account's rules alone: starting balance / high-water mark − max loss allowance. */
 export function ruleFloor(account: Account): number | null {
   const { drawdownType, trailingLocksAtStart, calc } = account.rules;
   const maxDrawdown = maxDrawdownAmount(account);
@@ -48,25 +50,52 @@ export function ruleFloor(account: Account): number | null {
   return lockOffset != null ? Math.min(trailing, account.startingBalance + lockOffset) : trailing;
 }
 
-/** The minimum balance the firm last showed on a confirmed screenshot (Lucid's current MLL), if any. */
+/**
+ * The latest liquidation threshold the trader confirmed — read from a dashboard
+ * screenshot or entered by hand — with its source. Older accounts kept only the
+ * screenshot value in `importState.reported`.
+ */
+export function confirmedThreshold(account: Account): ConfirmedThreshold | null {
+  const st = account.importState;
+  const t = st?.threshold;
+  if (t && typeof t.value === 'number' && Number.isFinite(t.value)) return t;
+  if (t === null) return null; // cleared by the trader
+  const v = st?.reported?.drawdownThreshold;
+  return typeof v === 'number' && Number.isFinite(v) ? { value: v, source: 'screenshot', at: st!.reported!.at } : null;
+}
+
+/** The minimum balance last confirmed for the account (screenshot or entered), if any. */
 export function observedFloor(account: Account): number | null {
-  const v = account.importState?.reported?.drawdownThreshold;
-  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  return confirmedThreshold(account)?.value ?? null;
+}
+
+/** False when the drawdown type was defaulted and never stated by a verified program, a screenshot or the trader. */
+export function drawdownMethodKnown(account: Account): boolean {
+  return !(account.importState?.unconfirmed ?? []).includes('drawdownType');
 }
 
 /**
- * The account's current drawdown floor. A floor the firm showed is never
- * replaced by one calculated from the starting balance: a trailing floor is
- * the higher of the observed floor and the rule-based trail (so later
- * journaled gains can still raise it); a static floor or an account without a
- * known loss allowance uses the observed floor as shown.
+ * The account's current drawdown floor and how it is known — see
+ * `setupCheck/drawdown.ts`. A trailing floor that would depend on an
+ * unconfirmed peak balance is `null` ("needs verification"), never an estimate.
  */
+export function floorStatus(account: Account): FloorResult {
+  const { trailingLocksAtStart, calc } = account.rules;
+  return resolveFloor({
+    method: account.rules.drawdownType,
+    methodKnown: drawdownMethodKnown(account),
+    startingBalance: account.startingBalance,
+    balance: account.balance,
+    highWaterMark: account.highWaterMark,
+    maxDrawdown: maxDrawdownAmount(account),
+    lockOffset: calc?.trailingLockOffset ?? (trailingLocksAtStart ? 0 : null),
+    confirmed: confirmedThreshold(account),
+  });
+}
+
+/** The account's current drawdown floor, or null when it is not known (see `floorStatus`). */
 export function drawdownFloor(account: Account): number | null {
-  const observed = observedFloor(account);
-  const fromRules = ruleFloor(account);
-  if (observed == null) return fromRules;
-  if (fromRules == null || account.rules.drawdownType === 'static') return observed;
-  return Math.max(observed, fromRules);
+  return floorStatus(account).floor;
 }
 
 /** Max drawdown in dollars — fixed amount, or a percentage of the starting balance. */
@@ -155,9 +184,14 @@ export function evaluateAccount(account: Account, accountTrades: Trade[], now = 
   }
 
   // Max drawdown
-  const floor = drawdownFloor(account);
+  const fs = floorStatus(account);
+  const floor = fs.floor;
   const buffer = drawdownBuffer(account);
   const mdd = maxDrawdownAmount(account);
+  if (floor == null && account.kind === 'prop') {
+    // Never a guessed threshold: say what is missing instead.
+    evaluations.push({ id: 'max_drawdown', label: 'Drawdown', status: 'info', current: 'Needs verification', limit: '—', proximity: null, message: fs.reason });
+  }
   if (floor != null && buffer != null && !mdd) {
     // Floor known (shown on a screenshot) but not the allowance: breach and cushion are exact, proximity is not.
     evaluations.push({
@@ -167,7 +201,7 @@ export function evaluateAccount(account: Account, accountTrades: Trade[], now = 
       current: `${money(buffer)} buffer`,
       limit: `Floor ${money(floor)}`,
       proximity: null,
-      message: buffer <= 0 ? 'Drawdown floor breached.' : `${money(buffer)} above the drawdown floor shown on your screenshot. Add the max loss allowance to see how close that is.`,
+      message: buffer <= 0 ? 'Drawdown floor breached.' : `${money(buffer)} above the confirmed drawdown floor. Add the max loss allowance to see how close that is.`,
     });
   }
   if (floor != null && buffer != null && mdd) {

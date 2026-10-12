@@ -112,18 +112,27 @@ describe('consecutiveLosses', () => {
 
 describe('V1 audit: remaining risk respects the drawdown floor and the program daily-loss mode', () => {
   it('a small drawdown buffer caps today’s remaining risk below the daily budget', () => {
-    // Trailing $1,500 from a $25,500 peak → floor $24,000; balance $24,300 → $300 above the floor.
-    const account = makeAccount({ balance: 24300, highWaterMark: 25500, rules: { trailingLocksAtStart: false } as never });
+    // Trailing $1,500 from a $25,500 peak → the trader confirmed the floor $24,000; balance $24,300 → $300 above it.
+    const account = makeAccount({ balance: 24300, highWaterMark: 25500, rules: { trailingLocksAtStart: false } as never, importState: { fingerprint: null, maskedId: null, reported: null, history: [], threshold: { value: 24000, source: 'manual', at: '2026-10-02T12:00:00Z' } } });
     const g = computeDailyGuard({ account, rules: makeRules({ dailyStop: 400 }), trades: [], now: NOW });
     expect(g.drawdownBuffer).toBe(300);
     expect(g.riskRemaining).toBe(300);
   });
 
   it('open risk counts against the drawdown room too', () => {
-    const account = makeAccount({ balance: 24300, highWaterMark: 25500, rules: { trailingLocksAtStart: false } as never });
+    const account = makeAccount({ balance: 24300, highWaterMark: 25500, rules: { trailingLocksAtStart: false } as never, importState: { fingerprint: null, maskedId: null, reported: null, history: [], threshold: { value: 24000, source: 'manual', at: '2026-10-02T12:00:00Z' } } });
     const open = makeTrade({ status: 'open', pnl: null, exitPrice: null, closedAt: null, riskDollars: 250 });
     const g = computeDailyGuard({ account, rules: makeRules({ dailyStop: 400 }), trades: [open], now: NOW });
     expect(g.riskRemaining).toBe(50);
+  });
+
+  it('a trailing account above its start with no confirmed threshold: drawdown unknown, never SAFE, no drawdown room assumed', () => {
+    const account = makeAccount({ balance: 24300, highWaterMark: 25500 });
+    const g = computeDailyGuard({ account, rules: makeRules({ dailyStop: 400 }), trades: [], now: NOW });
+    expect(g.drawdownUnknown).toBe(true);
+    expect(g.drawdownBuffer).toBeNull();
+    expect(g.status).not.toBe('SAFE');
+    expect(g.reasons.join(' ')).toMatch(/Drawdown floor unknown/);
   });
 
   it('a verified "no daily loss limit" program uses only the personal daily stop', () => {

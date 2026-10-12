@@ -19,7 +19,7 @@ export const displayValue = (key: FieldKey, v: number | string) =>
           ? String(v).charAt(0).toUpperCase() + String(v).slice(1)
           : String(v);
 
-const SOURCE_LABEL = { ocr: 'Read', vision: 'Advanced reader', derived: 'Calculated', user: 'You edited' } as const;
+const SOURCE_LABEL = { ocr: 'Extracted from screenshot', vision: 'Extracted (advanced reader)', derived: 'Calculated from extracted values', user: 'Entered or corrected by you' } as const;
 
 interface Props {
   k: FieldKey;
@@ -68,8 +68,8 @@ export function ImportFieldRow({ k, field, edited, onChange, onReset, note }: Pr
             {field.source === 'user' ? SOURCE_LABEL.user : `${SOURCE_LABEL[field.source]} · ${low ? 'check this' : band === 'medium' ? 'verify' : 'high confidence'}`}
           </AppText>
         ) : (
-          <AppText variant="caption" tone="tertiary">
-            Not detected
+          <AppText variant="caption" tone="warning">
+            Missing — needs confirmation
           </AppText>
         )}
       </View>

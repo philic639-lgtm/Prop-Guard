@@ -179,6 +179,8 @@ describe('Setup Check — prop accounts', () => {
     maxContracts: 5,
     verified: true,
     lastVerifiedAt: '2026-10-05T00:00:00.000Z',
+    // The trader confirmed the threshold (screenshot) when the account was fresh; journaled gains trail it.
+    confirmedFloor: { value: 48_000, source: 'screenshot', at: '2026-10-01T12:00:00Z' },
     ...over,
   });
 
@@ -188,6 +190,15 @@ describe('Setup Check — prop accounts', () => {
     expect(propBuffers(account({ drawdownType: 'static' }), false).drawdownBuffer).toBe(2_400);
     expect(propBuffers(account({ dailyLossLimit: null }), false).dailyLossRemaining).toBeUndefined();
     expect(propBuffers(account({ dailyLossLimit: null }), true).dailyLossRemaining).toBe(NONBINDING_DAILY_LIMIT);
+  });
+
+  it('no confirmed threshold on a trailing account above its start → no drawdown buffer (never a peak-based estimate)', () => {
+    expect(propBuffers(account({ confirmedFloor: null }), false).drawdownBuffer).toBeUndefined();
+    // Static is a rule calculation; an unstated drawdown type is not.
+    expect(propBuffers(account({ confirmedFloor: null, drawdownType: 'static' }), false).drawdownBuffer).toBe(2_400);
+    expect(propBuffers(account({ confirmedFloor: null, drawdownType: 'static', drawdownMethodKnown: false }), false).drawdownBuffer).toBeUndefined();
+    // Never above the start: the peak is the start, so the floor is exact.
+    expect(propBuffers(account({ confirmedFloor: null, balance: 49_800, highWaterMark: 50_000 }), false).drawdownBuffer).toBe(49_800 - 48_000 - 100);
   });
 
   it('normalizes micro / mini contract limits upstream', () => {

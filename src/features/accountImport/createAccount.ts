@@ -80,5 +80,8 @@ export function createAccountFromImport(input: CreateFromImportInput): CreateFro
   else delete account.rules.calc;
   // Rule values are already on the account; the import only sets balance / floor / history.
   const result = applyImport(account, { ...c, ruleUpdates: {} }, `${input.id}:import`);
+  // No verified program and no drawdown type on the screenshot: the form's default type is NOT a fact.
+  const typeStated = imp?.status === 'verified' || dd === 'eod_trailing' || dd === 'trailing' || dd === 'static';
+  if (!typeStated && result.account.importState) result.account.importState.unconfirmed = [...new Set([...(result.account.importState.unconfirmed ?? []), 'drawdownType' as const])];
   return { ok: true, result, ruleSource: imp?.status === 'verified' ? 'verified' : Object.keys(c.ruleUpdates).length ? 'screenshot' : 'none' };
 }

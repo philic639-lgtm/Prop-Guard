@@ -51,7 +51,7 @@ export default function RiskManager() {
           </Card>
           <TileGrid>
             <MetricTile label="Risk left today" value={guard.riskRemainingSource === 'none' ? 'Not set' : money(guard.riskRemaining)} sub={guard.riskRemainingSource === 'none' ? 'Set a daily stop' : `Limit: ${LIMIT_SOURCE_SHORT[guard.riskRemainingSource]}`} icon="shield-half-outline" />
-            <MetricTile label="Drawdown remaining" value={guard.drawdownUnknown ? 'Unknown' : money(guard.drawdownBuffer)} sub={drawdownFloor(account) != null ? `Floor ${money(drawdownFloor(account))}` : guard.drawdownUnknown ? 'Add the liquidation threshold' : undefined} tone={guard.drawdownUnknown ? 'warning' : 'primary'} />
+            <MetricTile label="Drawdown remaining" value={guard.drawdownUnknown ? 'Needs verification' : money(guard.drawdownBuffer)} sub={drawdownFloor(account) != null ? `Floor ${money(drawdownFloor(account))}` : guard.drawdownUnknown ? 'Add the liquidation threshold' : undefined} tone={guard.drawdownUnknown ? 'warning' : 'primary'} />
             <MetricTile label="Trades left" value={`${guard.tradesRemaining} / ${guard.maxTrades}`} />
             <MetricTile label="Max contracts" value={guard.maxContracts != null ? String(guard.maxContracts) : 'Not set'} />
           </TileGrid>

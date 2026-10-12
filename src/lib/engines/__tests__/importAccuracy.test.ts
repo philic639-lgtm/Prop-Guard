@@ -197,7 +197,8 @@ describe('E: verified drawdown calculations', () => {
   });
 
   it('update: reuses the account’s saved floor, trailed to the new balance (never a lower floor)', () => {
-    const acct = makeAccount({ balance: 25_200, highWaterMark: 25_300, rules: { maxDrawdown: 1_000, drawdownType: 'eod_trailing' } as never });
+    // The account's threshold was confirmed earlier at $24,300; a higher balance trails it to $24,500.
+    const acct = makeAccount({ balance: 25_200, highWaterMark: 25_300, rules: { maxDrawdown: 1_000, drawdownType: 'eod_trailing' } as never, importState: { fingerprint: null, maskedId: null, reported: null, history: [], threshold: { value: 24_300, source: 'screenshot', at: '2026-10-01T12:00:00Z' } } });
     const bal = 25_500;
     const floor = drawdownFloor({ ...acct, balance: bal, highWaterMark: Math.max(acct.highWaterMark, bal) });
     expect(floor).toBe(24_500);

@@ -264,7 +264,7 @@ export default function SetupCheckScreen() {
   const riskFailed = evaluation.rulesViolated.some((r) => r === 'risk_per_trade' || r === 'risk_daily' || r === 'max_contracts');
   const n = draftNumbers(draft);
   const suggested =
-    riskFailed && n.entry != null && n.stop != null
+    riskFailed && n.entry != null && n.stop != null && !guard.drawdownUnknown
       ? maxContractsForRisk(draft.instrument, n.entry, n.stop, Math.min(rules.maxRiskPerTrade, guard.riskRemaining), guard.maxContracts)
       : null;
 

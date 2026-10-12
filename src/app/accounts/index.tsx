@@ -46,7 +46,7 @@ export default function AccountsScreen() {
               <View style={[styles.grid, { marginTop: spacing.lg }]}>
                 <Metric label="Balance" value={money(a.balance)} compact />
                 <Metric label="Target" value={a.rules.profitTarget ? money(a.cycleStartBalance + a.rules.profitTarget) : '—'} compact />
-                <Metric label="DD buffer" value={money(ev.drawdownBuffer)} tone={ev.drawdownBuffer != null && ev.drawdownBuffer < 500 ? 'warning' : undefined} compact />
+                <Metric label="DD buffer" value={ev.drawdownBuffer != null ? money(ev.drawdownBuffer) : a.kind === 'prop' ? 'Verify' : '—'} tone={ev.drawdownBuffer == null && a.kind === 'prop' ? 'warning' : ev.drawdownBuffer != null && ev.drawdownBuffer < 500 ? 'warning' : undefined} compact />
               </View>
               {ev.targetProgress != null ? (
                 <View style={styles.progress}>

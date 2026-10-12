@@ -180,9 +180,10 @@ describe('Switching programs and saving — no mismatched configurations', () =>
 
 describe('Loaded rules → risk management', () => {
   it('EOD trailing floor stops at starting balance + $100 (Lucid lock)', () => {
-    const a = accountFrom('lucid:pro-eval:50k', { dll: 'on' }, { balance: 52_800, highWaterMark: 53_000 });
+    // Threshold confirmed at $49,000 (fresh account); later journaled peaks trail it up to the lock.
+    const a = accountFrom('lucid:pro-eval:50k', { dll: 'on' }, { balance: 52_800, highWaterMark: 53_000, importState: { fingerprint: null, maskedId: null, reported: null, history: [], threshold: { value: 49_000, source: 'screenshot' as const, at: `${TODAY}T12:00:00Z` } } });
     expect(drawdownFloor(a)).toBe(50_100); // 53,000 − 2,000 = 51,000 → locked at 50,100
-    const young = accountFrom('lucid:pro-eval:50k', { dll: 'on' }, { balance: 50_900, highWaterMark: 51_000 });
+    const young = accountFrom('lucid:pro-eval:50k', { dll: 'on' }, { balance: 50_900, highWaterMark: 51_000, importState: { fingerprint: null, maskedId: null, reported: null, history: [], threshold: { value: 49_000, source: 'screenshot' as const, at: `${TODAY}T12:00:00Z` } } });
     expect(drawdownFloor(young)).toBe(49_000);
   });
 
@@ -210,8 +211,10 @@ describe('Loaded rules → risk management', () => {
   });
 
   it('Setup Check buffers use the same rules (lock offset, verified “no DLL”)', () => {
-    const a = accountFrom('lucid:flex-eval:50k', { dll: 'off' }, { balance: 52_500, highWaterMark: 53_000 });
+    const a = accountFrom('lucid:flex-eval:50k', { dll: 'off' }, { balance: 52_500, highWaterMark: 53_000, importState: { fingerprint: null, maskedId: null, reported: null, history: [], threshold: { value: 49_000, source: 'screenshot' as const, at: `${TODAY}T12:00:00Z` } } });
     const state = accountRiskState(a, [], new Date(`${TODAY}T15:00:00Z`));
+    // Without a confirmed threshold the same account has no drawdown buffer in Setup Check either.
+    expect(propBuffers({ ...state, confirmedFloor: null }, false).drawdownBuffer).toBeUndefined();
     expect(state).toMatchObject({ trailingLockOffset: 100, dailyLossMode: 'none', liveData: false });
     const b = propBuffers(state, false);
     expect(b.drawdownBuffer).toBe(52_500 - 50_100);

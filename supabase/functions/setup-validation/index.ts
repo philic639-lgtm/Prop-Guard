@@ -45,6 +45,19 @@ const fail = (code: string, status: number) => json({ error: code, code }, statu
 type Row = Record<string, unknown>;
 const n = (v: unknown): number | null => (v == null || v === '' ? null : Number.isFinite(Number(v)) ? Number(v) : null);
 
+/** The account's confirmed liquidation threshold + whether its drawdown type was stated (same reading as the app's propRuleEngine). */
+function confirmedFloorOf(raw: unknown): { confirmedFloor: { value: number; source: 'screenshot' | 'manual'; at: string } | null; drawdownMethodKnown: boolean } {
+  const st = raw && typeof raw === 'object' ? (raw as Row) : {};
+  const t = st.threshold && typeof st.threshold === 'object' ? (st.threshold as Row) : null;
+  const rep = st.reported && typeof st.reported === 'object' ? (st.reported as Row) : null;
+  const unconfirmed = Array.isArray(st.unconfirmed) ? st.unconfirmed : [];
+  const tv = t ? n(t.value) : null;
+  const rv = rep ? n(rep.drawdownThreshold) : null;
+  const confirmedFloor =
+    tv != null ? { value: tv, source: t!.source === 'manual' ? ('manual' as const) : ('screenshot' as const), at: String(t!.at ?? '') } : rv != null ? { value: rv, source: 'screenshot' as const, at: String(rep!.at ?? '') } : null;
+  return { confirmedFloor, drawdownMethodKnown: !unconfirmed.includes('drawdownType') };
+}
+
 // ───────────────────────────── Vision provider (OpenAI Responses API) ─────────────────────────────
 
 const DEVELOPER_PROMPT = `You are Prop Guard's setup validation assistant, a disciplined trading risk assistant.
@@ -266,6 +279,7 @@ Deno.serve(async (req) => {
       dailyLossMode: ['none', 'fixed', 'scaling'].includes(String((prow?.rule_calc as Row | null)?.dailyLossMode)) ? ((prow!.rule_calc as Row).dailyLossMode as 'none' | 'fixed' | 'scaling') : null,
       // Balance / P&L come from the user's journal rows — no live broker feed yet.
       liveData: false,
+      ...confirmedFloorOf(arow.import_state),
     };
   }
 

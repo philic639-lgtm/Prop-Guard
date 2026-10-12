@@ -3,7 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Button, Card, Chip, DetailTable, Illustration, RiskProgress, Screen, SectionHeader, StatusBadge, ToggleRow } from '@/components/ui';
+import { AppHeader, AppText, Button, Card, Chip, DetailTable, Illustration, Input, RiskProgress, Screen, SectionHeader, StatusBadge, ToggleRow } from '@/components/ui';
 import { Icon } from '@/components/ui/Icon';
 import { isDemoMode } from '@/config/env';
 import { colors, radius, spacing } from '@/constants/theme';
@@ -14,14 +14,18 @@ import { ExampleScreenshotGuide } from '@/features/accountImport/ExampleScreensh
 import type { GuidePage } from '@/features/accountImport/exampleGuide';
 import { displayValue, ImportFieldRow } from '@/features/accountImport/ImportFieldRow';
 import { ImportReviewCard } from '@/features/accountImport/ImportReviewCard';
+import { ImportSteps } from '@/features/accountImport/ImportSteps';
 import { SAMPLE_SETS, sampleImages } from '@/features/accountImport/samples';
 import { useImportReview } from '@/features/accountImport/useImportReview';
 import { IMPORT_DEBUG, useImportSession, type ImportStep } from '@/features/accountImport/useImportSession';
 import { usePendingImport } from '@/features/accountImport/usePendingImport';
-import { applyImport, buildReview, confirmImport, lockedRuleFields, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
+import { applyImport, buildReview, confirmImport, lockedRuleFields, RESET_BLOCKER, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
 import { getProgram, importProgramRules, missingOptions } from '@/lib/engines/firmRulesEngine';
 import { drawdownBuffer, drawdownFloor } from '@/lib/engines/propRuleEngine';
 import { aiIsLive } from '@/services/ai';
+import { saveReferenceCopy } from '@/services/accountImport/referenceCopy';
+import { manualConflicts, type ManualConflict } from '@/lib/engines/accountDetails';
+import type { AccountDetailKey } from '@/types/domain';
 import { MAX_IMAGES, pickImages, type ImportImage } from '@/services/accountImport/images';
 import { ocrAvailable } from '@/services/accountImport/ocr';
 import { useAppStore } from '@/store/useAppStore';
@@ -29,13 +33,10 @@ import { money } from '@/utils/format';
 import { uuid } from '@/utils/id';
 import { goBack } from '@/utils/navigation';
 
-/** Every field, for "More details" (full editing; the review card shows only the essentials). */
-const GROUPS: { title: string; keys: FieldKey[] }[] = [
-  { title: 'Account', keys: ['firm', 'program', 'stage', 'status', 'accountSize', 'startDate', 'statementDate'] },
-  { title: 'Balance', keys: ['balance', 'startingBalance', 'netPnl', 'dailyPnl', 'tradingDays'] },
-  { title: 'Drawdown', keys: ['drawdownThreshold', 'drawdownRemaining', 'maxDrawdown', 'currentDrawdown', 'drawdownType'] },
-  { title: 'Limits', keys: ['dailyLossLimit', 'profitTarget', 'profitTargetBalance'] },
-];
+/** The account details shown (editable) on the review — in the order traders read their dashboard. */
+const DETAIL_KEYS: FieldKey[] = ['firm', 'program', 'accountSize', 'balance', 'startingBalance', 'profitTarget', 'drawdownThreshold', 'maxDrawdown', 'drawdownRemaining', 'dailyLossLimit', 'drawdownType', 'status', 'statementDate'];
+/** Everything else the reader may find, under "Screenshot evidence, other fields & privacy". */
+const OTHER_KEYS: FieldKey[] = ['stage', 'startDate', 'netPnl', 'dailyPnl', 'tradingDays', 'currentDrawdown', 'profitTargetBalance'];
 const RULE_KEYS = ['maxDrawdown', 'dailyLossLimit', 'profitTarget'] as const;
 type RuleKey = (typeof RULE_KEYS)[number];
 const RULE_NAME: Record<RuleKey, string> = { maxDrawdown: 'max loss allowance', dailyLossLimit: 'daily loss limit', profitTarget: 'profit target' };
@@ -89,6 +90,13 @@ function ImportFlow() {
   const [more, setMore] = useState(false);
   const [result, setResult] = useState<ApplyResult | null>(null);
   const [guide, setGuide] = useState<GuidePage | null>(null);
+  // Manual corrections vs this screenshot: the trader decides each one (never silently overwritten).
+  const [manualChoice, setManualChoice] = useState<Partial<Record<AccountDetailKey, 'keep' | 'screenshot'>>>({});
+  const tradingRules = useAppStore((s) => s.tradingRules);
+  const setTradingRules = useAppStore((s) => s.setTradingRules);
+  const [personalRisk, setPersonalRisk] = useState<string>(() => (tradingRules.dailyStop > 0 ? String(tradingRules.dailyStop) : ''));
+  const [keepReference, setKeepReference] = useState(true);
+  const [referenceNote, setReferenceNote] = useState<string | null>(null);
 
   // Session lives only while this screen is open.
   useEffect(() => () => useImportSession.getState().reset(), []);
@@ -168,12 +176,34 @@ function ImportFlow() {
     [mode, fields, extraction.checks, extraction.ambiguous, match, verifiedRules, locked, edited, confirmedFields, acks, pendingOptions, name, program, verifiedDrawdownType, accountFloor, extractionFailed],
   );
 
+  // Values this screenshot would change that the trader corrected by hand (update only).
+  const conflicts: ManualConflict[] = useMemo(() => {
+    if (mode !== 'update' || !target) return [];
+    const values: Record<string, number | string | null> = {};
+    for (const [k, f] of Object.entries(fields)) if (f && f.source !== 'derived') values[k] = f.value;
+    return manualConflicts(target, values);
+  }, [mode, target, fields]);
+  const unresolvedConflicts = conflicts.filter((c) => !manualChoice[c.key]);
+  const keepManual = conflicts.filter((c) => manualChoice[c.key] === 'keep').map((c) => c.key);
+  // The dashboard date on the screenshot: an older one is stale data (shown, never hidden).
+  const statementDate = typeof fields.statementDate?.value === 'string' ? fields.statementDate.value : null;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const staleScreenshot = statementDate != null && statementDate < todayKey;
+  // Read, but nothing recognised: never presented as a successful read.
+  const recognised = Object.values(fields).some((f) => f && f.source !== 'derived' && f.source !== 'user');
+  const personalRiskValue = personalRisk.trim() === '' ? null : Number(personalRisk.replace(/[$,\s]/g, ''));
+  const personalRiskError = personalRiskValue != null && !(Number.isFinite(personalRiskValue) && personalRiskValue > 0) ? 'Enter a positive amount, or leave it empty.' : null;
+
   const duplicateHard = mode === 'new' && match.duplicate?.reason === 'same_account_number';
   const duplicateSoft = mode === 'new' && match.duplicate?.reason === 'same_configuration';
   const engine = images.some((i) => i.image.sample) ? 'sample' : images.some((i) => i.reader === 'vision') ? 'vision' : images.some((i) => i.page) ? 'ocr' : 'manual';
   const idItem = extraction.sensitive.find((s) => s.kind === 'account_id');
-  const resetIssue = model.issues.find((i) => i.kind === 'reset');
-  const ready = model.blockers.length === 0 && !reading && !duplicateHard && (!duplicateSoft || differentAccount);
+  // Keeping a manual threshold means the screenshot's (lower) threshold is not applied — no reset question.
+  const keepThreshold = manualChoice.drawdownThreshold === 'keep';
+  const resetIssue = keepThreshold ? undefined : model.issues.find((i) => i.kind === 'reset');
+  const issues = keepThreshold ? model.issues.filter((i) => i.kind !== 'reset') : model.issues;
+  const blockers = keepThreshold ? model.blockers.filter((b) => b !== RESET_BLOCKER) : model.blockers;
+  const ready = blockers.length === 0 && unresolvedConflicts.length === 0 && !personalRiskError && !reading && !duplicateHard && (!duplicateSoft || differentAccount);
   // Confirming IS the trader's confirmation of the extracted values; only unresolved mandatory data disables it.
   const canSave = ready && !saving;
 
@@ -213,13 +243,29 @@ function ImportFlow() {
       engine,
       pages: images.filter((i) => i.page).length,
       now: new Date(),
+      keepManual,
     });
+    const afterSave = async (accountId: string): Promise<void> => {
+      // The trader's own daily stop (a plan setting for all accounts), when changed here.
+      const cur = tradingRules.dailyStop > 0 ? tradingRules.dailyStop : null;
+      if (!personalRiskError && personalRiskValue !== cur) setTradingRules({ ...tradingRules, dailyStop: personalRiskValue ?? 0 });
+      // Optional redacted reference copy, on this device only.
+      if (keepReference) {
+        const shots = images.filter((i) => i.page && !i.image.sample).map((i) => ({ image: i.image, sensitive: i.page!.sensitive }));
+        if (shots.length) {
+          const r = await saveReferenceCopy(accountId, shots, c.confirmedAt);
+          setReferenceNote(r.saved ? `A redacted copy (${r.saved} page${r.saved > 1 ? 's' : ''}) is kept on this device for reference.` : (r.reason ?? null));
+        }
+      }
+    };
+    // The session (and its images) is released only after the optional reference copy is made.
+    const finish = (accountId: string) => void afterSave(accountId).finally(() => useImportSession.getState().reset());
     if (mode === 'update' && target) {
       const r = applyImport(target, c, uuid());
       upsert(r.account);
       setResult(r);
       setPhase('done');
-      useImportSession.getState().reset();
+      finish(r.account.id);
       return;
     }
     if (from === 'onboarding') {
@@ -246,7 +292,7 @@ function ImportFlow() {
     setActiveAccount(created.result.account.id);
     setResult(created.result);
     setPhase('done');
-    useImportSession.getState().reset();
+    finish(created.result.account.id);
   };
 
   // Opened directly (e.g. from More) there may be no screen to go back to.
@@ -259,6 +305,7 @@ function ImportFlow() {
     const buffer = drawdownBuffer(result.account);
     return (
       <Screen header={header} footer={<Button label="Done" icon="checkmark" onPress={() => (mode === 'new' ? router.replace('/accounts') : leave())} />}>
+        <ImportSteps current="Saved" />
         <Card tone="positive" style={styles.gap}>
           <StatusBadge label={mode === 'update' ? 'Account updated' : 'Account saved'} tone="positive" icon="checkmark-circle" size="sm" />
           <AppText variant="title">{result.account.name}</AppText>
@@ -269,10 +316,21 @@ function ImportFlow() {
         <DetailTable
           rows={[
             { label: 'Balance', value: mode === 'update' ? `${money(result.record.before.balance)} → ${money(result.account.balance)}` : money(result.account.balance), bold: true },
-            { label: 'Liquidation threshold', value: floor != null ? money(floor) : 'Not set' },
-            { label: 'Remaining before liquidation', value: buffer != null ? money(buffer) : 'Not enough data', tone: buffer != null && buffer < 500 ? 'warning' : 'primary' },
+            { label: 'Liquidation threshold', value: floor != null ? money(floor) : 'Needs verification' },
+            { label: 'Remaining before liquidation', value: buffer != null ? money(buffer) : 'Needs verification', tone: buffer != null && buffer < 500 ? 'warning' : buffer == null ? 'warning' : 'primary' },
           ]}
         />
+        {floor == null && result.account.kind === 'prop' ? (
+          <Card tone="warning" style={styles.gap}>
+            <AppText variant="caption">The liquidation threshold was not on the screenshot and cannot be calculated from it. Add it so Prop Guard can check trades against your drawdown.</AppText>
+            <Button label="Add it in Edit Account Details" variant="secondary" icon="create-outline" size="md" onPress={() => router.replace({ pathname: '/accounts/details', params: { id: result.account.id } })} />
+          </Card>
+        ) : null}
+        {referenceNote ? (
+          <AppText variant="caption" tone="secondary">
+            {referenceNote}
+          </AppText>
+        ) : null}
       </Screen>
     );
   }
@@ -288,6 +346,7 @@ function ImportFlow() {
             <Button label="Enter values manually instead" variant="ghost" onPress={() => (mode === 'update' ? setPhase('review') : params.from ? leave() : router.replace({ pathname: '/accounts/[id]', params: { id: 'new' } }))} />
           </>
         }>
+        <ImportSteps current="Uploading" />
         <DropZone onFiles={add}>
           <Card style={styles.drop}>
             <Illustration kind="upload" size={72} />
@@ -331,7 +390,7 @@ function ImportFlow() {
         <View style={styles.row}>
           <Icon name="eye-off-outline" size={14} color={colors.warning} />
           <AppText variant="caption" tone="secondary" style={styles.flex}>
-            Hide passwords, API keys, emails and personal details first. Screenshots stay on this device and are never stored.
+            Hide passwords, API keys, emails and personal details first. Screenshots are read on this device and never uploaded; you can keep a redacted copy on this device for reference.
           </AppText>
         </View>
 
@@ -372,15 +431,16 @@ function ImportFlow() {
       header={header}
       footer={
         <>
-          {!readingNow && model.blockers.length && anyRead ? (
+          {!readingNow && (blockers.length || unresolvedConflicts.length) && anyRead ? (
             <AppText variant="caption" tone="tertiary" align="center">
-              {model.blockers[0]}
+              {unresolvedConflicts.length ? 'Choose which values to keep (you corrected them by hand).' : blockers[0]}
             </AppText>
           ) : null}
           <Button label={readingNow ? 'Reading…' : saving ? 'Saving…' : mode === 'update' ? 'Confirm & Update Account' : 'Confirm & Save Account'} icon="checkmark-done" disabled={!canSave} onPress={confirm} />
           <Button label="Add or Change Screenshots" variant="ghost" onPress={() => setPhase('add')} />
         </>
       }>
+      <ImportSteps current={readingNow ? (images.some((i) => i.step?.stage === 'extracting') ? 'Extracting' : 'Reading') : 'Reviewing'} failed={!readingNow && failed.length > 0 && failed.length === images.length} />
       {readingNow ? (
         <Card style={styles.gap}>
           <AppText variant="bodyStrong">
@@ -401,7 +461,7 @@ function ImportFlow() {
         </Card>
       ) : null}
 
-      {!readingNow && anyRead && !failed.length ? (
+      {!readingNow && anyRead && !failed.length && recognised ? (
         <View style={styles.row} accessibilityRole="alert">
           <Icon name="document-text-outline" size={16} color={colors.textSecondary} />
           <AppText variant="caption" tone="secondary" style={styles.flex}>
@@ -444,7 +504,7 @@ function ImportFlow() {
           summary={model.summary}
           details={model.details}
           extraRows={model.rows.filter((r) => r.required && r.key !== 'balance' && r.status !== 'ok')}
-          issues={model.issues}
+          issues={issues}
           acks={acks}
           onAck={(id, v) => setAcks((a) => ({ ...a, [id]: v }))}
           programChoices={mode === 'new' && !match.program ? match.alternatives.filter((a) => a.score >= (match.alternatives[0]?.score ?? 0) - 1 && a.score >= 5) : []}
@@ -457,6 +517,84 @@ function ImportFlow() {
         />
       ) : null}
 
+      {!readingNow && anyRead && !recognised ? (
+        <Card tone="warning" style={styles.gap}>
+          <AppText variant="bodyStrong">No account values were recognised</AppText>
+          <AppText variant="caption" tone="secondary">
+            The text was read, but no account labels (balance, liquidation threshold, drawdown…) were found next to a number. Nothing below was filled in from this screenshot. Try a sharper or cropped screenshot of the account panel, or enter the values yourself.
+          </AppText>
+          <View style={styles.row}>
+            <Button label="Try another screenshot" variant="secondary" icon="refresh" size="md" style={styles.flex} onPress={() => setPhase('add')} />
+            <Button label="What to capture" variant="ghost" size="md" style={styles.flex} onPress={() => setGuide('overview')} />
+          </View>
+        </Card>
+      ) : null}
+
+      {!readingNow && staleScreenshot ? (
+        <Card tone="warning" style={styles.gap}>
+          <AppText variant="bodyStrong">This screenshot is from {statementDate}</AppText>
+          <AppText variant="caption" tone="secondary">
+            Balance and threshold may have changed since. Prop Guard will show these values as stale — a screenshot from today is more accurate.
+          </AppText>
+        </Card>
+      ) : null}
+
+      {!readingNow && conflicts.length ? (
+        <Card tone="warning" style={styles.gap}>
+          <AppText variant="bodyStrong">You corrected these values by hand</AppText>
+          <AppText variant="caption" tone="secondary">
+            The screenshot shows something different. Choose which value to keep — your corrections are never replaced without asking.
+          </AppText>
+          {conflicts.map((c) => (
+            <View key={c.key} style={styles.gap}>
+              <AppText variant="label">{c.label}</AppText>
+              <View style={styles.chips}>
+                <Chip label={`Keep mine · ${typeof c.manual === 'number' ? money(c.manual) : c.manual}`} selected={manualChoice[c.key] === 'keep'} onPress={() => setManualChoice((m) => ({ ...m, [c.key]: 'keep' }))} />
+                <Chip label={`Use screenshot · ${typeof c.screenshot === 'number' ? money(c.screenshot) : c.screenshot}`} selected={manualChoice[c.key] === 'screenshot'} onPress={() => setManualChoice((m) => ({ ...m, [c.key]: 'screenshot' }))} />
+              </View>
+              <AppText variant="caption" tone="tertiary">
+                Corrected by you on {new Date(c.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </AppText>
+            </View>
+          ))}
+        </Card>
+      ) : null}
+
+      {!readingNow && (anyRead || mode === 'update') ? (
+        <View style={styles.gap}>
+          <SectionHeader title="Account details" />
+          <AppText variant="caption" tone="secondary">
+            Every value is editable. Each shows where it comes from: extracted from the screenshot, a verified program rule, calculated, entered by you — or missing. Missing values stay empty; nothing is guessed.
+          </AppText>
+          {DETAIL_KEYS.map((k) => {
+            const rule = k === 'maxDrawdown' || k === 'dailyLossLimit' || k === 'profitTarget' ? verifiedRules[k] : undefined;
+            const note =
+              rule != null
+                ? `Verified program configuration: ${money(rule)} — this is the value saved.`
+                : k === 'drawdownThreshold' && !fields.drawdownThreshold
+                  ? model.drawdown.status === 'unavailable'
+                    ? model.drawdown.note
+                    : undefined
+                  : k === 'statementDate'
+                    ? 'Snapshot date — the dashboard date on the screenshot. Imported now; values are not live.'
+                    : undefined;
+            return <ImportFieldRow key={k} k={k} field={fields[k]} edited={edited.has(k)} onChange={(v) => edit(k, v as number | null)} onReset={() => session.resetEdit(k)} note={note} />;
+          })}
+          {from !== 'onboarding' ? (
+            <Card style={styles.gap}>
+              <AppText variant="bodyStrong">Personal daily risk budget</AppText>
+              <AppText variant="caption" tone="tertiary">
+                Your own daily stop — applies to all your accounts, separate from the firm’s daily loss limit. {personalRisk.trim() ? 'Entered by you.' : 'Missing — add it to get daily risk guidance.'}
+              </AppText>
+              <Input accessibilityLabel="Personal daily risk budget" value={personalRisk} onChangeText={setPersonalRisk} prefix="$" keyboardType="decimal-pad" placeholder="Not set" error={personalRiskError} />
+            </Card>
+          ) : null}
+          {images.some((i) => i.page && !i.image.sample) && from !== 'onboarding' ? (
+            <ToggleRow label="Keep a redacted copy on this device for reference (account numbers blacked out, never uploaded)" value={keepReference} onChange={setKeepReference} />
+          ) : null}
+        </View>
+      ) : null}
+
       {!readingNow ? (
         <>
           {saveError ? (
@@ -467,7 +605,7 @@ function ImportFlow() {
 
           <Pressable accessibilityRole="button" aria-expanded={more} onPress={() => setMore((m) => !m)} style={styles.moreHead}>
             <AppText variant="bodyStrong" style={styles.flex}>
-              Screenshot evidence, all fields & privacy
+              Screenshot evidence, other values & privacy
             </AppText>
             <Icon name={more ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
           </Pressable>
@@ -488,13 +626,9 @@ function ImportFlow() {
               {(Object.keys(model.saveableRules) as RuleKey[]).map((k) => (
                 <ToggleRow key={k} label={`Save the ${RULE_NAME[k]} from the screenshot (${money(model.saveableRules[k]!)})`} value={saveRules[k] !== false} onChange={(v) => setSaveRules((s) => ({ ...s, [k]: v }))} />
               ))}
-              {GROUPS.map((g) => (
-                <View key={g.title} style={styles.gap}>
-                  <SectionHeader title={g.title} />
-                  {g.keys.map((k) => (
-                    <ImportFieldRow key={k} k={k} field={fields[k]} edited={edited.has(k)} onChange={(v) => edit(k, v as number | null)} onReset={() => session.resetEdit(k)} />
-                  ))}
-                </View>
+              <SectionHeader title="Other values on the screenshot" />
+              {OTHER_KEYS.map((k) => (
+                <ImportFieldRow key={k} k={k} field={fields[k]} edited={edited.has(k)} onChange={(v) => edit(k, v as number | null)} onReset={() => session.resetEdit(k)} />
               ))}
               {extraction.sensitive.length ? (
                 <Card style={styles.gap}>

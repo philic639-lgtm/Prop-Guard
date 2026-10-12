@@ -1,5 +1,6 @@
 import { getInstrument } from '@/lib/engines/instrumentEngine';
 import { realizedPnl } from '@/lib/engines/riskEngine';
+import { ruleFloor } from '@/lib/engines/propRuleEngine';
 import type {
   Account,
   AppAlert,
@@ -541,7 +542,7 @@ export function createDemoData(now = new Date()): AppData {
     copyTrades: [],
     copyGroups: [],
     alerts,
-    accounts: [account25k, account50k],
+    accounts: [demoConfirmed(account25k, minsAgo(90)), demoConfirmed(account50k, minsAgo(90))],
     strategies: [orb, vwap],
     trades,
     sessions,
@@ -557,4 +558,15 @@ export function createDemoData(now = new Date()): AppData {
     activeAccountId: account25k.id,
     activeStrategyId: orb.id,
   };
+}
+
+/**
+ * Demo accounts carry a liquidation threshold "entered" by the (demo) trader — the value their
+ * rules give today — so the demo shows drawdown numbers. Real accounts never get one by default:
+ * a trailing threshold needs a screenshot or the trader's own entry.
+ */
+function demoConfirmed(a: Account, at: string): Account {
+  const value = ruleFloor(a);
+  if (value == null) return a;
+  return { ...a, importState: { fingerprint: null, maskedId: null, reported: null, history: [], threshold: { value, source: 'manual', at }, origins: { drawdownThreshold: { source: 'manual', at } }, editedAt: at } };
 }

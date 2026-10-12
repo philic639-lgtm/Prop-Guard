@@ -125,6 +125,8 @@ export type ReviewState = 'ready' | 'needs_review' | 'missing_info' | 'failed';
 export const REVIEW_STATE_LABEL: Record<ReviewState, string> = { ready: 'Ready to confirm', needs_review: 'Needs review', missing_info: 'Missing information', failed: 'Extraction failed' };
 
 export const ADDITIONAL_INFO_REQUIRED = 'Additional account information required';
+/** Blocker shown while a lower screenshot threshold needs the trader to confirm a reset. */
+export const RESET_BLOCKER = 'Confirm the reset or correct the liquidation threshold.';
 
 export interface ReviewModel {
   /** Header status. */
@@ -254,7 +256,7 @@ export function buildReview(input: ReviewInput): ReviewModel {
     else if (r.status === 'uncertain') blockers.push(`Check the ${r.label.toLowerCase()} — the reading is uncertain.`);
   }
   for (const o of input.missingOptions) blockers.push(`Choose the ${o.label} option.`);
-  for (const i of issues) if (!input.acks[i.id]) blockers.push(i.kind === 'reset' ? 'Confirm the reset or correct the liquidation threshold.' : 'Resolve the item marked “Needs your attention”.');
+  for (const i of issues) if (!input.acks[i.id]) blockers.push(i.kind === 'reset' ? RESET_BLOCKER : 'Resolve the item marked “Needs your attention”.');
 
   // Different accounts in one import: never saved together.
   if (input.checks.some((c) => c.id === 'different-accounts')) blockers.push('Remove the screenshots of the other account — import one account at a time.');

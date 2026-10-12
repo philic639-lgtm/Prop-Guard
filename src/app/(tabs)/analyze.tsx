@@ -80,8 +80,9 @@ export default function AnalyzeScreen() {
   const entry = parseNum(draft.entry);
   const stop = parseNum(draft.stop);
   const contracts = Math.max(1, Math.round(parseNum(draft.contracts) ?? 1));
+  // No size suggestion while the account's drawdown threshold is unknown.
   const sizing =
-    entry != null && stop != null && entry !== stop
+    entry != null && stop != null && entry !== stop && !guard.drawdownUnknown
       ? maxContractsForRisk(draft.instrument, entry, stop, Math.min(rules.maxRiskPerTrade, guard.riskRemaining), account.rules.maxContracts)
       : null;
   const yesNoItems = strategy?.checklist.filter((c) => c.kind === 'yesno') ?? [];
@@ -257,6 +258,10 @@ export default function AnalyzeScreen() {
             {sizing != null ? (
               <AppText variant="caption" style={{ marginTop: spacing.md }}>
                 Max size within your limits: <AppText variant="bodyStrong" style={{ fontSize: 13 }}>{sizing} {draft.instrument}</AppText>
+              </AppText>
+            ) : guard.drawdownUnknown ? (
+              <AppText variant="caption" tone="warning" style={{ marginTop: spacing.md }} onPress={() => router.push({ pathname: '/accounts/details', params: { id: account.id } })}>
+                No size suggestion: your liquidation threshold needs verification. Tap to update it in Edit Account Details.
               </AppText>
             ) : null}
             {risk && !risk.valid && (draft.entry || draft.stop) && risk.errors.length > 0 ? (

@@ -1,6 +1,7 @@
 import type { AccountRiskState, StrategyRecord, TrustedContext } from '@/lib/engines/setupCheck';
 import { rulesFromStrategy, systemEvidence } from '@/lib/engines/setupCheck';
 import { findInstrument } from '@/lib/engines/instrumentEngine';
+import { confirmedThreshold, drawdownMethodKnown } from '@/lib/engines/propRuleEngine';
 import type { Account, Trade, TradingRules } from '@/types/domain';
 
 /**
@@ -34,6 +35,8 @@ export function accountRiskState(account: Account, trades: Trade[], now: Date): 
     dailyLossMode: account.rules.calc?.dailyLossMode ?? null,
     // Balance and P&L come from the journal — no live broker feed is connected.
     liveData: false,
+    confirmedFloor: confirmedThreshold(account),
+    drawdownMethodKnown: drawdownMethodKnown(account),
   };
 }
 
