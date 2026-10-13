@@ -104,7 +104,8 @@ export function normWord(t: string): string {
 export function parseMoney(raw: string, allowK = false): number | null {
   let t = raw.trim().replace(/[,.;:|]+$/, '').replace(/^usd/i, '').replace(/usd$/i, '');
   if (!t) return null;
-  if (/[0-9]/.test(t)) t = t.replace(/(?<=[\d,])[oO](?=[\d,.]|$)/g, '0').replace(/^[oO](?=[\d,])/, '0');
+  // No regex lookbehind anywhere in app code: Safari before iOS 16.4 rejects the whole bundle.
+  if (/[0-9]/.test(t)) t = t.replace(/([\d,])[oO](?=[\d,.]|$)/g, (_, d: string) => `${d}0`).replace(/^[oO](?=[\d,])/, '0');
   const k = allowK ? /^\$?(\d{1,3}(?:\.\d)?)\s?[kK]$/.exec(t) : null;
   if (k) return Math.round(Number(k[1]) * 1000);
   const m = /^([+\-−])?\(?([+\-−])?\$?(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?\)?$/.exec(t);

@@ -52,6 +52,19 @@ Requirements: Node 20+ and the Expo Go app (SDK 57) or an iOS/Android simulator.
 
 ---
 
+## Website (iPhone Safari, Android Chrome, desktop)
+
+The web build is a static single-page app deployed with **Vercel** from this GitHub repo:
+
+```bash
+npm run build:web   # OCR files → public/ocr, then expo export → dist/
+```
+
+`vercel.json` holds the build command, output folder (`dist`), SPA rewrite and cache
+headers. Step-by-step setup, environment variables, Supabase URL settings and the
+post-deploy phone checklist: **[docs/DEPLOY_VERCEL.md](docs/DEPLOY_VERCEL.md)**.
+Minimum browsers: iOS Safari 15.4+, current Chrome / Edge / Firefox.
+
 ## Environment variables
 
 Copy `.env.example` to `.env`. **Only `EXPO_PUBLIC_*` values are bundled into the app, so never put secrets in them.**

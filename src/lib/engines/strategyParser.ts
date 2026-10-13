@@ -52,7 +52,10 @@ function toClock(h: number, m: number): string {
 function sentences(text: string): string[] {
   return text
     .replace(/\s+/g, ' ')
-    .split(/(?<=[.!?;])\s+|,\s*(?:then|and then)\s+|\.\s*$/i)
+    // Split after sentence punctuation (marked with \u0000 — no regex lookbehind, unsupported before iOS 16.4).
+    .replace(/\u0000/g, '')
+    .replace(/([.!?;])\s+/g, '$1\u0000')
+    .split(/\u0000|,\s*(?:then|and then)\s+|\.\s*$/i)
     .map((s) => s.trim().replace(/[.;]+$/, ''))
     .filter(Boolean);
 }

@@ -164,7 +164,10 @@ const NEXT_RULE = /^(?:and\s+)?(?:my\s+)?(?:stop|sl\b|target|tp\b|take profit|ex
 export function fragmentsOf(text: string): string[] {
   return text
     .replace(/\s+/g, ' ')
-    .split(/(?<=[.!?;])\s+|\n+/)
+    // Split after sentence punctuation (marked with \u0000 — no regex lookbehind, unsupported before iOS 16.4).
+    .replace(/\u0000/g, '')
+    .replace(/([.!?;])\s+/g, '$1\u0000')
+    .split(/\u0000|\n+/)
     .flatMap((s) => s.split(/,\s*/))
     .flatMap((s) => s.split(AND_SPLIT))
     .flatMap((s) => s.split(CONNECTOR_SPLIT))

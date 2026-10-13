@@ -60,6 +60,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "build:web": "node scripts/build-web.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "jest",
@@ -79,5 +80,8 @@
     "econ:check": "tsx --env-file-if-exists=.env.server scripts/economic-calendar.ts check",
     "econ:sync": "tsx --env-file-if-exists=.env.server scripts/economic-calendar.ts sync"
   },
-  "private": true
+  "private": true,
+  "engines": {
+    "node": "^20.19.4 || ^22.13.0 || ^24.3.0"
+  }
 }
