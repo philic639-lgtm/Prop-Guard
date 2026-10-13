@@ -113,9 +113,10 @@ d('Supabase schema × repository (Postgres integration)', () => {
 
   it('reads back what was written (accounts, strategies, trades, journal, pending, setup checks, copy trade, practice)', async () => {
     const back = await repoA.loadAll();
-    expect(byId(back.accounts)).toEqual(byId(data.accounts));
-    // strategies.updated_at is owned by the database trigger (the server versions Setup Check evidence by it).
+    // accounts / strategies updated_at is owned by the database trigger (the server versions Setup Check evidence by it).
     const noStamp = <T extends { updatedAt?: string }>(xs: T[] | undefined) => (xs ?? []).map((x) => ({ ...x, updatedAt: '' }));
+    expect(byId(noStamp(back.accounts))).toEqual(byId(noStamp(data.accounts)));
+    expect(back.accounts?.every((a) => TS.test(a.updatedAt ?? ''))).toBe(true);
     expect(byId(noStamp(back.strategies))).toEqual(byId(noStamp(data.strategies)));
     expect(byId(back.trades)).toEqual(byId(data.trades));
     expect(byId(back.pendingTrades)).toEqual(byId(data.pendingTrades));

@@ -34,6 +34,7 @@ import { drawdownFloor } from '@/lib/engines/propRuleEngine';
 import { accountFreshness, missingCritical } from '@/lib/engines/accountDetails';
 import { HomeModeCard } from '@/features/learning/HomeModeCard';
 import { TradingPlanCard } from '@/features/home/TradingPlanCard';
+import { SaveStatusLine } from '@/features/accounts/SaveStatusLine';
 import { useAccountTrades, useActiveAccount, useActiveStrategy, useDailyGuard, useDiscipline, useOpenTrade, usePendingTrades } from '@/hooks/useAppData';
 import { evaluateAccount } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
@@ -155,6 +156,7 @@ export default function HomeScreen() {
         </View>
       ) : null}
       <Button label="Edit Account Details" icon="create-outline" variant="secondary" size="md" onPress={() => router.push({ pathname: '/accounts/details', params: { id: account.id } })} />
+      <SaveStatusLine accountId={account.id} />
 
       {/* The four numbers that matter: balance, profit target, daily risk, drawdown. */}
       {guard ? (

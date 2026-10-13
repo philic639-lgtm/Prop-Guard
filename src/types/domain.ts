@@ -195,6 +195,8 @@ export interface Account {
   /** Values confirmed from dashboard screenshots (never "live connected"). */
   importState?: AccountImportState;
   createdAt: string;
+  /** Last time this record was saved (device clock; the server's `updated_at` after a cloud load). */
+  updatedAt?: string;
 }
 
 /** Account values Prop Guard tracks provenance for (screenshot / verified program / calculated / trader). */

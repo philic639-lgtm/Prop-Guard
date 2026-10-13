@@ -13,6 +13,17 @@ import { useSubscriptionStore } from '@/store/useSubscriptionStore';
  * One-time app bootstrap: notifications, entitlements, and (when Supabase is
  * configured) auth session restore + cloud data hydration.
  */
+/** Resolves once the persisted store has been read from device storage. */
+function localDataReady(): Promise<void> {
+  if (useAppStore.persist.hasHydrated()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const off = useAppStore.persist.onFinishHydration(() => {
+      off();
+      resolve();
+    });
+  });
+}
+
 export function useBootstrap() {
   useEffect(() => {
     notificationService.configure();
@@ -41,12 +52,17 @@ export function useBootstrap() {
         syncService.attach(user.id);
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
           const repo = syncService.repository();
-          repo
-            ?.loadAll()
+          // Merge only after the device copy is loaded — otherwise the list of saves still
+          // waiting for upload is not known yet and older cloud rows could win.
+          localDataReady()
+            .then(() => repo?.loadAll())
             .then((remote) => {
+              if (!remote) return;
               const hasRemote = (remote.accounts?.length ?? 0) > 0 || remote.preferences?.onboarded;
               if (hasRemote) {
-                store.replaceData({ ...remote, mode: 'cloud' } as never);
+                // Merged, not replaced: an account saved on this device whose upload is not
+                // confirmed yet stays as saved (and is uploaded again) — older cloud rows never win.
+                useAppStore.getState().hydrateFromCloud(remote);
               } else if (switchedUser && store.mode === 'demo') {
                 store.startFresh('cloud');
               }

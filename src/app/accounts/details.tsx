@@ -7,6 +7,7 @@ import { AppHeader, AppText, Button, Card, Chip, ConfirmationSheet, Input, Scree
 import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { DetailFieldRow, OriginBadge } from '@/features/accounts/DetailFieldRow';
+import { SaveStatusLine } from '@/features/accounts/SaveStatusLine';
 import {
   accountDetails,
   accountFreshness,
@@ -22,7 +23,7 @@ import {
 } from '@/lib/engines/accountDetails';
 import { floorStatus } from '@/lib/engines/propRuleEngine';
 import { deleteReferenceCopy, loadReferenceCopy, type ReferenceCopy } from '@/services/accountImport/referenceCopy';
-import { useAppStore } from '@/store/useAppStore';
+import { confirmAccountSaved, useAppStore } from '@/store/useAppStore';
 import type { AccountStatus, DrawdownType } from '@/types/domain';
 import { money } from '@/utils/format';
 import { goBack } from '@/utils/navigation';
@@ -44,6 +45,8 @@ export default function EditAccountDetails() {
   const tradingRules = useAppStore((s) => s.tradingRules);
   const upsert = useAppStore((s) => s.upsertAccount);
   const setTradingRules = useAppStore((s) => s.setTradingRules);
+  const setActiveAccount = useAppStore((s) => s.setActiveAccount);
+  const activeAccountId = useAppStore((s) => s.activeAccountId);
 
   const personal = tradingRules.dailyStop > 0 ? tradingRules.dailyStop : null;
   // The saved values when the screen opened — the baseline for changes and for Cancel.
@@ -56,6 +59,8 @@ export default function EditAccountDetails() {
   const [ddType, setDdType] = useState<DrawdownType | null>(before?.drawdownType ?? null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [reference, setReference] = useState<ReferenceCopy | null>(null);
 
   useEffect(() => {
@@ -100,11 +105,23 @@ export default function EditAccountDetails() {
     return <OriginBadge origin={o.origin} label={o.originLabel} />;
   };
 
-  const save = () => {
-    if (!valid || !changes.length) return;
+  const save = async () => {
+    if (!valid || !changes.length || saving) return;
+    setSaving(true);
+    setSaveError(null);
     const r = applyDetailEdits(account, before, draft, new Date());
+    // The same record every screen reads (dashboard, Risk Manager, Check Trade): updated in place, by id.
     upsert(r.account);
+    // The dashboard shows the account the trader just corrected.
+    if (activeAccountId !== r.account.id) setActiveAccount(r.account.id);
     if (changes.some((c) => c.key === 'personalDailyRisk')) setTradingRules({ ...tradingRules, dailyStop: r.personalDailyRisk ?? 0 });
+    // Reported as saved only after the stored copy reads back with these values.
+    const confirmed = await confirmAccountSaved(r.account);
+    setSaving(false);
+    if (!confirmed.ok) {
+      setSaveError(`${confirmed.error} Your changes are still on this screen — try Save Changes again.`);
+      return;
+    }
     setSaved(true);
     goBack('/home');
   };
@@ -126,7 +143,12 @@ export default function EditAccountDetails() {
               Fix the highlighted values to save.
             </AppText>
           ) : null}
-          <Button label={changes.length ? `Save Changes (${changes.length})` : 'Save Changes'} icon="checkmark" disabled={!valid || !changes.length} onPress={save} />
+          {saveError ? (
+            <AppText variant="caption" tone="danger" align="center" accessibilityRole="alert">
+              {saveError}
+            </AppText>
+          ) : null}
+          <Button label={saving ? 'Saving…' : changes.length ? `Save Changes (${changes.length})` : 'Save Changes'} icon="checkmark" disabled={!valid || !changes.length || saving} onPress={() => void save()} />
           <Button label="Cancel" variant="ghost" onPress={cancel} />
         </>
       }>
@@ -137,6 +159,7 @@ export default function EditAccountDetails() {
             Last updated: {fresh.label}
           </AppText>
         </View>
+        <SaveStatusLine accountId={account.id} />
         {account.importState?.reported ? <StatusBadge label="Snapshot-based — not live verified" tone="accent" icon="camera-outline" size="sm" /> : null}
         {fresh.staleMessage ? (
           <AppText variant="caption" tone="warning">

@@ -26,9 +26,10 @@ import { accountSchema, accountToForm, formToAccount, ruleValuesOf, type Account
 import { FirmAutocomplete, FirmRulesStatus, ProgramPicker } from '@/features/accounts/FirmRulePicker';
 import { isFirmCustomRule, useFirmRuleLink } from '@/features/accounts/useFirmRuleLink';
 import { detectOverrides, evaluateAccount, type RuleStatus } from '@/lib/engines';
+import { findLikelyDuplicate } from '@/lib/engines/accountSync';
 import { calcAfterOverrides, validateFirmConfiguration, type ConfigIssue } from '@/lib/engines/firmRulesEngine';
-import { useAppStore } from '@/store/useAppStore';
-import type { AccountStatus, CustomRule } from '@/types/domain';
+import { confirmAccountSaved, useAppStore } from '@/store/useAppStore';
+import type { Account, AccountStatus, CustomRule } from '@/types/domain';
 import { uuid } from '@/utils/id';
 import { goBack } from '@/utils/navigation';
 
@@ -45,6 +46,7 @@ export default function AccountEditor() {
   const trades = useAppStore((s) => s.trades);
   const upsert = useAppStore((s) => s.upsertAccount);
   const remove = useAppStore((s) => s.deleteAccount);
+  const setActiveAccount = useAppStore((s) => s.setActiveAccount);
   const existing = accounts.find((a) => a.id === id) ?? null;
   const [custom, setCustom] = useState<CustomRule[]>(existing?.rules.custom ?? []);
   const [status, setStatus] = useState<AccountStatus>(existing?.status ?? 'active');
@@ -62,6 +64,25 @@ export default function AccountEditor() {
   // Firm rules are read-only by default; overriding is an explicit choice.
   const [overriding, setOverriding] = useState(() => (existing?.firmLink?.overrides.length ?? 0) > 0);
   const [issues, setIssues] = useState<ConfigIssue[]>([]);
+  // A new account that looks like one already saved: the trader picks update vs. separate account.
+  const [duplicateOf, setDuplicateOf] = useState<{ account: Account; existing: Account } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const commit = async (account: Account) => {
+    setSaving(true);
+    setSaveError(null);
+    upsert(account);
+    // A newly added account is the one the dashboard shows next.
+    if (!existing) setActiveAccount(account.id);
+    const confirmed = await confirmAccountSaved(account);
+    setSaving(false);
+    if (!confirmed.ok) {
+      setSaveError(`${confirmed.error} Nothing was lost on this screen — try Save account again.`);
+      return;
+    }
+    goBack('/accounts');
+  };
   const locked = link?.status === 'verified' && !overriding;
   const toggleLock = () => {
     if (!link) return;
@@ -85,12 +106,40 @@ export default function AccountEditor() {
     account.status = status;
     // A confirmed screenshot import: drawdown tracking from the firm's numbers + history.
     if (!existing) account = imported.finish(account);
-    upsert(account);
-    goBack('/accounts');
+    // A balance typed here is the trader's own correction (later screenshots never overwrite it silently).
+    if (existing && existing.importState && Math.abs(existing.balance - account.balance) > 0.005) {
+      const at = new Date().toISOString();
+      const st = account.importState ?? existing.importState;
+      account.importState = { ...st, editedAt: at, origins: { ...st.origins, balance: { source: 'manual', at } } };
+    }
+    if (!existing) {
+      const dup = findLikelyDuplicate(accounts, {
+        firm: account.firm,
+        firmId: account.firmLink?.firmId ?? null,
+        size: account.size,
+        kind: account.kind,
+        programId: account.firmLink?.programId ?? null,
+        fingerprint: account.importState?.fingerprint ?? null,
+      });
+      if (dup) {
+        setDuplicateOf({ account, existing: dup });
+        return;
+      }
+    }
+    void commit(account);
   });
 
   return (
-    <Screen header={<AppHeader title={existing ? 'Account' : 'New account'} back />} footer={<Button label="Save account" icon="checkmark" onPress={save} />}>
+    <Screen header={<AppHeader title={existing ? 'Account' : 'New account'} back />} footer={
+        <>
+          {saveError ? (
+            <AppText variant="caption" tone="danger" align="center" accessibilityRole="alert">
+              {saveError}
+            </AppText>
+          ) : null}
+          <Button label={saving ? 'Saving…' : 'Save account'} icon="checkmark" disabled={saving} onPress={save} />
+        </>
+      }>
       {evaluation ? (
         <>
           <SectionHeader title="Rule status" />
@@ -220,6 +269,35 @@ export default function AccountEditor() {
         </>
       ) : null}
 
+      <ConfirmationSheet
+        visible={!!duplicateOf}
+        title="You already have this account"
+        message={
+          duplicateOf
+            ? `“${duplicateOf.existing.name}” is the same firm and size (balance ${duplicateOf.existing.balance.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}). Update it instead of adding a second copy — or save this as a separate account if you really hold two.`
+            : ''
+        }
+        confirmLabel="Save as a separate account"
+        cancelLabel="Cancel"
+        onCancel={() => setDuplicateOf(null)}
+        onConfirm={() => {
+          const a = duplicateOf?.account;
+          setDuplicateOf(null);
+          if (a) void commit(a);
+        }}>
+        {duplicateOf ? (
+          <Button
+            label={`Update “${duplicateOf.existing.name}” instead`}
+            icon="create-outline"
+            onPress={() => {
+              const id = duplicateOf.existing.id;
+              setDuplicateOf(null);
+              setActiveAccount(id);
+              router.replace({ pathname: '/accounts/details', params: { id } });
+            }}
+          />
+        ) : null}
+      </ConfirmationSheet>
       <ConfirmationSheet
         visible={confirmDelete}
         title="Delete account"

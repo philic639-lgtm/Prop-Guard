@@ -19,16 +19,17 @@ import { SAMPLE_SETS, sampleImages } from '@/features/accountImport/samples';
 import { useImportReview } from '@/features/accountImport/useImportReview';
 import { IMPORT_DEBUG, useImportSession, type ImportStep } from '@/features/accountImport/useImportSession';
 import { usePendingImport } from '@/features/accountImport/usePendingImport';
+import { olderSnapshot } from '@/lib/engines/accountSync';
 import { applyImport, buildReview, confirmImport, lockedRuleFields, RESET_BLOCKER, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
 import { getProgram, importProgramRules, missingOptions } from '@/lib/engines/firmRulesEngine';
 import { drawdownBuffer, drawdownFloor } from '@/lib/engines/propRuleEngine';
 import { aiIsLive } from '@/services/ai';
 import { saveReferenceCopy } from '@/services/accountImport/referenceCopy';
 import { manualConflicts, type ManualConflict } from '@/lib/engines/accountDetails';
-import type { AccountDetailKey } from '@/types/domain';
+import type { Account, AccountDetailKey } from '@/types/domain';
 import { MAX_IMAGES, pickImages, type ImportImage } from '@/services/accountImport/images';
 import { ocrAvailable } from '@/services/accountImport/ocr';
-import { useAppStore } from '@/store/useAppStore';
+import { confirmAccountSaved, useAppStore } from '@/store/useAppStore';
 import { money } from '@/utils/format';
 import { uuid } from '@/utils/id';
 import { goBack } from '@/utils/navigation';
@@ -80,6 +81,7 @@ function ImportFlow() {
   const [confirmedFields, setConfirmedFields] = useState<Set<FieldKey>>(() => new Set());
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const createdIdRef = useRef<string | null>(null);
   const [saveRules, setSaveRules] = useState<Partial<Record<RuleKey, boolean>>>({});
   const [useProgram, setUseProgram] = useState(true);
   const [chosenOptions, setChosenOptions] = useState<Record<string, string>>({});
@@ -203,7 +205,11 @@ function ImportFlow() {
   const resetIssue = keepThreshold ? undefined : model.issues.find((i) => i.kind === 'reset');
   const issues = keepThreshold ? model.issues.filter((i) => i.kind !== 'reset') : model.issues;
   const blockers = keepThreshold ? model.blockers.filter((b) => b !== RESET_BLOCKER) : model.blockers;
-  const ready = blockers.length === 0 && unresolvedConflicts.length === 0 && !personalRiskError && !reading && !duplicateHard && (!duplicateSoft || differentAccount);
+  // An update from a screenshot older than what the account already knows replaces newer values: only on explicit confirmation.
+  const older = mode === 'update' ? olderSnapshot(target, statementDate) : null;
+  const [olderOk, setOlderOk] = useState(false);
+  const ready =
+    blockers.length === 0 && unresolvedConflicts.length === 0 && !personalRiskError && !reading && !duplicateHard && (!duplicateSoft || differentAccount) && (!older || olderOk);
   // Confirming IS the trader's confirmation of the extracted values; only unresolved mandatory data disables it.
   const canSave = ready && !saving;
 
@@ -216,19 +222,25 @@ function ImportFlow() {
 
   const edit = (k: FieldKey, v: number | null) => session.setEdit(k, v);
 
-  const confirm = () => {
+  const confirm = async () => {
     // One save per tap: a double click never creates two accounts or applies twice.
     if (!canSave || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
     try {
-      save();
+      await save();
     } finally {
       savingRef.current = false;
       setSaving(false);
     }
   };
-  const save = () => {
+  /** Shown as saved only after the stored copy reads back with these values. */
+  const confirmSaved = async (account: Account): Promise<boolean> => {
+    const r = await confirmAccountSaved(account);
+    if (!r.ok) setSaveError(`${r.error} Your review is unchanged — tap Confirm & Save Account again.`);
+    return r.ok;
+  };
+  const save = async () => {
     setSaveError(null);
     const values = { ...fields };
     // A size from the matched program is the account's size.
@@ -262,7 +274,10 @@ function ImportFlow() {
     const finish = (accountId: string) => void afterSave(accountId).finally(() => useImportSession.getState().reset());
     if (mode === 'update' && target) {
       const r = applyImport(target, c, uuid());
+      // The existing record, updated in place (same id) — never a second account.
       upsert(r.account);
+      setActiveAccount(r.account.id);
+      if (!(await confirmSaved(r.account))) return;
       setResult(r);
       setPhase('done');
       finish(r.account.id);
@@ -283,13 +298,16 @@ function ImportFlow() {
       goBack('/onboarding/account');
       return;
     }
-    const created = createAccountFromImport({ db, id: uuid(), name, firmName, programId: program?.id ?? null, options: program ? options : {}, ruleDate: match.ruleDate, confirmed: c, now: new Date() });
+    // A retry after a failed save confirmation reuses the same id — never a second account.
+    createdIdRef.current ??= uuid();
+    const created = createAccountFromImport({ db, id: createdIdRef.current, name, firmName, programId: program?.id ?? null, options: program ? options : {}, ruleDate: match.ruleDate, confirmed: c, now: new Date() });
     if (!created.ok) {
       setSaveError(created.issues.map((i) => i.message).join(' '));
       return;
     }
     upsert(created.result.account);
     setActiveAccount(created.result.account.id);
+    if (!(await confirmSaved(created.result.account))) return;
     setResult(created.result);
     setPhase('done');
     finish(created.result.account.id);
@@ -436,7 +454,7 @@ function ImportFlow() {
               {unresolvedConflicts.length ? 'Choose which values to keep (you corrected them by hand).' : blockers[0]}
             </AppText>
           ) : null}
-          <Button label={readingNow ? 'Reading…' : saving ? 'Saving…' : mode === 'update' ? 'Confirm & Update Account' : 'Confirm & Save Account'} icon="checkmark-done" disabled={!canSave} onPress={confirm} />
+          <Button label={readingNow ? 'Reading…' : saving ? 'Saving…' : mode === 'update' ? 'Confirm & Update Account' : 'Confirm & Save Account'} icon="checkmark-done" disabled={!canSave} onPress={() => void confirm()} />
           <Button label="Add or Change Screenshots" variant="ghost" onPress={() => setPhase('add')} />
         </>
       }>
@@ -527,6 +545,16 @@ function ImportFlow() {
             <Button label="Try another screenshot" variant="secondary" icon="refresh" size="md" style={styles.flex} onPress={() => setPhase('add')} />
             <Button label="What to capture" variant="ghost" size="md" style={styles.flex} onPress={() => setGuide('overview')} />
           </View>
+        </Card>
+      ) : null}
+
+      {!readingNow && older ? (
+        <Card tone="danger" style={styles.gap}>
+          <AppText variant="bodyStrong">This screenshot is older than the account’s current data</AppText>
+          <AppText variant="caption" tone="secondary">
+            The screenshot is from {older.screenshot}; {target?.name ?? 'the account'} already has values from {older.account}. Saving it would replace newer values with older ones.
+          </AppText>
+          <ToggleRow label="Replace the newer values with this older screenshot" value={olderOk} onChange={setOlderOk} />
         </Card>
       ) : null}
 

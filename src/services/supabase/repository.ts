@@ -144,10 +144,20 @@ export class SupabaseRepository {
     return rows.map((r) => rowsToTrade(r, [], undefined));
   }
 
+  /**
+   * Write the account and read it back as the signed-in user. Resolves only when the
+   * stored row shows the saved balance (RLS: a row the user cannot read back counts as
+   * failed — never reported as saved).
+   */
   async upsertAccount(a: Account) {
     const { account, rules } = accountToRows(a, this.userId);
     check(await this.db.from('accounts').upsert(account));
     check(await this.db.from('prop_rules').upsert(rules));
+    const back = check(await this.db.from('accounts').select('id, balance, starting_balance, cycle_start_balance, high_water_mark').eq('id', a.id).maybeSingle()) as Record<string, unknown> | null;
+    if (!back) throw new Error('Saved account could not be read back — check that you are signed in to the account that owns it.');
+    const same = (k: string, v: number) => Math.abs(Number(back[k]) - v) < 0.005;
+    if (!same('balance', a.balance) || !same('starting_balance', a.startingBalance) || !same('cycle_start_balance', a.cycleStartBalance) || !same('high_water_mark', a.highWaterMark))
+      throw new Error('The server returned different account values after saving.');
   }
 
   async upsertStrategy(s: Strategy) {

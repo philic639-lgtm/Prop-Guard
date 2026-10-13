@@ -161,6 +161,8 @@ export function looksLikeAccountId(t: string): boolean {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{5,}$/.test(s)) return false;
   if ((s.match(/\d/g) ?? []).length < 4) return false;
   if (parseMoney(s, true) != null) return false;
+  // Dates ("2026-10-13", "10-13-2026") are never account numbers.
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s) || /^\d{1,2}-\d{1,2}-\d{2,4}$/.test(s)) return false;
   return /-/.test(s) || /[A-Za-z]/.test(s);
 }
 

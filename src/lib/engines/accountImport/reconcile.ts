@@ -91,8 +91,11 @@ function latestOfMixedDates(pages: PageExtraction[]): string | null {
  */
 export function screenshotChecks(pages: PageExtraction[]): ImportCheck[] {
   const checks: ImportCheck[] = [];
-  const prints = [...new Set(pages.flatMap((p) => p.sensitive.filter((s) => s.fingerprint).map((s) => s.fingerprint!)))];
-  if (prints.length > 1)
+  // Two screenshots whose account numbers have nothing in common show different accounts
+  // (one screenshot never conflicts with itself — it may show an id and a sub-account number).
+  const perPage = pages.map((p) => new Set(p.sensitive.filter((s) => s.fingerprint).map((s) => s.fingerprint!))).filter((s) => s.size > 0);
+  const disjoint = perPage.some((a, i) => perPage.slice(i + 1).some((b) => ![...a].some((x) => b.has(x))));
+  if (disjoint)
     checks.push({ id: 'different-accounts', status: 'conflict', fields: [], message: 'These screenshots show different accounts. Import one account at a time — remove the screenshots of the other account.' });
   const latest = latestOfMixedDates(pages);
   if (latest) {

@@ -5,11 +5,12 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { createDemoData, DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES, EMPTY_DATA, type AppData } from '@/data/demo';
 import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
 import { withJournalBalance } from '@/lib/engines/accountDetails';
+import { mergeRemoteAccounts, tradeInBalance, verifyPersisted } from '@/lib/engines/accountSync';
 import type { BrokerImportAction } from '@/lib/engines/journalEngine';
 import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 import { realizedPnl, realizedR } from '@/lib/engines/riskEngine';
-import { syncService } from '@/services/syncService';
+import { syncService, type SyncEvent } from '@/services/syncService';
 import type {
   Account,
   AppAlert,
@@ -34,6 +35,47 @@ import { uuid } from '@/utils/id';
 
 import type { AppMode, AuthUser, PreTradeDraft } from './types';
 
+/**
+ * Cloud write status. `unsynced` = records saved on this device whose upload has not been
+ * confirmed by the server (`account:<id>`, `preferences`) — persisted, so a reload or an
+ * offline restart never lets older cloud data replace them.
+ */
+export interface SyncState {
+  unsynced: string[];
+  error: string | null;
+  lastSyncedAt: string | null;
+}
+const EMPTY_SYNC: SyncState = { unsynced: [], error: null, lastSyncedAt: null };
+
+/**
+ * Local persistence with the outcome of every write recorded, so a save can be confirmed
+ * by reading the stored copy back (`confirmAccountSaved`) instead of being assumed.
+ */
+const STORE_KEY = 'prop-guard-store';
+let lastWrite: Promise<void> = Promise.resolve();
+let lastWriteError: string | null = null;
+const trackedStorage = {
+  getItem: (name: string) => AsyncStorage.getItem(name),
+  setItem: (name: string, value: string) => {
+    // Promise.resolve().then: a storage call that throws synchronously is recorded too.
+    lastWrite = Promise.resolve()
+      .then(() => AsyncStorage.setItem(name, value))
+      .then(
+        () => {
+          lastWriteError = null;
+        },
+        (e: Error) => {
+          lastWriteError = e?.message || 'Storage write failed';
+        },
+      );
+    return lastWrite;
+  },
+  removeItem: (name: string) => AsyncStorage.removeItem(name),
+};
+
+/** Timestamp a saved account record. */
+const stamp = (a: Account): Account => ({ ...a, updatedAt: new Date().toISOString() });
+
 export interface AppState extends AppData {
   mode: AppMode;
   user: AuthUser | null;
@@ -41,6 +83,11 @@ export interface AppState extends AppData {
   draft: PreTradeDraft | null;
   /** Library templates the trader opened recently (local only). */
   recentTemplateIds: string[];
+  sync: SyncState;
+  /** Apply a sync event from the cloud write queue. */
+  onSyncEvent: (e: SyncEvent) => void;
+  /** Cloud data loaded after sign-in / reload: merged so unsynced local saves are kept and re-uploaded. */
+  hydrateFromCloud: (remote: Partial<AppData>) => void;
 
   // lifecycle
   setHydrated: () => void;
@@ -150,6 +197,38 @@ export const useAppStore = create<AppState>()(
       hydrated: false,
       draft: null,
       recentTemplateIds: [],
+      sync: EMPTY_SYNC,
+
+      onSyncEvent: (e) =>
+        set((s) => {
+          const unsynced = new Set(s.sync.unsynced);
+          if (e.type === 'queued') unsynced.add(e.key);
+          if (e.type === 'synced') unsynced.delete(e.key);
+          return {
+            sync: {
+              unsynced: [...unsynced],
+              error: e.type === 'failed' ? e.error : e.type === 'synced' && unsynced.size === 0 ? null : s.sync.error,
+              lastSyncedAt: e.type === 'synced' ? new Date().toISOString() : s.sync.lastSyncedAt,
+            },
+          };
+        }),
+
+      hydrateFromCloud: (remote) => {
+        const s = get();
+        const accountIds = s.sync.unsynced.filter((k) => k.startsWith('account:')).map((k) => k.slice('account:'.length));
+        const merged = mergeRemoteAccounts(s.accounts, remote.accounts ?? [], accountIds);
+        // The active account the trader picked on this device wins while its upload is pending.
+        const keepActive = s.sync.unsynced.includes('preferences') && !!s.activeAccountId && merged.accounts.some((a) => a.id === s.activeAccountId);
+        const wanted = keepActive ? s.activeAccountId : (remote.activeAccountId ?? null);
+        set({
+          ...remote,
+          accounts: merged.accounts,
+          activeAccountId: wanted && merged.accounts.some((a) => a.id === wanted) ? wanted : (merged.accounts[0]?.id ?? null),
+          mode: 'cloud',
+        });
+        for (const a of merged.reupload) syncService.upsertAccount(a);
+        if (keepActive) syncService.savePreferences(get());
+      },
 
       setHydrated: () => set({ hydrated: true }),
 
@@ -158,6 +237,7 @@ export const useAppStore = create<AppState>()(
       startFresh: (mode) =>
         set({
           ...EMPTY_DATA,
+          sync: EMPTY_SYNC,
           tradingRules: DEFAULT_TRADING_RULES,
           preferences: { ...DEFAULT_PREFERENCES, email: get().user?.email ?? '' },
           mode,
@@ -168,7 +248,7 @@ export const useAppStore = create<AppState>()(
 
       setUser: (user) => set({ user, mode: user ? 'cloud' : get().mode }),
 
-      signOutLocal: () => set({ ...EMPTY_DATA, user: null, mode: 'demo', draft: null }),
+      signOutLocal: () => set({ ...EMPTY_DATA, sync: EMPTY_SYNC, user: null, mode: 'demo', draft: null }),
 
       setActiveAccount: (id) => {
         set({ activeAccountId: id });
@@ -179,7 +259,8 @@ export const useAppStore = create<AppState>()(
         syncService.savePreferences(get());
       },
 
-      upsertAccount: (account) => {
+      upsertAccount: (input) => {
+        const account = stamp(input);
         set((s) => {
           const exists = s.accounts.some((a) => a.id === account.id);
           return {
@@ -319,16 +400,22 @@ export const useAppStore = create<AppState>()(
         const before = get().trades.find((t) => t.id === id);
         // A changed result on a closed trade moves the account balance by the difference.
         const delta = before && before.status === 'closed' && 'pnl' in patch ? (patch.pnl ?? 0) - (before.pnl ?? 0) : 0;
+        // A trade that closed before the balance was confirmed (screenshot / typed) is already in it.
+        const owner = before ? get().accounts.find((a) => a.id === before.accountId) : undefined;
+        const movesBalance = !!delta && !!owner && !tradeInBalance(owner, before?.closedAt);
         set((s) => ({
           trades: s.trades.map((t) => {
             if (t.id !== id) return t;
             updated = { ...t, ...patch };
             return updated;
           }),
-          accounts: delta && before ? s.accounts.map((a) => (a.id === before.accountId ? { ...a, balance: Math.round((a.balance + delta) * 100) / 100 } : a)) : s.accounts,
+          accounts:
+            movesBalance && before
+              ? s.accounts.map((a) => (a.id === before.accountId ? stamp(withJournalBalance(a, Math.round((a.balance + delta) * 100) / 100, new Date().toISOString())) : a))
+              : s.accounts,
         }));
         if (updated) syncService.upsertTrade(updated);
-        if (delta && before) {
+        if (movesBalance && before) {
           const account = get().accounts.find((a) => a.id === before.accountId);
           if (account) syncService.upsertAccount(account);
         }
@@ -352,8 +439,8 @@ export const useAppStore = create<AppState>()(
         set((s) => ({
           trades: s.trades.map((t) => (t.id === id ? closed : t)),
           accounts: s.accounts.map((a) => {
-            if (a.id !== trade.accountId) return a;
-            return withJournalBalance(a, Math.round((a.balance + pnl) * 100) / 100, closed.closedAt ?? new Date().toISOString());
+            if (a.id !== trade.accountId || tradeInBalance(a, closed.closedAt)) return a;
+            return stamp(withJournalBalance(a, Math.round((a.balance + pnl) * 100) / 100, new Date().toISOString()));
           }),
         }));
         syncService.upsertTrade(closed);
@@ -391,11 +478,16 @@ export const useAppStore = create<AppState>()(
         const trade = get().trades.find((t) => t.id === id);
         // Deleting a closed trade removes its result from the balance (the high-water mark is kept:
         // a past peak can't be un-made, and keeping it is the conservative choice for trailing drawdown).
-        const pnl = trade && trade.status === 'closed' && trade.pnl != null ? trade.pnl : 0;
+        const owner = trade ? get().accounts.find((a) => a.id === trade.accountId) : undefined;
+        // A trade already contained in the confirmed balance is removed from the journal only.
+        const pnl = trade && trade.status === 'closed' && trade.pnl != null && owner && !tradeInBalance(owner, trade.closedAt) ? trade.pnl : 0;
         set((s) => ({
           trades: s.trades.filter((t) => t.id !== id),
           events: s.events.filter((e) => e.tradeId !== id),
-          accounts: pnl && trade ? s.accounts.map((a) => (a.id === trade.accountId ? { ...a, balance: Math.round((a.balance - pnl) * 100) / 100 } : a)) : s.accounts,
+          accounts:
+            pnl && trade
+              ? s.accounts.map((a) => (a.id === trade.accountId ? stamp(withJournalBalance(a, Math.round((a.balance - pnl) * 100) / 100, new Date().toISOString())) : a))
+              : s.accounts,
         }));
         syncService.remove('trades', id);
         if (pnl && trade) {
@@ -510,8 +602,8 @@ export const useAppStore = create<AppState>()(
         set((s) => ({
           trades: [...s.trades, trade],
           accounts: s.accounts.map((a) => {
-            if (a.id !== trade.accountId || trade.pnl == null) return a;
-            return withJournalBalance(a, Math.round((a.balance + trade.pnl) * 100) / 100, trade.closedAt ?? new Date().toISOString());
+            if (a.id !== trade.accountId || trade.pnl == null || tradeInBalance(a, trade.closedAt)) return a;
+            return stamp(withJournalBalance(a, Math.round((a.balance + trade.pnl) * 100) / 100, new Date().toISOString()));
           }),
         }));
         syncService.upsertTrade(trade);
@@ -577,7 +669,7 @@ export const useAppStore = create<AppState>()(
       },
     }),
     {
-      name: 'prop-guard-store',
+      name: STORE_KEY,
       version: 8,
       migrate: (persisted, version) => {
         const st = (persisted ?? {}) as Partial<AppState>;
@@ -612,7 +704,7 @@ export const useAppStore = create<AppState>()(
         if (version < 6) return { ...st, ...copy, setupChecks: (st.setupChecks ?? []).filter((c) => (c as { version?: number }).version === 2) } as AppState;
         return { ...st, ...copy } as AppState;
       },
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => trackedStorage),
       partialize: (s) => ({
         accounts: s.accounts,
         strategies: s.strategies,
@@ -634,6 +726,7 @@ export const useAppStore = create<AppState>()(
         copyTrades: s.copyTrades,
         copyGroups: s.copyGroups,
         recentTemplateIds: s.recentTemplateIds,
+        sync: s.sync,
         mode: s.mode,
         user: s.user,
         draft: s.draft,
@@ -650,3 +743,35 @@ export const useAppStore = create<AppState>()(
 // engine (risk, sizing, journaling, analytics) can price them.
 setCustomInstruments(useAppStore.getState().preferences.customInstruments);
 useAppStore.subscribe((s) => setCustomInstruments(s.preferences.customInstruments));
+
+// Cloud write outcomes → persisted sync status (which accounts are saved only on this device).
+syncService.subscribe((e) => useAppStore.getState().onSyncEvent(e));
+
+export type SaveConfirmation = { ok: true; cloud: 'synced' | 'pending' | 'local_only' } | { ok: false; error: string };
+
+/**
+ * Confirm an account save: wait for the device write, read the stored copy back and compare
+ * it with what was saved. With cloud sync, also waits (briefly) for the server to confirm —
+ * `pending` means saved on this device, upload still running or failed (never reported as synced).
+ */
+export async function confirmAccountSaved(expected: Account, opts: { waitForCloudMs?: number } = {}): Promise<SaveConfirmation> {
+  await lastWrite;
+  if (lastWriteError) return { ok: false, error: `Could not save on this device: ${lastWriteError}` };
+  let stored: Account | undefined;
+  try {
+    const raw = await AsyncStorage.getItem(STORE_KEY);
+    stored = raw ? (JSON.parse(raw) as { state?: { accounts?: Account[] } }).state?.accounts?.find((a) => a.id === expected.id) : undefined;
+  } catch (e) {
+    return { ok: false, error: `Could not read the saved account back: ${(e as Error).message}` };
+  }
+  const mismatch = verifyPersisted(expected, stored);
+  if (mismatch) return { ok: false, error: `Save not confirmed — ${mismatch}` };
+  if (!syncService.enabled) return { ok: true, cloud: 'local_only' };
+  const key = `account:${expected.id}`;
+  const deadline = Date.now() + (opts.waitForCloudMs ?? 4000);
+  await syncService.flush();
+  while (useAppStore.getState().sync.unsynced.includes(key) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return { ok: true, cloud: useAppStore.getState().sync.unsynced.includes(key) ? 'pending' : 'synced' };
+}

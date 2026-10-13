@@ -77,6 +77,7 @@ export function rowsToAccount(r: Row, rules: Row | undefined): Account {
     highWaterMark: num(r.high_water_mark),
     status: (r.status as Account['status']) ?? 'active',
     createdAt: str(r.created_at),
+    ...(r.updated_at ? { updatedAt: str(r.updated_at) } : {}),
     rules: {
       dailyLossLimit: numOrNull(rules?.daily_loss_limit),
       maxDrawdown: numOrNull(rules?.max_drawdown),

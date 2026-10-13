@@ -246,7 +246,7 @@ export function buildReview(input: ReviewInput): ReviewModel {
   const issues: ReviewIssue[] = [];
   for (const c of input.match.conflicts.filter((x) => x.severity === 'conflict'))
     issues.push({ id: `m:${c.field}:${c.message}`, message: c.message, kind: c.field === 'drawdownThreshold' ? 'reset' : 'ack' });
-  for (const c of input.checks.filter((x) => x.status === 'conflict' && !x.id.startsWith('conflict:'))) issues.push({ id: `c:${c.id}`, message: c.message, kind: 'ack' });
+  for (const c of input.checks.filter((x) => x.status === 'conflict' && !x.id.startsWith('conflict:') && x.id !== 'different-accounts')) issues.push({ id: `c:${c.id}`, message: c.message, kind: 'ack' });
 
   // What still blocks saving.
   if (mode === 'new' && !input.name.trim()) blockers.push('Name the account.');
@@ -272,7 +272,7 @@ export function buildReview(input: ReviewInput): ReviewModel {
   const state: ReviewState =
     input.extractionFailed && !hasData ? 'failed' : requiredMissing ? 'missing_info' : uniqueBlockers.length || review.length ? 'needs_review' : 'ready';
 
-  return { state, notice, summary, details, drawdown, rows, issues: issues.filter((i) => i.id !== 'c:different-accounts'), blockers: uniqueBlockers, saveableRules, rejected };
+  return { state, notice, summary, details, drawdown, rows, issues, blockers: uniqueBlockers, saveableRules, rejected };
 }
 
 const usd = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

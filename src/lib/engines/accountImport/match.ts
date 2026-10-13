@@ -1,6 +1,7 @@
 import type { FirmRulesDatabase, PropFirm, PropFirmProgram } from '@/data/propFirms/types';
 import type { Account } from '@/types/domain';
 
+import { findLikelyDuplicate } from '../accountSync';
 import { findFirm, getProgram, importProgramRules } from '../firmRulesEngine';
 import { drawdownFloor } from '../propRuleEngine';
 import { DRAWDOWN_TYPE_LABEL, type Extraction, type FieldKey } from './types';
@@ -179,6 +180,12 @@ export function matchImport(
   }
   if (!duplicate && ctx.mode === 'new' && program) {
     const same = ctx.accounts.find((a) => a.status === 'active' && a.firmLink?.programId === program!.programId && (!x.fingerprint || !a.importState?.fingerprint));
+    if (same) duplicate = { accountId: same.id, name: same.name, reason: 'same_configuration' };
+  }
+  // An account saved without a program link (typed in by hand, demo, older versions): same firm
+  // and size is the same configuration — otherwise the import would silently add a second copy.
+  if (!duplicate && ctx.mode === 'new' && firm && size) {
+    const same = findLikelyDuplicate(ctx.accounts, { firm: firm.name, firmId: firm.id, size, kind: 'prop', programId: program?.programId ?? null, fingerprint: x.fingerprint });
     if (same) duplicate = { accountId: same.id, name: same.name, reason: 'same_configuration' };
   }
 
