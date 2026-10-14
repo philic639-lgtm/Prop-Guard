@@ -5,7 +5,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { createDemoData, DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES, EMPTY_DATA, type AppData } from '@/data/demo';
 import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
 import { withJournalBalance } from '@/lib/engines/accountDetails';
-import { mergeRemoteAccounts, tradeInBalance, verifyPersisted } from '@/lib/engines/accountSync';
+import { mergeRemoteAccounts, movesBalance, tradeInBalance, verifyPersisted } from '@/lib/engines/accountSync';
 import type { BrokerImportAction } from '@/lib/engines/journalEngine';
 import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
@@ -402,7 +402,7 @@ export const useAppStore = create<AppState>()(
         const delta = before && before.status === 'closed' && 'pnl' in patch ? (patch.pnl ?? 0) - (before.pnl ?? 0) : 0;
         // A trade that closed before the balance was confirmed (screenshot / typed) is already in it.
         const owner = before ? get().accounts.find((a) => a.id === before.accountId) : undefined;
-        const movesBalance = !!delta && !!owner && !tradeInBalance(owner, before?.closedAt);
+        const shifts = !!delta && !!owner && !!before && movesBalance(before) && !tradeInBalance(owner, before.closedAt);
         set((s) => ({
           trades: s.trades.map((t) => {
             if (t.id !== id) return t;
@@ -410,12 +410,12 @@ export const useAppStore = create<AppState>()(
             return updated;
           }),
           accounts:
-            movesBalance && before
+            shifts && before
               ? s.accounts.map((a) => (a.id === before.accountId ? stamp(withJournalBalance(a, Math.round((a.balance + delta) * 100) / 100, new Date().toISOString())) : a))
               : s.accounts,
         }));
         if (updated) syncService.upsertTrade(updated);
-        if (movesBalance && before) {
+        if (shifts && before) {
           const account = get().accounts.find((a) => a.id === before.accountId);
           if (account) syncService.upsertAccount(account);
         }
@@ -480,7 +480,7 @@ export const useAppStore = create<AppState>()(
         // a past peak can't be un-made, and keeping it is the conservative choice for trailing drawdown).
         const owner = trade ? get().accounts.find((a) => a.id === trade.accountId) : undefined;
         // A trade already contained in the confirmed balance is removed from the journal only.
-        const pnl = trade && trade.status === 'closed' && trade.pnl != null && owner && !tradeInBalance(owner, trade.closedAt) ? trade.pnl : 0;
+        const pnl = trade && trade.status === 'closed' && trade.pnl != null && owner && movesBalance(trade) && !tradeInBalance(owner, trade.closedAt) ? trade.pnl : 0;
         set((s) => ({
           trades: s.trades.filter((t) => t.id !== id),
           events: s.events.filter((e) => e.tradeId !== id),
@@ -602,7 +602,8 @@ export const useAppStore = create<AppState>()(
         set((s) => ({
           trades: [...s.trades, trade],
           accounts: s.accounts.map((a) => {
-            if (a.id !== trade.accountId || trade.pnl == null || tradeInBalance(a, trade.closedAt)) return a;
+            // Trade screenshots never move the balance on their own (Home asks for an account update).
+            if (a.id !== trade.accountId || trade.pnl == null || !movesBalance(trade) || tradeInBalance(a, trade.closedAt)) return a;
             return stamp(withJournalBalance(a, Math.round((a.balance + trade.pnl) * 100) / 100, new Date().toISOString()));
           }),
         }));

@@ -211,6 +211,10 @@ export function matchImport(
         severity: 'conflict',
         message: `The screenshot shows a minimum balance of ${money(shotFloor)}, lower than this account's current floor of ${money(curFloor)}. A trailing floor never moves down — if the account was reset, confirm the reset; otherwise check the value.`,
       });
+    // Several accounts look the same (firm + size) and this screenshot shows no account number: say so.
+    const lookalikes = ctx.accounts.filter((a) => a.id !== t.id && a.status === 'active' && a.size === t.size && norm(a.firm) === norm(t.firm));
+    if (!x.fingerprint && lookalikes.length)
+      conflicts.push({ field: 'account', severity: 'warning', message: `No account number is visible on this screenshot, and you have ${lookalikes.length + 1} ${money(t.size)} ${t.firm} accounts. Make sure it is the dashboard of “${t.name}”.` });
     if (program && t.firmLink?.programId && t.firmLink.programId !== program.programId && !conflicts.some((c) => c.field === 'accountSize' || c.field === 'stage'))
       conflicts.push({ field: 'program', severity: 'warning', message: `Screenshot looks like ${program.name}; this account is set up as ${t.firmLink.programName ?? t.firmLink.programId}.` });
   } else if (duplicate) {

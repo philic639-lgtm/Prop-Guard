@@ -33,6 +33,9 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   { target: 'maxDrawdown', phrases: ['mll', 'loss limit', 'max loss'], weight: 0.82 },
   { target: 'dailyLossLimit', phrases: ['daily loss limit', 'max daily loss', 'daily max loss', 'daily drawdown limit', 'daily loss', 'dll'], weight: 1 },
   { target: 'dailyPnl', phrases: ["today's p&l", 'todays p&l', 'today p&l', 'daily p&l', 'day p&l', "today's profit", 'daily profit'], weight: 1 },
+  // Shown for reference only (never used to calculate): equity includes open positions.
+  { target: 'equity', phrases: ['account equity', 'net equity', 'equity'], weight: 1 },
+  { target: 'unrealizedPnl', phrases: ['unrealized p&l', 'unrealized', 'open p&l', 'floating p&l', 'open profit', 'open position p&l'], weight: 1 },
   { target: 'netPnl', phrases: ['net p&l', 'total p&l', 'net profit', 'total profit', 'profit/loss', 'profit & loss', 'profit and loss', 'net pnl'], weight: 1 },
   // Platforms differ on whether "realized" is today or lifetime: readable, but always "verify".
   { target: 'netPnl', phrases: ['realized p&l'], weight: 0.8 },
@@ -51,8 +54,7 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   {
     target: 'ignore',
     phrases: [
-      'unrealized p&l', 'unrealized', 'open p&l', 'floating p&l', 'open profit', 'open position p&l',
-      'buying power', 'available funds', 'available margin', 'excess liquidity', 'margin used', 'initial margin', 'maintenance margin', 'equity', 'net equity',
+      'buying power', 'available funds', 'available margin', 'excess liquidity', 'margin used', 'initial margin', 'maintenance margin',
       'profit target remaining', 'remaining profit target', 'remaining target', 'target remaining', 'to target', 'distance to target', 'profit remaining', 'profit needed', 'needed to pass',
       'high water mark', 'highest balance', 'peak balance', 'max balance', 'highest eod balance', 'trailing high',
       // Rules shown next to progress ("Min trading days 5") are not the days traded.
@@ -68,7 +70,7 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
 const COMPILED = LABELS.flatMap((l) => l.phrases.map((p) => ({ target: l.target, phrase: p, weight: l.weight, words: p.split(' ').length })))
   .sort((a, b) => b.phrase.length - a.phrase.length);
 
-const MONEY = new Set<FieldKey>(['accountSize', 'balance', 'startingBalance', 'netPnl', 'dailyPnl', 'maxDrawdown', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining', 'dailyLossLimit', 'profitTarget', 'profitTargetBalance']);
+const MONEY = new Set<FieldKey>(['accountSize', 'balance', 'startingBalance', 'netPnl', 'dailyPnl', 'equity', 'unrealizedPnl', 'maxDrawdown', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining', 'dailyLossLimit', 'profitTarget', 'profitTargetBalance']);
 const COUNT = new Set<FieldKey>(['tradingDays']);
 /** A count token: "5", or "5/10" (days traded of days required). */
 const parseCount = (raw: string): number | null => {
@@ -83,7 +85,7 @@ const parseCount = (raw: string): number | null => {
  * label (e.g. "−$66.00" under "Profit target") is a different figure, so it
  * is NOT assigned: it becomes an ambiguous reading for the trader.
  */
-const SIGNED = new Set<FieldKey>(['netPnl', 'dailyPnl', 'drawdownRemaining']);
+const SIGNED = new Set<FieldKey>(['netPnl', 'dailyPnl', 'unrealizedPnl', 'drawdownRemaining']);
 const LOSS_AMOUNT = new Set<FieldKey>(['maxDrawdown', 'dailyLossLimit', 'currentDrawdown']);
 /** Fields whose card can show "progress / limit" ("−$66 / $1,250"): the LIMIT is the value. */
 const LIMIT_PAIR = new Set<FieldKey>(['profitTarget', 'profitTargetBalance', 'maxDrawdown', 'dailyLossLimit']);

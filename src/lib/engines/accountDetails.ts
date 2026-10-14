@@ -1,4 +1,4 @@
-import type { Account, AccountDetailKey, AccountImportRecord, AccountImportState, AccountStatus, AccountValueSource, DrawdownType, FirmRuleField } from '@/types/domain';
+import type { Account, AccountDetailKey, AccountImportRecord, AccountImportState, AccountSnapshotValues, AccountStatus, AccountValueSource, DrawdownType, FirmRuleField } from '@/types/domain';
 import { dayKey } from '@/utils/dates';
 
 import { calcAfterOverrides } from './firmRulesEngine';
@@ -392,12 +392,30 @@ export function applyDetailEdits(account: Account, before: DetailValues, after: 
     before: { balance: account.balance, highWaterMark: account.highWaterMark },
     after: { balance: next.balance, highWaterMark: next.highWaterMark },
     notes: changes.map((c) => `${c.label}: ${c.before} → ${c.after} (edited by you)`),
+    previous: snapshotValues(account),
   };
   st.editedAt = at;
   if (record.fields.length) st.history = [record, ...(st.history ?? [])].slice(0, 30);
   next.importState = st;
   return { account: next, personalDailyRisk: after.personalDailyRisk, changes };
 }
+
+/** The values an update may change — kept on each history record so the latest update can be undone. */
+export function snapshotValues(a: Account): AccountSnapshotValues {
+  const st = a.importState;
+  return {
+    balance: a.balance,
+    highWaterMark: a.highWaterMark,
+    startingBalance: a.startingBalance,
+    cycleStartBalance: a.cycleStartBalance,
+    status: a.status,
+    rules: structuredClone(a.rules),
+    threshold: st?.threshold ?? null,
+    reported: st?.reported ? structuredClone(st.reported) : null,
+    origins: st?.origins ? structuredClone(st.origins) : null,
+  };
+}
+
 
 // ───────────────────────────── Freshness / completeness ─────────────────────────────
 

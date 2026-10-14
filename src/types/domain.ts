@@ -217,8 +217,9 @@ export type AccountValueSource = 'screenshot' | 'verified_program' | 'calculated
 
 /**
  * Where an account's numbers come from: dashboard screenshots and the trader's own
- * corrections. Stored with the account (Supabase `import_state` jsonb). Screenshots
- * are never uploaded or synced; an optional redacted reference copy stays on the device.
+ * corrections. Stored with the account (Supabase `import_state` jsonb). Original screenshots
+ * are never uploaded; an optional redacted reference copy is kept on the device and, when
+ * signed in, in the trader's private `screenshots` folder.
  */
 export interface AccountImportState {
   /** Latest confirmed liquidation threshold — read from a screenshot or entered by the trader. */
@@ -248,6 +249,13 @@ export interface AccountImportState {
     profitTarget?: number | null;
     profitTargetBalance?: number | null;
     netPnl?: number | null;
+    /** Today's P&L as the dashboard showed it (reference only). */
+    dailyPnl?: number | null;
+    /** Equity / net liquidation including open positions (reference only — never used to calculate). */
+    equity?: number | null;
+    unrealizedPnl?: number | null;
+    /** Account status text as shown (e.g. "Active") — reference only, never a breach verdict. */
+    statusText?: string | null;
     tradingDays?: number | null;
     drawdownType?: DrawdownType | null;
     /** Values the screenshots did not show (shown as unknown, never filled in). */
@@ -268,6 +276,23 @@ export interface AccountImportRecord {
   before: { balance: number; highWaterMark: number };
   after: { balance: number; highWaterMark: number };
   notes: string[];
+  /** The account's values before this update — lets the trader undo it (latest update only). */
+  previous?: AccountSnapshotValues;
+  /** Set when this update was undone. */
+  undoneAt?: string;
+}
+
+/** Account values an update can change (what "Undo" restores). */
+export interface AccountSnapshotValues {
+  balance: number;
+  highWaterMark: number;
+  startingBalance: number;
+  cycleStartBalance: number;
+  status: AccountStatus;
+  rules: PropRules;
+  threshold: AccountImportState['threshold'] | null;
+  reported: AccountImportState['reported'];
+  origins: AccountImportState['origins'] | null;
 }
 
 /** The trader's personal discipline rules. These apply on top of account rules. */
@@ -607,6 +632,8 @@ export interface TradingProfile {
   holdTime: HoldTime;
   riskPreference: RiskPreference;
   connection: ConnectionMethod;
+  /** The trader's main account (My Accounts lists it first). Stored with the profile. */
+  primaryAccountId?: string | null;
 }
 
 export interface UserPreferences {

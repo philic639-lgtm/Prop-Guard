@@ -12,7 +12,7 @@ export const displayValue = (key: FieldKey, v: number | string) =>
   (COUNT_FIELDS as FieldKey[]).includes(key)
     ? String(v)
     : typeof v === 'number'
-      ? `${key === 'netPnl' || key === 'dailyPnl' ? (v < 0 ? '−' : '+') : ''}$${fmtMoney(Math.abs(v))}`
+      ? `${key === 'netPnl' || key === 'dailyPnl' || key === 'unrealizedPnl' ? (v < 0 ? '−' : '+') : ''}$${fmtMoney(Math.abs(v))}`
       : key === 'drawdownType'
         ? (DRAWDOWN_TYPE_LABEL[v as keyof typeof DRAWDOWN_TYPE_LABEL] ?? String(v))
         : key === 'stage'

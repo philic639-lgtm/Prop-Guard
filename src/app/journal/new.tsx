@@ -159,7 +159,9 @@ export default function JournalNew() {
             Trade journaled
           </AppText>
           <AppText variant="body" tone="secondary" align="center">
-            The trade is added to your journal and your stats update automatically.
+            {saved.source === 'screenshot'
+              ? 'The trade is added to your journal and your stats update. A trade screenshot does not change your account balance — update the account from its overview to confirm the balance.'
+              : 'The trade is added to your journal and your stats update automatically.'}
           </AppText>
         </View>
         <TradeCard trade={saved} strategyName={strategyName} onPress={() => router.replace({ pathname: '/journal/[id]', params: { id: saved.id } })} />

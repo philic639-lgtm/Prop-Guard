@@ -8,6 +8,7 @@ import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { DetailFieldRow, OriginBadge } from '@/features/accounts/DetailFieldRow';
 import { SaveStatusLine } from '@/features/accounts/SaveStatusLine';
+import { UpdateHistory } from '@/features/accounts/UpdateHistory';
 import {
   accountDetails,
   accountFreshness,
@@ -311,7 +312,7 @@ export default function EditAccountDetails() {
         {reference ? (
           <>
             <AppText variant="caption" tone="secondary">
-              Redacted copy from {new Date(reference.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — kept on this device only, never uploaded.
+              Redacted copy from {new Date(reference.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — redacted on this device; the original screenshot is never uploaded. Deleting it here also deletes the copy in your cloud folder.
             </AppText>
             {reference.pages.map((uri, i) => (
               <Image key={i} source={{ uri }} style={styles.ref} contentFit="contain" accessibilityLabel={`Reference screenshot ${i + 1} (redacted)`} />
@@ -333,6 +334,9 @@ export default function EditAccountDetails() {
         )}
         <Button label="Update from a new screenshot" variant="secondary" icon="camera-outline" onPress={() => router.push({ pathname: '/accounts/import', params: { accountId: account.id } })} />
       </Card>
+
+      {/* The values on this screen were loaded when it opened — after an undo, leave so nothing stale is saved. */}
+      <UpdateHistory account={account} onUndone={() => goBack('/home')} />
 
       <ConfirmationSheet
         visible={confirmLeave}

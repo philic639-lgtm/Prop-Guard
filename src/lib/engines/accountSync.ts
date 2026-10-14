@@ -1,4 +1,4 @@
-import type { Account } from '@/types/domain';
+import type { Account, Trade } from '@/types/domain';
 
 /**
  * One authoritative account record (pure — no store, no I/O).
@@ -143,4 +143,17 @@ export function verifyPersisted(expected: Account, stored: Account | null | unde
   const b = stored.importState?.threshold?.value ?? null;
   if (a !== b) return 'The stored drawdown threshold does not match the saved value.';
   return null;
+}
+
+/**
+ * A trade read from a trade screenshot is journal evidence, not account data: it never moves
+ * the balance on its own. These closed screenshot trades (after the last confirmed balance)
+ * are listed so the trader can confirm the balance with an account update.
+ */
+export function movesBalance(trade: Pick<Trade, 'source'>): boolean {
+  return trade.source !== 'screenshot';
+}
+
+export function tradesAwaitingBalance(account: Account, trades: Trade[]): Trade[] {
+  return trades.filter((t) => t.accountId === account.id && t.status === 'closed' && t.pnl != null && !movesBalance(t) && !tradeInBalance(account, t.closedAt));
 }

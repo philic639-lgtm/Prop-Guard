@@ -230,6 +230,44 @@ export class SupabaseRepository {
   async remove(table: RemovableTable, id: string) {
     check(await this.db.from(table).delete().eq('id', id));
   }
+
+  /**
+   * Store REDACTED account-overview pages (JPEG base64, blacked out on the device) in the
+   * private `screenshots` bucket under this user's folder, and link them to the account and
+   * the update-history record. Returns the storage paths; throws on any failure.
+   */
+  async uploadAccountSnapshot(accountId: string, recordId: string, pages: string[], dashboardDate: string | null): Promise<string[]> {
+    const paths: string[] = [];
+    for (const [i, b64] of pages.entries()) {
+      const path = `${this.userId}/accounts/${accountId}/${recordId}-${i + 1}.jpg`;
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const up = await this.db.storage.from('screenshots').upload(path, bytes, { contentType: 'image/jpeg', upsert: true });
+      if (up.error) throw new Error(up.error.message);
+      paths.push(path);
+    }
+    check(
+      await this.db.from('screenshots').insert(
+        paths.map((storage_path) => ({ user_id: this.userId, account_id: accountId, kind: 'account', redacted: true, record_id: recordId, dashboard_date: dashboardDate, storage_path })),
+      ),
+    );
+    return paths;
+  }
+
+  /** The account's stored snapshot copies, newest first. */
+  async listAccountSnapshots(accountId: string): Promise<{ id: string; storagePath: string; recordId: string | null; createdAt: string }[]> {
+    const rows = check(await this.db.from('screenshots').select('id, storage_path, record_id, created_at').eq('account_id', accountId).eq('kind', 'account').order('created_at', { ascending: false })) as Row[];
+    return (rows ?? []).map((r) => ({ id: String(r.id), storagePath: String(r.storage_path), recordId: (r.record_id as string | null) ?? null, createdAt: String(r.created_at) }));
+  }
+
+  /** Delete the account's stored snapshot copies (files and rows). */
+  async deleteAccountSnapshots(accountId: string): Promise<number> {
+    const list = await this.listAccountSnapshots(accountId);
+    if (!list.length) return 0;
+    const rm = await this.db.storage.from('screenshots').remove(list.map((x) => x.storagePath));
+    if (rm.error) throw new Error(rm.error.message);
+    check(await this.db.from('screenshots').delete().eq('account_id', accountId).eq('kind', 'account'));
+    return list.length;
+  }
 }
 
 function groupBy(rows: Row[], key: string): Map<string, Row[]> {

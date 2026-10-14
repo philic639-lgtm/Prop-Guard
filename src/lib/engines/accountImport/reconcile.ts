@@ -75,7 +75,7 @@ export function resolveLevels(input: FieldMap): FieldMap {
 }
 
 /** Values that change from day to day — never mixed across screenshots of different dates. */
-const TIME_VARYING = new Set<FieldKey>(['balance', 'netPnl', 'dailyPnl', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining', 'tradingDays', 'status', 'statementDate']);
+const TIME_VARYING = new Set<FieldKey>(['balance', 'netPnl', 'dailyPnl', 'equity', 'unrealizedPnl', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining', 'tradingDays', 'status', 'statementDate']);
 
 const pageDate = (p: PageExtraction) => (typeof p.fields.statementDate?.value === 'string' ? p.fields.statementDate.value : null);
 /** The newest dashboard date when the screenshots show more than one, else null. */

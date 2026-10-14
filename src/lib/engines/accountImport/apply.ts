@@ -1,6 +1,6 @@
 import type { Account, AccountDetailKey, AccountImportRecord, AccountImportState } from '@/types/domain';
 
-import { stampImportOrigins } from '../accountDetails';
+import { snapshotValues, stampImportOrigins } from '../accountDetails';
 import { confirmedThreshold, drawdownFloor, maxDrawdownAmount, observedFloor, ruleFloor } from '../propRuleEngine';
 import { DRAWDOWN_TYPES, type ExtractedField, type FieldKey, type FieldSource } from './types';
 
@@ -190,6 +190,7 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
     before,
     after: { balance: next.balance, highWaterMark: next.highWaterMark },
     notes,
+    previous: snapshotValues(account),
   };
 
   const prev: AccountImportState = account.importState ?? { fingerprint: null, maskedId: null, reported: null, history: [] };
@@ -218,6 +219,10 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
       profitTarget: n(c.values.profitTarget),
       profitTargetBalance: n(c.values.profitTargetBalance),
       netPnl: n(c.values.netPnl),
+      dailyPnl: n(c.values.dailyPnl),
+      equity: n(c.values.equity),
+      unrealizedPnl: n(c.values.unrealizedPnl),
+      statusText: typeof c.values.status === 'string' ? c.values.status : null,
       tradingDays: n(c.values.tradingDays),
       drawdownType: (DRAWDOWN_TYPES as readonly string[]).includes(String(c.values.drawdownType)) ? (c.values.drawdownType as (typeof DRAWDOWN_TYPES)[number]) : null,
       // Unknown = neither on the screenshot nor known to the account (verified / saved rules are known).
@@ -231,4 +236,44 @@ export function applyImport(account: Account, c: ConfirmedImport, id: string): A
   const stamped = stampImportOrigins(next, applied, c.confirmedAt, typed);
   Object.assign(next, stamped);
   return { account: next, record, floorCheck };
+}
+
+/**
+ * Undo the latest confirmed update (screenshot or manual): the account goes back to the values
+ * it had before, and the record stays in the history marked as undone. Only the newest, not yet
+ * undone record can be reverted — older ones are superseded by later updates.
+ */
+export { snapshotValues };
+
+export function undoLatestUpdate(account: Account, recordId: string, now: Date): { ok: true; account: Account } | { ok: false; reason: string } {
+  const st = account.importState;
+  const latest = st?.history.find((r) => !r.undoneAt);
+  if (!st || !latest || latest.id !== recordId) return { ok: false, reason: 'Only the most recent update can be undone.' };
+  if (!latest.previous) return { ok: false, reason: 'This update was saved by an older version and cannot be undone automatically — correct the values in Edit Account Details.' };
+  // Journal P&L booked after this update would be lost by restoring the old balance.
+  const bal = st.origins?.balance;
+  if (bal?.source === 'calculated' && Date.parse(bal.at) > Date.parse(latest.at))
+    return { ok: false, reason: 'Trades were journaled after this update, so undoing it would lose their P&L. Correct the values in Edit Account Details instead.' };
+  const p = latest.previous;
+  const at = now.toISOString();
+  return {
+    ok: true,
+    account: {
+      ...account,
+      balance: p.balance,
+      highWaterMark: p.highWaterMark,
+      startingBalance: p.startingBalance,
+      cycleStartBalance: p.cycleStartBalance,
+      status: p.status,
+      rules: structuredClone(p.rules),
+      importState: {
+        ...st,
+        threshold: p.threshold ?? null,
+        reported: p.reported ?? null,
+        origins: p.origins ?? undefined,
+        editedAt: at,
+        history: st.history.map((r) => (r.id === recordId ? { ...r, undoneAt: at } : r)),
+      },
+    },
+  };
 }

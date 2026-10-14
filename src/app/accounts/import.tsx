@@ -20,6 +20,8 @@ import { useImportReview } from '@/features/accountImport/useImportReview';
 import { IMPORT_DEBUG, useImportSession, type ImportStep } from '@/features/accountImport/useImportSession';
 import { usePendingImport } from '@/features/accountImport/usePendingImport';
 import { olderSnapshot } from '@/lib/engines/accountSync';
+import { compareUpdate, updateSummary, type ChangeRow } from '@/lib/engines/accountUpdate';
+import { UpdateComparison } from '@/features/accountImport/UpdateComparison';
 import { applyImport, buildReview, confirmImport, lockedRuleFields, RESET_BLOCKER, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
 import { getProgram, importProgramRules, missingOptions } from '@/lib/engines/firmRulesEngine';
 import { drawdownBuffer, drawdownFloor } from '@/lib/engines/propRuleEngine';
@@ -37,7 +39,7 @@ import { goBack } from '@/utils/navigation';
 /** The account details shown (editable) on the review — in the order traders read their dashboard. */
 const DETAIL_KEYS: FieldKey[] = ['firm', 'program', 'accountSize', 'balance', 'startingBalance', 'profitTarget', 'drawdownThreshold', 'maxDrawdown', 'drawdownRemaining', 'dailyLossLimit', 'drawdownType', 'status', 'statementDate'];
 /** Everything else the reader may find, under "Screenshot evidence, other fields & privacy". */
-const OTHER_KEYS: FieldKey[] = ['stage', 'startDate', 'netPnl', 'dailyPnl', 'tradingDays', 'currentDrawdown', 'profitTargetBalance'];
+const OTHER_KEYS: FieldKey[] = ['stage', 'startDate', 'netPnl', 'dailyPnl', 'unrealizedPnl', 'equity', 'tradingDays', 'currentDrawdown', 'profitTargetBalance'];
 const RULE_KEYS = ['maxDrawdown', 'dailyLossLimit', 'profitTarget'] as const;
 type RuleKey = (typeof RULE_KEYS)[number];
 const RULE_NAME: Record<RuleKey, string> = { maxDrawdown: 'max loss allowance', dailyLossLimit: 'daily loss limit', profitTarget: 'profit target' };
@@ -60,7 +62,7 @@ export default function AccountScreenshotImport() {
 }
 
 function ImportFlow() {
-  const params = useLocalSearchParams<{ accountId?: string; from?: 'new' | 'onboarding' }>();
+  const params = useLocalSearchParams<{ accountId?: string; from?: 'new' | 'onboarding'; autoread?: string }>();
   const accounts = useAppStore((s) => s.accounts);
   const upsert = useAppStore((s) => s.upsertAccount);
   const setActiveAccount = useAppStore((s) => s.setActiveAccount);
@@ -91,6 +93,7 @@ function ImportFlow() {
   const [differentAccount, setDifferentAccount] = useState(false);
   const [more, setMore] = useState(false);
   const [result, setResult] = useState<ApplyResult | null>(null);
+  const [savedChanges, setSavedChanges] = useState<ChangeRow[] | null>(null);
   const [guide, setGuide] = useState<GuidePage | null>(null);
   // Manual corrections vs this screenshot: the trader decides each one (never silently overwritten).
   const [manualChoice, setManualChoice] = useState<Partial<Record<AccountDetailKey, 'keep' | 'screenshot'>>>({});
@@ -119,6 +122,13 @@ function ImportFlow() {
     setPhase('review');
     await useImportSession.getState().readAll(db);
   };
+  // Opened from "Update Account" with the pictures already picked: read them right away.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (params.autoread !== '1' || autoStarted.current || !images.length) return;
+    autoStarted.current = true;
+    void read();
+  }, [params.autoread, images.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fields = extraction.fields;
 
@@ -240,12 +250,12 @@ function ImportFlow() {
     if (!r.ok) setSaveError(`${r.error} Your review is unchanged — tap Confirm & Save Account again.`);
     return r.ok;
   };
-  const save = async () => {
-    setSaveError(null);
+  /** The trader's confirmed values, exactly as Save will apply them (also used for the old → new preview). */
+  const buildConfirmed = (now: Date) => {
     const values = { ...fields };
     // A size from the matched program is the account's size.
     if (mode === 'new' && program?.accountSize) values.accountSize = { key: 'accountSize', value: program.accountSize, confidence: 1, source: 'user', evidence: 'Program size', page: -1 };
-    const c = confirmImport({
+    return confirmImport({
       fields: values,
       edited,
       ruleUpdates: ruleUpdates(),
@@ -254,33 +264,56 @@ function ImportFlow() {
       maskedId: keepMasked && idItem ? idItem.masked : null,
       engine,
       pages: images.filter((i) => i.page).length,
-      now: new Date(),
+      now,
       keepManual,
     });
-    const afterSave = async (accountId: string): Promise<void> => {
+  };
+  // Update: the saved account next to the account as this update would save it (same engine as Save).
+  let comparison: ChangeRow[] = [];
+  if (mode === 'update' && target && phase === 'review' && recognised) {
+    try {
+      comparison = compareUpdate(target, applyImport(target, buildConfirmed(new Date()), 'preview').account);
+    } catch {
+      comparison = [];
+    }
+  }
+  const save = async () => {
+    setSaveError(null);
+    const c = buildConfirmed(new Date());
+    const afterSave = async (accountId: string, recordId: string): Promise<void> => {
       // The trader's own daily stop (a plan setting for all accounts), when changed here.
       const cur = tradingRules.dailyStop > 0 ? tradingRules.dailyStop : null;
       if (!personalRiskError && personalRiskValue !== cur) setTradingRules({ ...tradingRules, dailyStop: personalRiskValue ?? 0 });
-      // Optional redacted reference copy, on this device only.
+      // Optional redacted reference copy: on this device, and in the trader's private cloud folder when signed in.
       if (keepReference) {
         const shots = images.filter((i) => i.page && !i.image.sample).map((i) => ({ image: i.image, sensitive: i.page!.sensitive }));
         if (shots.length) {
-          const r = await saveReferenceCopy(accountId, shots, c.confirmedAt);
-          setReferenceNote(r.saved ? `A redacted copy (${r.saved} page${r.saved > 1 ? 's' : ''}) is kept on this device for reference.` : (r.reason ?? null));
+          const r = await saveReferenceCopy(accountId, shots, c.confirmedAt, { recordId, dashboardDate: statementDate });
+          const device = r.saved ? `A redacted copy (${r.saved} page${r.saved > 1 ? 's' : ''}) is kept on this device` : (r.reason ?? null);
+          const cloud =
+            r.cloud === 'stored'
+              ? 'and in your private cloud folder.'
+              : r.cloud === 'failed'
+                ? `— it could not be stored in your cloud account (${r.cloudError}); the account values themselves are saved.`
+                : r.cloud === 'not_signed_in'
+                  ? '(not uploaded — sign in to keep it in your account).'
+                  : '';
+          setReferenceNote(device ? `${device} ${cloud}`.trim() : null);
         }
       }
     };
     // The session (and its images) is released only after the optional reference copy is made.
-    const finish = (accountId: string) => void afterSave(accountId).finally(() => useImportSession.getState().reset());
+    const finish = (accountId: string, recordId: string) => void afterSave(accountId, recordId).finally(() => useImportSession.getState().reset());
     if (mode === 'update' && target) {
       const r = applyImport(target, c, uuid());
       // The existing record, updated in place (same id) — never a second account.
       upsert(r.account);
       setActiveAccount(r.account.id);
       if (!(await confirmSaved(r.account))) return;
+      setSavedChanges(compareUpdate(target, r.account));
       setResult(r);
       setPhase('done');
-      finish(r.account.id);
+      finish(r.account.id, r.record.id);
       return;
     }
     if (from === 'onboarding') {
@@ -310,7 +343,7 @@ function ImportFlow() {
     if (!(await confirmSaved(created.result.account))) return;
     setResult(created.result);
     setPhase('done');
-    finish(created.result.account.id);
+    finish(created.result.account.id, created.result.record.id);
   };
 
   // Opened directly (e.g. from More) there may be no screen to go back to.
@@ -327,10 +360,12 @@ function ImportFlow() {
         <Card tone="positive" style={styles.gap}>
           <StatusBadge label={mode === 'update' ? 'Account updated' : 'Account saved'} tone="positive" icon="checkmark-circle" size="sm" />
           <AppText variant="title">{result.account.name}</AppText>
+          {savedChanges ? <AppText variant="bodyStrong">{updateSummary(savedChanges, (n, sign) => money(n, { sign }))}</AppText> : null}
           <AppText variant="caption" tone="secondary">
-            Snapshot-based — values from your screenshot, confirmed by you. Not a live connection.
+            Snapshot-based — not live verified. Values from your screenshot, confirmed by you. Your dashboard now shows them; you can undo this update from the account’s update history.
           </AppText>
         </Card>
+        {savedChanges ? <UpdateComparison rows={savedChanges} title="Updated" /> : null}
         <DetailTable
           rows={[
             { label: 'Balance', value: mode === 'update' ? `${money(result.record.before.balance)} → ${money(result.account.balance)}` : money(result.account.balance), bold: true },
@@ -408,7 +443,7 @@ function ImportFlow() {
         <View style={styles.row}>
           <Icon name="eye-off-outline" size={14} color={colors.warning} />
           <AppText variant="caption" tone="secondary" style={styles.flex}>
-            Hide passwords, API keys, emails and personal details first. Screenshots are read on this device and never uploaded; you can keep a redacted copy on this device for reference.
+            Hide passwords, API keys, emails and personal details first. Screenshots are read on this device; the original is never uploaded. You can keep a redacted copy (account numbers blacked out) for reference — on this device, and in your private cloud folder when you are signed in.
           </AppText>
         </View>
 
@@ -535,6 +570,8 @@ function ImportFlow() {
         />
       ) : null}
 
+      {!readingNow && comparison.length ? <UpdateComparison rows={comparison} /> : null}
+
       {!readingNow && anyRead && !recognised ? (
         <Card tone="warning" style={styles.gap}>
           <AppText variant="bodyStrong">No account values were recognised</AppText>
@@ -618,7 +655,7 @@ function ImportFlow() {
             </Card>
           ) : null}
           {images.some((i) => i.page && !i.image.sample) && from !== 'onboarding' ? (
-            <ToggleRow label="Keep a redacted copy on this device for reference (account numbers blacked out, never uploaded)" value={keepReference} onChange={setKeepReference} />
+            <ToggleRow label="Keep a redacted copy for reference (account numbers blacked out; stored on this device and, when signed in, in your private cloud folder)" value={keepReference} onChange={setKeepReference} />
           ) : null}
         </View>
       ) : null}

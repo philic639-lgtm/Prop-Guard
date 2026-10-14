@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { accountCard, type AccountCard } from '@/lib/engines/accountOverview';
 import { computeDailyGuard, type DailyGuard } from '@/lib/engines/dailyGuardEngine';
 import { computeDisciplineScore } from '@/lib/engines/disciplineEngine';
 import { useAppStore } from '@/store/useAppStore';
@@ -87,4 +88,15 @@ export function useDiscipline(days = 30) {
     const recentEvents = events.filter((e) => Date.parse(e.at) >= cutoff && (e.tradeId == null || ids.has(e.tradeId)));
     return { score: computeDisciplineScore(recent, recentEvents), trades: recent, events: recentEvents };
   }, [trades, events, days, now]);
+}
+
+/** My Accounts: one compact card per account, from the same engines as each dashboard. */
+export function useAccountCards(): AccountCard[] {
+  const accounts = useAppStore((s) => s.accounts);
+  const trades = useAppStore((s) => s.trades);
+  const rules = useAppStore((s) => s.tradingRules);
+  const activeId = useAppStore((s) => s.activeAccountId);
+  const primaryId = useAppStore((s) => s.preferences.tradingProfile.primaryAccountId ?? null);
+  const now = useNow(60_000);
+  return useMemo(() => accounts.map((a) => accountCard(a, { trades, rules, now, primaryId, activeId })), [accounts, trades, rules, now, primaryId, activeId]);
 }

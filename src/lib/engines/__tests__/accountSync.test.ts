@@ -142,6 +142,13 @@ describe('save read-back', () => {
     expect(verifyPersisted(a, undefined)).toMatch(/not found/);
     expect(verifyPersisted(a, { ...a, importState: { ...a.importState!, threshold: { value: 24_000, source: 'manual', at: '' } } })).toMatch(/threshold/);
   });
+  it('update history (with undo data) round-trips through the database row', () => {
+    const a = confirmed();
+    a.importState!.history = [{ id: 'r1', at: '2026-10-13T15:00:00Z', engine: 'ocr', pages: 1, fields: [], before: { balance: 25_090, highWaterMark: 25_270 }, after: { balance: 25_246, highWaterMark: 25_270 }, notes: [], previous: { balance: 25_090, highWaterMark: 25_270, startingBalance: 25_000, cycleStartBalance: 25_000, status: 'active', rules: a.rules, threshold: null, reported: null, origins: null }, undoneAt: '2026-10-13T16:00:00Z' }];
+    const { account, rules } = accountToRows(a, 'u');
+    expect(rowsToAccount(JSON.parse(JSON.stringify(account)), JSON.parse(JSON.stringify(rules))).importState?.history).toEqual(a.importState!.history);
+  });
+
   it('the database row round-trips balance, start, floor and update time', () => {
     const a = confirmed();
     const { account, rules } = accountToRows(a, 'u');

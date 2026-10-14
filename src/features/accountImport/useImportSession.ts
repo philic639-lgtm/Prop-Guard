@@ -41,7 +41,8 @@ interface State {
   reading: boolean;
   /** Trader edits: a value, or null = "not present / clear it". */
   edits: Partial<Record<FieldKey, number | string | null>>;
-  add: (images: (ImportImage & { sample?: boolean })[]) => { added: number; skipped: number; rejected: string[] };
+  /** `limit`: most images in the session (bulk updates allow more than one import's pages). */
+  add: (images: (ImportImage & { sample?: boolean })[], limit?: number) => { added: number; skipped: number; rejected: string[] };
   remove: (id: string) => void;
   readAll: (db: FirmRulesDatabase) => Promise<void>;
   /** Read one failed screenshot again (fresh OCR worker). */
@@ -69,9 +70,9 @@ export const useImportSession = create<State>((set, get) => ({
   reading: false,
   edits: {},
 
-  add: (incoming) => {
+  add: (incoming, limit = MAX_IMAGES) => {
     const cur = get().images;
-    const room = Math.max(0, MAX_IMAGES - cur.length);
+    const room = Math.max(0, limit - cur.length);
     const rejected: string[] = [];
     const valid = incoming.filter((i) => {
       const why = rejectReason({ name: i.name, type: i.type, bytes: i.bytes, width: i.width, height: i.height });

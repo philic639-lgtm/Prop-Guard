@@ -25,7 +25,7 @@ export default function MoreTab() {
     {
       title: 'Accounts',
       items: [
-        { title: 'Account management', subtitle: 'Prop accounts, rules and balances', icon: 'accounts', route: '/accounts', tone: 'accent', value: String(accounts) },
+        { title: 'My Accounts', subtitle: 'All accounts, updates and rules', icon: 'accounts', route: '/accounts', tone: 'accent', value: String(accounts) },
         { title: 'Import from screenshot', subtitle: 'Read a dashboard screenshot', icon: 'account-import', route: '/accounts/import', tone: 'accent' },
       ],
     },

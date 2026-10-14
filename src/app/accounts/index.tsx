@@ -1,30 +1,64 @@
 import { router } from 'expo-router';
-import { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Card, EmptyState, HeaderIconButton, Metric, RiskProgress, Screen, StatusBadge } from '@/components/ui';
+import { AppHeader, AppText, Button, Chip, EmptyState, HeaderIconButton, Input, Screen, Sheet, ToggleRow } from '@/components/ui';
 import { PLANS } from '@/config/plans';
 import { spacing } from '@/constants/theme';
-import { evaluateAccount } from '@/lib/engines';
-import { useAppStore } from '@/store/useAppStore';
+import { AccountCardView } from '@/features/accounts/AccountCardView';
+import { UpdateAccountSheet } from '@/features/accounts/UpdateAccountSheet';
+import { useAccountCards } from '@/hooks/useAppData';
+import { FILTER_LABEL, filterCounts, overview, type AccountFilter } from '@/lib/engines/accountOverview';
+import { confirmAccountSaved, useAppStore } from '@/store/useAppStore';
 import { useSubscriptionStore } from '@/store/useSubscriptionStore';
-import { money } from '@/utils/format';
+import type { Account } from '@/types/domain';
 
-export default function AccountsScreen() {
+const FILTERS: AccountFilter[] = ['all', 'attention', 'evaluation', 'funded', 'recent'];
+
+/**
+ * My Accounts — every account as a compact card (never stacked dashboards). Tap a card to
+ * open its full dashboard (it becomes the active account: Home, Check Trade, Risk Manager,
+ * Journal and Strategies all follow it). Filters, primary account, rename and archive here;
+ * "Update" updates one account, "Update multiple" several at once.
+ */
+export default function MyAccountsScreen() {
   const accounts = useAppStore((s) => s.accounts);
-  const trades = useAppStore((s) => s.trades);
-  const activeId = useAppStore((s) => s.activeAccountId);
   const setActive = useAppStore((s) => s.setActiveAccount);
+  const upsert = useAppStore((s) => s.upsertAccount);
+  const prefs = useAppStore((s) => s.preferences);
+  const setPreferences = useAppStore((s) => s.setPreferences);
   const plan = useSubscriptionStore((s) => s.plan);
   const canAdd = accounts.length < PLANS[plan].limits.accounts;
+  const cards = useAccountCards();
+  const [filter, setFilter] = useState<AccountFilter>('all');
+  const [showArchived, setShowArchived] = useState(false);
+  const [updating, setUpdating] = useState<Account | null>(null);
+  const [menu, setMenu] = useState<Account | null>(null);
+  const [rename, setRename] = useState('');
+  const [note, setNote] = useState<string | null>(null);
+  const now = useMemo(() => new Date(), [cards]); // eslint-disable-line react-hooks/exhaustive-deps
+  const counts = useMemo(() => filterCounts(cards, now), [cards, now]);
+  const list = useMemo(() => overview(cards, filter, { showArchived, now }), [cards, filter, showArchived, now]);
+  const archived = cards.filter((c) => c.status === 'archived').length;
+  const byId = (id: string) => accounts.find((a) => a.id === id) ?? null;
 
-  const evals = useMemo(() => new Map(accounts.map((a) => [a.id, evaluateAccount(a, trades)])), [accounts, trades]);
+  const open = (id: string) => {
+    setActive(id);
+    router.push('/home');
+  };
+  const saveAccount = async (a: Account, done: string) => {
+    upsert(a);
+    const r = await confirmAccountSaved(a);
+    setNote(r.ok ? done : r.error);
+  };
+  const setPrimary = (id: string | null) => setPreferences({ tradingProfile: { ...prefs.tradingProfile, primaryAccountId: id } });
 
   return (
     <Screen
       header={
         <AppHeader
-          title="Accounts"
+          title="My Accounts"
+          subtitle={`${accounts.length} account${accounts.length === 1 ? '' : 's'}`}
           back
           right={<HeaderIconButton icon="add" label="Add account" onPress={() => router.push(canAdd ? '/accounts/new' : '/paywall')} />}
         />
@@ -32,59 +66,96 @@ export default function AccountsScreen() {
       {accounts.length === 0 ? (
         <EmptyState illustration="shield" title="No accounts" message="Add a prop or personal account to track its rules." actionLabel="Add account" onAction={() => router.push('/accounts/new')} />
       ) : (
-        accounts.map((a) => {
-          const ev = evals.get(a.id)!;
-          const ddProximity = ev.rules.find((r) => r.id === 'max_drawdown')?.proximity ?? 0;
-          return (
-            <Card key={a.id} onPress={() => router.push({ pathname: '/accounts/[id]', params: { id: a.id } })} tone={a.id === activeId ? 'accent' : undefined}>
-              <View style={styles.head}>
-                <AppText variant="heading" style={styles.flex}>
-                  {a.name}
-                </AppText>
-                <StatusBadge label={a.status} tone={a.status === 'active' ? 'positive' : a.status === 'failed' ? 'danger' : 'neutral'} size="sm" />
-              </View>
-              <View style={[styles.grid, { marginTop: spacing.lg }]}>
-                <Metric label="Balance" value={money(a.balance)} compact />
-                <Metric label="Target" value={a.rules.profitTarget ? money(a.cycleStartBalance + a.rules.profitTarget) : '—'} compact />
-                <Metric label="DD buffer" value={ev.drawdownBuffer != null ? money(ev.drawdownBuffer) : a.kind === 'prop' ? 'Verify' : '—'} tone={ev.drawdownBuffer == null && a.kind === 'prop' ? 'warning' : ev.drawdownBuffer != null && ev.drawdownBuffer < 500 ? 'warning' : undefined} compact />
-              </View>
-              {ev.targetProgress != null ? (
-                <View style={styles.progress}>
-                  <AppText variant="caption">Target progress</AppText>
-                  <RiskProgress value={ev.targetProgress} tone="positive" height={6} label="Profit target progress" />
-                </View>
-              ) : null}
-              {ev.drawdownBuffer != null ? (
-                <View style={styles.progress}>
-                  <AppText variant="caption">Drawdown used</AppText>
-                  <RiskProgress value={ddProximity} height={6} label="Drawdown used" />
-                </View>
-              ) : null}
-              {a.id !== activeId ? (
-                <AppText variant="caption" tone="accent" style={{ marginTop: spacing.md, fontWeight: '600' }} onPress={() => setActive(a.id)}>
-                  Make active
-                </AppText>
-              ) : (
-                <AppText variant="caption" tone="accent" style={{ marginTop: spacing.md }}>
-                  Active account
-                </AppText>
-              )}
-            </Card>
-          );
-        })
+        <>
+          {accounts.length > 1 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+              {FILTERS.map((f) => (
+                <Chip key={f} label={`${FILTER_LABEL[f]} ${counts[f]}`} selected={filter === f} onPress={() => setFilter(f)} />
+              ))}
+            </ScrollView>
+          ) : null}
+          {accounts.length > 1 ? <Button label="Update Multiple Accounts" icon="images-outline" variant="secondary" size="md" onPress={() => router.push('/accounts/bulk')} /> : null}
+          {note ? (
+            <AppText variant="caption" tone="secondary" accessibilityRole="alert">
+              {note}
+            </AppText>
+          ) : null}
+          {list.length === 0 ? (
+            <AppText variant="caption" tone="secondary" align="center" style={styles.empty}>
+              No accounts in “{FILTER_LABEL[filter]}”.
+            </AppText>
+          ) : null}
+          <View style={styles.list}>
+            {list.map((c) => (
+              <AccountCardView
+                key={c.id}
+                card={c}
+                onOpen={() => open(c.id)}
+                onUpdate={c.status === 'archived' ? undefined : () => setUpdating(byId(c.id))}
+                onMore={() => {
+                  const a = byId(c.id);
+                  setRename(a?.name ?? '');
+                  setMenu(a);
+                }}
+              />
+            ))}
+          </View>
+          {archived ? <ToggleRow label={`Show archived accounts (${archived})`} value={showArchived} onChange={setShowArchived} /> : null}
+        </>
       )}
       {!canAdd ? (
         <AppText variant="caption" align="center">
           Free plan includes {PLANS.free.limits.accounts} account. Pro unlocks unlimited accounts.
         </AppText>
       ) : null}
+
+      {updating ? <UpdateAccountSheet account={updating} visible onClose={() => setUpdating(null)} /> : null}
+
+      <Sheet visible={!!menu} onClose={() => setMenu(null)} title={menu?.name}>
+        {menu ? (
+          <View style={styles.gap}>
+            <Input accessibilityLabel="Account name" label="Account name" value={rename} onChangeText={setRename} maxLength={60} />
+            <Button
+              label="Save name"
+              variant="secondary"
+              size="md"
+              disabled={!rename.trim() || rename.trim() === menu.name}
+              onPress={() => {
+                void saveAccount({ ...menu, name: rename.trim() }, `Renamed to “${rename.trim()}”.`);
+                setMenu(null);
+              }}
+            />
+            {prefs.tradingProfile.primaryAccountId === menu.id ? (
+              <Button label="Remove as primary account" variant="ghost" icon="star-outline" onPress={() => (setPrimary(null), setMenu(null))} />
+            ) : (
+              <Button label="Make primary account" variant="ghost" icon="star-outline" onPress={() => (setPrimary(menu.id), setMenu(null))} />
+            )}
+            <Button label="Edit Account Details" variant="ghost" icon="create-outline" onPress={() => (setMenu(null), router.push({ pathname: '/accounts/details', params: { id: menu.id } }))} />
+            <Button label="Firm rules" variant="ghost" icon="rules-drawdown" onPress={() => (setMenu(null), router.push({ pathname: '/accounts/[id]', params: { id: menu.id } }))} />
+            {menu.status === 'archived' ? (
+              <Button label="Restore account" variant="ghost" icon="archive-outline" onPress={() => (void saveAccount({ ...menu, status: 'active' }, `“${menu.name}” restored.`), setMenu(null))} />
+            ) : (
+              <Button
+                label="Archive account"
+                variant="ghost"
+                icon="archive-outline"
+                onPress={() => {
+                  void saveAccount({ ...menu, status: 'archived' }, `“${menu.name}” archived — its journal and history are kept. Show archived accounts to restore it.`);
+                  if (prefs.tradingProfile.primaryAccountId === menu.id) setPrimary(null);
+                  setMenu(null);
+                }}
+              />
+            )}
+          </View>
+        ) : null}
+      </Sheet>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  head: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  flex: { flex: 1 },
-  grid: { flexDirection: 'row', gap: spacing.md },
-  progress: { gap: 6, marginTop: spacing.md },
+  filters: { gap: spacing.sm, paddingVertical: spacing.xs },
+  list: { gap: spacing.sm },
+  gap: { gap: spacing.sm },
+  empty: { marginVertical: spacing.lg },
 });

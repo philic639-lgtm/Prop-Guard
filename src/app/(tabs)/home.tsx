@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { DemoBanner } from '@/components/domain/DemoBanner';
@@ -35,8 +35,11 @@ import { accountFreshness, missingCritical } from '@/lib/engines/accountDetails'
 import { HomeModeCard } from '@/features/learning/HomeModeCard';
 import { TradingPlanCard } from '@/features/home/TradingPlanCard';
 import { SaveStatusLine } from '@/features/accounts/SaveStatusLine';
+import { AccountSwitcherSheet } from '@/features/accounts/AccountSwitcherSheet';
+import { UpdateAccountSheet } from '@/features/accounts/UpdateAccountSheet';
 import { useAccountTrades, useActiveAccount, useActiveStrategy, useDailyGuard, useDiscipline, useOpenTrade, usePendingTrades } from '@/hooks/useAppData';
 import { evaluateAccount } from '@/lib/engines';
+import { tradesAwaitingBalance } from '@/lib/engines/accountSync';
 import { useAppStore } from '@/store/useAppStore';
 import { dayKey, formatDuration } from '@/utils/dates';
 import { money, pct } from '@/utils/format';
@@ -45,6 +48,11 @@ const CONNECTION_LABEL = { manual: 'Manual tracking', screenshot: 'Imported', co
 
 export default function HomeScreen() {
   const account = useActiveAccount();
+  const [updating, setUpdating] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const multiple = useAppStore((s) => s.accounts.filter((a) => a.status !== 'archived').length > 1);
+  const allTradesForAwaiting = useAppStore((s) => s.trades);
+  const awaiting = useMemo(() => (account ? tradesAwaitingBalance(account, allTradesForAwaiting) : []), [account, allTradesForAwaiting]);
   const strategies = useAppStore((s) => s.strategies);
   const allTrades = useAppStore((s) => s.trades);
   const plans = useAppStore((s) => s.plans);
@@ -108,8 +116,8 @@ export default function HomeScreen() {
       {/* Account overview: who / where the numbers come from. */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${account.name}, ${CONNECTION_LABEL[connection]}`}
-        onPress={() => router.push({ pathname: '/accounts/[id]', params: { id: account.id } })}
+        accessibilityLabel={multiple ? `${account.name}. Switch account` : `${account.name}, ${CONNECTION_LABEL[connection]}`}
+        onPress={() => (multiple ? setSwitching(true) : router.push({ pathname: '/accounts/[id]', params: { id: account.id } }))}
         style={({ pressed }) => [styles.overview, pressed && styles.pressed]}>
         <View style={styles.avatar}>
           <AppText variant="heading" style={{ color: colors.text }}>
@@ -135,8 +143,9 @@ export default function HomeScreen() {
             </AppText>
           ) : null}
         </View>
-        <Icon name="chevron-forward" size={18} color={colors.textTertiary} />
+        <Icon name={multiple ? 'swap-vertical' : 'chevron-forward'} size={18} color={colors.textTertiary} />
       </Pressable>
+      <AccountSwitcherSheet visible={switching} onClose={() => setSwitching(false)} />
 
       {/* Stale data and missing data are different problems — shown separately. */}
       {freshness.staleMessage ? (
@@ -155,8 +164,14 @@ export default function HomeScreen() {
           </AppText>
         </View>
       ) : null}
-      <Button label="Edit Account Details" icon="create-outline" variant="secondary" size="md" onPress={() => router.push({ pathname: '/accounts/details', params: { id: account.id } })} />
+      <Button label="Update Account" icon="refresh" variant="secondary" size="md" onPress={() => setUpdating(true)} />
+      <UpdateAccountSheet account={account} visible={updating} onClose={() => setUpdating(false)} />
       <SaveStatusLine accountId={account.id} />
+      {awaiting.length ? (
+        <AppText variant="caption" tone="warning" onPress={() => setUpdating(true)} accessibilityRole="button">
+          {awaiting.length} trade{awaiting.length > 1 ? 's' : ''} from trade screenshots ({money(awaiting.reduce((x, t) => x + (t.pnl ?? 0), 0), { sign: true })}) {awaiting.length > 1 ? 'are' : 'is'} not in the balance yet — update the account to confirm it.
+        </AppText>
+      ) : null}
 
       {/* The four numbers that matter: balance, profit target, daily risk, drawdown. */}
       {guard ? (

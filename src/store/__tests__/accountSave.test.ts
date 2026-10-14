@@ -144,6 +144,17 @@ describe('journal trades and the confirmed balance', () => {
   });
 });
 
+describe('trade screenshots', () => {
+  it('a trade read from a trade screenshot is journaled but never moves the balance', async () => {
+    await editBalance(25_246);
+    useAppStore.getState().addJournalTrade(makeTrade({ accountId: 'flex-25k', status: 'closed', pnl: -156, source: 'screenshot', openedAt: '2026-10-13T16:10:00Z', closedAt: '2026-10-13T16:30:00Z' }));
+    expect(dashboard().balance).toBe(25_246);
+    expect(useAppStore.getState().trades.filter((t) => t.accountId === 'flex-25k')).toHaveLength(1);
+    // Journals stay with their own account.
+    expect(useAppStore.getState().trades.filter((t) => t.accountId === 'other')).toHaveLength(0);
+  });
+});
+
 describe('cloud account', () => {
   beforeEach(() => {
     useAppStore.setState({ user: { id: 'u1', email: 'x@example.com' } });

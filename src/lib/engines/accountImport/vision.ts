@@ -24,7 +24,7 @@ export function visionToPage(r: VisionReading, page: number): PageExtraction {
     let value: number | string | null = null;
     if ((MONEY_FIELDS as FieldKey[]).includes(key)) {
       value = typeof f.value === 'number' ? f.value : parseMoney(String(f.value), key === 'accountSize');
-      if (value != null && !['netPnl', 'dailyPnl'].includes(key)) value = Math.abs(value);
+      if (value != null && !['netPnl', 'dailyPnl', 'unrealizedPnl'].includes(key)) value = Math.abs(value);
     } else if ((DATE_FIELDS as FieldKey[]).includes(key)) value = parseDate([String(f.value)])?.iso ?? null;
     else if (key === 'stage') value = stageFrom(String(f.value));
     else if (key === 'status') value = statusFrom(String(f.value));

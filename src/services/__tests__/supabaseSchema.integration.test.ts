@@ -144,6 +144,22 @@ d('Supabase schema × repository (Postgres integration)', () => {
     expect((await repoA.loadAll()).trades).toHaveLength(data.trades.length);
   });
 
+  it('account ownership: rows can only point at the same user’s accounts', () => {
+    const a = data.accounts[0].id;
+    const t = data.trades[0];
+    // User B cannot attach a trade (or a snapshot) to user A's account, even with B's own user id.
+    expect(() =>
+      runSql(url, `insert into public.trades (id, user_id, account_id, instrument, direction, entry_price, stop_price, original_stop_price, contracts, risk_dollars, status, opened_at) values (gen_random_uuid(), '${USER_B}', '${a}', 'ES', 'long', 5000, 4998, 4998, 1, 100, 'closed', now())`, USER_B),
+    ).toThrow(/does not belong/);
+    expect(() => runSql(url, `insert into public.screenshots (user_id, account_id, kind, redacted, storage_path) values ('${USER_B}', '${a}', 'account', true, '${USER_B}/accounts/${a}/x.jpg')`, USER_B)).toThrow(/does not belong/);
+    // Moving A's own trade onto B's account id is refused too.
+    expect(() => runSql(url, `update public.trades set account_id = '${a}', user_id = '${USER_B}' where id = '${t.id}'`, null)).toThrow(/does not belong/);
+    // The owner links a redacted account snapshot to the account and its update record.
+    runSql(url, `insert into public.screenshots (user_id, account_id, kind, redacted, record_id, dashboard_date, storage_path) values ('${USER_A}', '${a}', 'account', true, 'rec-1', '2026-10-13', '${USER_A}/accounts/${a}/rec-1-1.jpg')`, USER_A);
+    expect(runSql(url, `select count(*) from public.screenshots where account_id = '${a}' and kind = 'account'`, USER_A)).toBe('1');
+    expect(runSql(url, `select count(*) from public.screenshots where account_id = '${a}'`, USER_B)).toBe('0');
+  });
+
   it('signed-out (anon) clients read only public reference data', () => {
     const asAnon = (sql: string) => runSql(url, `set local role anon; ${sql}`, null);
     expect(asAnon('select count(*) from public.accounts')).toBe('0');

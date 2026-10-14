@@ -45,6 +45,8 @@ export type MoneyField =
   | 'startingBalance'
   | 'netPnl'
   | 'dailyPnl'
+  | 'equity'
+  | 'unrealizedPnl'
   | 'maxDrawdown'
   | 'drawdownThreshold'
   | 'currentDrawdown'
@@ -64,6 +66,8 @@ export const MONEY_FIELDS: MoneyField[] = [
   'startingBalance',
   'netPnl',
   'dailyPnl',
+  'equity',
+  'unrealizedPnl',
   'maxDrawdown',
   'drawdownThreshold',
   'currentDrawdown',
@@ -92,6 +96,8 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
   startingBalance: 'Starting balance',
   netPnl: 'Net profit / loss',
   dailyPnl: 'Today’s P&L',
+  equity: 'Equity / net liquidation (incl. open positions)',
+  unrealizedPnl: 'Unrealized (open) P&L',
   maxDrawdown: 'Max drawdown (rule amount)',
   drawdownThreshold: 'Drawdown threshold (liquidation balance)',
   currentDrawdown: 'Current drawdown (used)',

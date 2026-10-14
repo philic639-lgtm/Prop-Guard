@@ -84,7 +84,9 @@ Server secrets (AI provider keys, `SUPABASE_SERVICE_ROLE_KEY`, `ECON_SYNC_SECRET
   `https://prop-guard.vercel.app`), and add preview URLs under **Redirect URLs**
   (e.g. `https://*-<your-team>.vercel.app/**`). Sign-up confirmation and password-reset
   e-mails link to the Site URL (the app does not pass its own redirect).
-- Database: run the migrations (`npx supabase db push`) before users sign in.
+- Database: run the migrations (`npx supabase db push`) before users sign in — including
+  `20261026000000_account_snapshots.sql` (account snapshots in the private `screenshots` bucket,
+  account-ownership check on every row that references an account).
 - The Edge Functions already allow browser calls from any origin (CORS `*`).
 
 ## After deploying — check on the phone
