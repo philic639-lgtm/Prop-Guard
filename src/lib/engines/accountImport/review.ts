@@ -156,6 +156,16 @@ function sourceOf(f: ExtractedField, edited: boolean): ReviewSource {
   return f.source === 'derived' ? 'calculated' : 'screenshot';
 }
 
+/**
+ * Rows the trader must still act on that none of the four summary cards shows (e.g. an
+ * uncertain total P&L after a corrected balance) — rendered inline with Edit / Confirm,
+ * so every blocker can be resolved on the review card itself.
+ */
+export function rowsNeedingInput(model: Pick<ReviewModel, 'rows' | 'summary'>): ReviewRow[] {
+  const onCards = new Set<string>(model.summary.map((c) => c.key));
+  return model.rows.filter((r) => !onCards.has(r.key) && r.status !== 'ok' && (r.required || r.status === 'uncertain' || r.status === 'conflict'));
+}
+
 export function buildReview(input: ReviewInput): ReviewModel {
   const { fields, mode, edited, confirmedFields } = input;
   const rows: ReviewRow[] = [];

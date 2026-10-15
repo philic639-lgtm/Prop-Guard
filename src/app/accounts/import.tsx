@@ -22,7 +22,7 @@ import { usePendingImport } from '@/features/accountImport/usePendingImport';
 import { olderSnapshot } from '@/lib/engines/accountSync';
 import { compareUpdate, updateSummary, type ChangeRow } from '@/lib/engines/accountUpdate';
 import { UpdateComparison } from '@/features/accountImport/UpdateComparison';
-import { applyImport, buildReview, confirmImport, lockedRuleFields, RESET_BLOCKER, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
+import { applyImport, buildReview, confirmImport, lockedRuleFields, RESET_BLOCKER, rowsNeedingInput, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
 import { getProgram, importProgramRules, missingOptions } from '@/lib/engines/firmRulesEngine';
 import { drawdownBuffer, drawdownFloor } from '@/lib/engines/propRuleEngine';
 import { aiIsLive } from '@/services/ai';
@@ -556,7 +556,7 @@ function ImportFlow() {
           onName={setNameText}
           summary={model.summary}
           details={model.details}
-          extraRows={model.rows.filter((r) => r.required && r.key !== 'balance' && r.status !== 'ok')}
+          extraRows={rowsNeedingInput(model)}
           issues={issues}
           acks={acks}
           onAck={(id, v) => setAcks((a) => ({ ...a, [id]: v }))}

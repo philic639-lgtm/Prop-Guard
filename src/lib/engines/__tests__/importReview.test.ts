@@ -9,7 +9,7 @@ import { accountToRows, rowsToAccount } from '@/services/supabase/mappers';
 import { makeAccount } from '@/test/fixtures';
 import type { Account } from '@/types/domain';
 
-import { buildReview, confirmImport, crossCheck, extractPage, matchImport, mergePages, reconcile, type ExtractedField, type FieldKey, type FieldMap, type OcrPage, type ReviewInput } from '../accountImport';
+import { buildReview, confirmImport, rowsNeedingInput, crossCheck, extractPage, matchImport, mergePages, reconcile, type ExtractedField, type FieldKey, type FieldMap, type OcrPage, type ReviewInput } from '../accountImport';
 import { getProgram, importProgramRules } from '../firmRulesEngine';
 import { drawdownBuffer, drawdownFloor } from '../propRuleEngine';
 
@@ -181,5 +181,28 @@ describe('financial safety rules', () => {
     const s = reviewState([nll]);
     const m = review(s, { missingOptions: [{ id: 'dll', label: 'Daily Loss Limit' }] });
     expect(m.blockers).toContain('Choose the Daily Loss Limit option.');
+  });
+});
+
+describe('every blocker can be resolved on the review card', () => {
+  it('a corrected balance that no longer matches the screenshot P&L shows the P&L inline (edit / confirm)', () => {
+    const read = reviewState([overview]);
+    const bal = read.fields.balance?.value as number;
+    const pnl = read.fields.netPnl?.value as number;
+    expect(typeof bal).toBe('number');
+    expect(typeof pnl).toBe('number');
+    const s = reviewState([overview], { startingBalance: bal - pnl, balance: bal + 4 });
+    const m = review(s, { edited: new Set<FieldKey>(['balance', 'startingBalance']) });
+    expect(m.blockers).toContain('Check the total p&l — the reading is uncertain.');
+    expect(rowsNeedingInput(m).map((r) => r.key)).toContain('netPnl');
+    // Confirming it clears the blocker.
+    const ok = review(s, { edited: new Set<FieldKey>(['balance', 'startingBalance']), confirmedFields: new Set<FieldKey>(['netPnl']) });
+    expect(ok.blockers).not.toContain('Check the total p&l — the reading is uncertain.');
+    expect(rowsNeedingInput(ok).map((r) => r.key)).not.toContain('netPnl');
+  });
+  it('values already on the four summary cards are not repeated', () => {
+    const m = review(reviewState([overview]));
+    const cards = new Set<string>(m.summary.map((c) => c.key));
+    expect(rowsNeedingInput(m).some((r) => cards.has(r.key))).toBe(false);
   });
 });
