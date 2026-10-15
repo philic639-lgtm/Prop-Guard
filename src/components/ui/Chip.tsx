@@ -11,12 +11,14 @@ interface ChipProps {
   onPress?: () => void;
   icon?: IconName;
   large?: boolean;
+  /** One choice out of several (announced as a radio button, not a checkbox). */
+  single?: boolean;
 }
 
-export function Chip({ label, selected, onPress, icon, large }: ChipProps) {
+export function Chip({ label, selected, onPress, icon, large, single }: ChipProps) {
   return (
     <Pressable
-      accessibilityRole={onPress ? 'checkbox' : undefined}
+      accessibilityRole={onPress ? (single ? 'radio' : 'checkbox') : undefined}
       aria-checked={!!selected}
       accessibilityLabel={label}
       onPress={onPress}

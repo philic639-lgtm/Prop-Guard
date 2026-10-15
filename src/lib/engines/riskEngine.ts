@@ -24,6 +24,8 @@ export interface TradeRiskResult {
   pointsRisk: number | null;
   ticksRisk: number | null;
   pointsReward: number | null;
+  /** A target price was entered (even when the plan is not valid yet, e.g. the stop is on the wrong side). */
+  targetEntered?: boolean;
   riskDollars: number | null;
   rewardDollars: number | null;
   /** Reward divided by risk, e.g. 2 means 1:2. */
@@ -52,6 +54,7 @@ export function calculateTradeRisk(input: TradePlanInput): TradeRiskResult {
     rewardDollars: null,
     rr: null,
     accountRiskPct: null,
+    targetEntered: isNum(target),
   };
 
   if (!isNum(entry) || entry <= 0) errors.push('Enter a valid entry price.');

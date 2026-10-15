@@ -264,7 +264,7 @@ function BulkFlow() {
                 {it.match.certainty !== 'account_number' ? (
                   <View style={styles.wrap}>
                     {candidates.map((c) => (
-                      <Chip key={c.accountId} label={c.name} selected={it.accountId === c.accountId && st.matchConfirmed} onPress={() => set(it.id, { accountId: c.accountId, matchConfirmed: true })} />
+                      <Chip key={c.accountId} single label={c.name} selected={it.accountId === c.accountId && st.matchConfirmed} onPress={() => set(it.id, { accountId: c.accountId, matchConfirmed: true })} />
                     ))}
                   </View>
                 ) : null}
@@ -274,8 +274,8 @@ function BulkFlow() {
                   <View key={c.key} style={styles.gap}>
                     <AppText variant="caption">You corrected {c.label.toLowerCase()} by hand:</AppText>
                     <View style={styles.wrap}>
-                      <Chip label={`Keep mine · ${typeof c.manual === 'number' ? money(c.manual) : c.manual}`} selected={st.manualChoice[c.key as AccountDetailKey] !== 'screenshot'} onPress={() => set(it.id, { manualChoice: { ...st.manualChoice, [c.key]: 'keep' } })} />
-                      <Chip label={`Use screenshot · ${typeof c.screenshot === 'number' ? money(c.screenshot) : c.screenshot}`} selected={st.manualChoice[c.key as AccountDetailKey] === 'screenshot'} onPress={() => set(it.id, { manualChoice: { ...st.manualChoice, [c.key]: 'screenshot' } })} />
+                      <Chip single label={`Keep mine · ${typeof c.manual === 'number' ? money(c.manual) : c.manual}`} selected={st.manualChoice[c.key as AccountDetailKey] !== 'screenshot'} onPress={() => set(it.id, { manualChoice: { ...st.manualChoice, [c.key]: 'keep' } })} />
+                      <Chip single label={`Use screenshot · ${typeof c.screenshot === 'number' ? money(c.screenshot) : c.screenshot}`} selected={st.manualChoice[c.key as AccountDetailKey] === 'screenshot'} onPress={() => set(it.id, { manualChoice: { ...st.manualChoice, [c.key]: 'screenshot' } })} />
                     </View>
                   </View>
                 ))}

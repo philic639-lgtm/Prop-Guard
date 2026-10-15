@@ -35,6 +35,7 @@ function ago(iso: string | null, now: Date): string {
 /** Prop Guard Intelligence — scheduled economic releases for ES / MES / NQ / MNQ traders. */
 export default function IntelligenceScreen() {
   const cal = useEconomicCalendar();
+  const notConnected = cal.connection === 'not_configured';
   const account = useActiveAccount();
   const firm = useMemo(() => firmNewsRule(account), [account]);
   const alerts = useEconomicCalendarStore((s) => s.alerts);
@@ -244,7 +245,8 @@ export default function IntelligenceScreen() {
               <AppText variant="caption" style={styles.flex}>
                 {SOURCE_LABEL[p.source]}
               </AppText>
-              <StatusBadge label={`${FRESHNESS[p.state].label}${p.lastSuccessAt && p.state !== 'fresh' ? ` · ${ago(p.lastSuccessAt, cal.now)}` : ''}`} tone={FRESHNESS[p.state].tone} size="sm" />
+              {/* No backend in this build: nothing will ever load — say so instead of "not loaded yet". */}
+              <StatusBadge label={notConnected ? 'Not connected' : `${FRESHNESS[p.state].label}${p.lastSuccessAt && p.state !== 'fresh' ? ` · ${ago(p.lastSuccessAt, cal.now)}` : ''}`} tone={notConnected ? 'neutral' : FRESHNESS[p.state].tone} size="sm" />
             </View>
           ))}
         </View>
@@ -253,7 +255,7 @@ export default function IntelligenceScreen() {
             Releases from a source that is out of date or not configured may be missing. Prop Guard never fills the gap with guesses.
           </AppText>
         ) : null}
-        <Button label={cal.loading ? 'Refreshing…' : 'Refresh now'} variant="secondary" size="md" icon="refresh" disabled={cal.loading} onPress={() => void cal.refresh()} style={styles.mt} />
+        {notConnected ? null : <Button label={cal.loading ? 'Refreshing…' : 'Refresh now'} variant="secondary" size="md" icon="refresh" disabled={cal.loading} onPress={() => void cal.refresh()} style={styles.mt} />}
       </Card>
     </Screen>
   );

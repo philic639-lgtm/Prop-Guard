@@ -16,13 +16,15 @@ interface SegmentedControlProps<T extends string> {
   value: T | null;
   onChange: (value: T) => void;
   label?: string;
+  /** Screen-reader name of the group when the question is shown elsewhere (no visible label). */
+  groupLabel?: string;
 }
 
-export function SegmentedControl<T extends string>({ options, value, onChange, label }: SegmentedControlProps<T>) {
+export function SegmentedControl<T extends string>({ options, value, onChange, label, groupLabel }: SegmentedControlProps<T>) {
   return (
     <View style={styles.wrap}>
       {label ? <AppText variant="label">{label}</AppText> : null}
-      <View style={styles.track} accessibilityRole="radiogroup" accessibilityLabel={label}>
+      <View style={styles.track} accessibilityRole="radiogroup" accessibilityLabel={groupLabel ?? label}>
         {options.map((o) => {
           const selected = o.value === value;
           const tint = o.tone ? toneColor[o.tone] : { fg: colors.text, bg: colors.cardRaised };

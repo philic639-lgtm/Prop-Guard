@@ -301,7 +301,7 @@ export default function AccountEditor() {
       <ConfirmationSheet
         visible={confirmDelete}
         title="Delete account"
-        message="Trades and sessions for this account will also be removed when synced."
+        message="This account and its journal trades, pending trades, plans and sessions are deleted — on this device and, when you are signed in, in your cloud account. Setup Checks and copy-trade history are kept, unlinked from the account."
         confirmLabel="Delete"
         destructive
         onCancel={() => setConfirmDelete(false)}

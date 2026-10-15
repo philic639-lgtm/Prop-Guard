@@ -18,6 +18,8 @@ interface ButtonProps {
   size?: 'md' | 'lg';
   style?: StyleProp<ViewStyle>;
   accessibilityHint?: string;
+  /** Screen-reader name when the visible label repeats (e.g. "View Strategy" on every card). */
+  accessibilityLabel?: string;
 }
 
 const VARIANTS: Record<Variant, { bg: string; fg: string; border: string; pressed: string }> = {
@@ -40,13 +42,14 @@ export function Button({
   size = 'lg',
   style,
   accessibilityHint,
+  accessibilityLabel,
 }: ButtonProps) {
   const v = VARIANTS[variant];
   const inactive = disabled || loading;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
       aria-disabled={!!inactive} aria-busy={!!loading}
       disabled={inactive}

@@ -68,6 +68,14 @@ describe('evaluateSetup', () => {
     expect(r.grade).toBe('RULE_VIOLATION');
   });
 
+  it('does not call an entered target "missing" when the stop is on the wrong side', () => {
+    const risk = calculateTradeRisk({ instrument: 'MES', direction: 'long', entry: 5000, stop: 5004, target: 5008, contracts: 2 });
+    expect(risk.valid).toBe(false);
+    const r = evaluateSetup(input({ risk }));
+    expect(r.violations).not.toContain('Your rules require a target before entry.');
+    expect(r.checks.find((c) => c.id === 'target_set')?.passed).toBe(true);
+  });
+
   it('returns RULE_VIOLATION during cooldown', () => {
     const rules = makeRules();
     const loss = makeTrade({ pnl: -100, openedAt: new Date(NOW.getTime() - 600_000).toISOString(), closedAt: new Date(NOW.getTime() - 300_000).toISOString() });

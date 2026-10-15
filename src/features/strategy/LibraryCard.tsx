@@ -74,7 +74,7 @@ function LibraryCardBase({ template: t, locked, saved, badge }: LibraryCardProps
         <AppText variant="caption" tone="secondary" numberOfLines={1} style={styles.flex}>
           {instruments}
         </AppText>
-        <Button label="View Strategy" size="md" variant="ghost" onPress={open} />
+        <Button label="View Strategy" accessibilityLabel={`View ${t.name}`} size="md" variant="ghost" onPress={open} />
       </View>
     </Card>
   );

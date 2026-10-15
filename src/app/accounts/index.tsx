@@ -70,7 +70,7 @@ export default function MyAccountsScreen() {
           {accounts.length > 1 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
               {FILTERS.map((f) => (
-                <Chip key={f} label={`${FILTER_LABEL[f]} ${counts[f]}`} selected={filter === f} onPress={() => setFilter(f)} />
+                <Chip key={f} single label={`${FILTER_LABEL[f]} ${counts[f]}`} selected={filter === f} onPress={() => setFilter(f)} />
               ))}
             </ScrollView>
           ) : null}

@@ -19,6 +19,7 @@ export function YesNo({ label, value, onChange }: YesNoProps) {
       </AppText>
       <View style={styles.control}>
         <SegmentedControl
+          groupLabel={label}
           options={[
             { value: 'yes', label: 'Yes', tone: 'positive' },
             { value: 'no', label: 'No', tone: 'danger' },

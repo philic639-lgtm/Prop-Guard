@@ -230,6 +230,7 @@ export default function StrategyFinder() {
             <Chip
               key={o.value}
               large
+              single
               label={o.label}
               selected={answers[q.key] === o.value}
               onPress={() => {

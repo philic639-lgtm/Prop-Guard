@@ -121,7 +121,8 @@ export function evaluateSetup(input: SetupEvaluationInput): SetupEvaluation {
   }
 
   const riskDollars = risk.riskDollars ?? 0;
-  const hasTarget = risk.pointsReward != null;
+  // "Target defined" = a target was entered; an invalid stop/target is reported by the risk errors, not as "missing".
+  const hasTarget = risk.targetEntered ?? risk.pointsReward != null;
 
   if (rules.requireTarget) {
     checks.push({ id: 'target_set', label: 'Target defined', passed: hasTarget, severity: 'rule' });

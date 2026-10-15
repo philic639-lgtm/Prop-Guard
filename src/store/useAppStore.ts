@@ -272,14 +272,48 @@ export const useAppStore = create<AppState>()(
       },
 
       deleteAccount: (id) => {
+        // Mirrors the database (on delete cascade): the account's trades, pending trades, plans,
+        // sessions and events go with it. Records that only point at it (Setup Checks, copy trades,
+        // copier groups, copy settings, primary account) are unlinked, so their history stays.
+        const unlinked = { copyTrades: [] as CopyTrade[], setupChecks: [] as SetupCheck[], copyGroups: [] as CopyGroup[], sourceTraders: [] as SourceTrader[] };
         set((s) => {
           const accounts = s.accounts.filter((a) => a.id !== id);
+          const copyTrades = s.copyTrades.map((c) => (c.accountId === id ? (unlinked.copyTrades.push({ ...c, accountId: null }), { ...c, accountId: null }) : c));
+          const setupChecks = s.setupChecks.map((c) => (c.accountId === id ? (unlinked.setupChecks.push({ ...c, accountId: null }), { ...c, accountId: null }) : c));
+          const copyGroups = s.copyGroups.map((g) => {
+            if (g.masterAccountId !== id && !g.followers.some((f) => f.accountId === id)) return g;
+            const next = { ...g, masterAccountId: g.masterAccountId === id ? null : g.masterAccountId, followers: g.followers.filter((f) => f.accountId !== id) };
+            unlinked.copyGroups.push(next);
+            return next;
+          });
+          const sourceTraders = s.sourceTraders.map((t) => {
+            if (t.settings.accountId !== id) return t;
+            const next = { ...t, settings: { ...t.settings, accountId: null } };
+            unlinked.sourceTraders.push(next);
+            return next;
+          });
+          const profile = s.preferences.tradingProfile;
           return {
             accounts,
             activeAccountId: s.activeAccountId === id ? (accounts[0]?.id ?? null) : s.activeAccountId,
+            trades: s.trades.filter((t) => t.accountId !== id),
+            pendingTrades: s.pendingTrades.filter((t) => t.accountId !== id),
+            plans: s.plans.filter((t) => t.accountId !== id),
+            sessions: s.sessions.filter((t) => t.accountId !== id),
+            events: s.events.filter((e) => e.accountId !== id),
+            copyTrades,
+            setupChecks,
+            copyGroups,
+            sourceTraders,
+            ...(profile.primaryAccountId === id ? { preferences: { ...s.preferences, tradingProfile: { ...profile, primaryAccountId: null } } } : {}),
           };
         });
         syncService.remove('accounts', id);
+        for (const c of unlinked.copyTrades) syncService.upsertCopyTrade(c);
+        for (const c of unlinked.setupChecks) syncService.upsertSetupCheck(c);
+        for (const g of unlinked.copyGroups) syncService.upsertCopyGroup(g);
+        for (const t of unlinked.sourceTraders) syncService.upsertSourceTrader(t);
+        syncService.savePreferences(get());
       },
 
       setTradingRules: (rules) => {

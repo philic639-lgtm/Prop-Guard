@@ -193,3 +193,28 @@ describe('cloud account', () => {
     expect(dashboard().balance).toBe(25_400);
   });
 });
+
+describe('deleting an account', () => {
+  it('removes its journal data and unlinks records that only point at it', () => {
+    const s = useAppStore.getState();
+    s.setPreferences({ tradingProfile: { ...s.preferences.tradingProfile, primaryAccountId: 'flex-25k' } });
+    useAppStore.setState({
+      trades: [makeTrade({ id: 'mine', accountId: 'flex-25k' }), makeTrade({ id: 'keep', accountId: 'other' })],
+      pendingTrades: [{ id: 'p1', accountId: 'flex-25k' }, { id: 'p2', accountId: 'other' }] as never,
+      plans: [{ id: 'pl1', accountId: 'flex-25k' }] as never,
+      setupChecks: [{ id: 'sc1', accountId: 'flex-25k' }] as never,
+      copyTrades: [{ id: 'ct1', accountId: 'flex-25k' }] as never,
+      copyGroups: [{ id: 'g1', masterAccountId: 'other', followers: [{ accountId: 'flex-25k' }, { accountId: 'x' }] }] as never,
+    });
+    useAppStore.getState().deleteAccount('flex-25k');
+    const after = useAppStore.getState();
+    expect(after.accounts.map((a) => a.id)).toEqual(['other']);
+    expect(after.trades.map((t) => t.id)).toEqual(['keep']);
+    expect(after.pendingTrades.map((t) => t.id)).toEqual(['p2']);
+    expect(after.plans).toEqual([]);
+    expect(after.setupChecks).toEqual([{ id: 'sc1', accountId: null }]);
+    expect(after.copyTrades).toEqual([{ id: 'ct1', accountId: null }]);
+    expect(after.copyGroups[0]!.followers).toEqual([{ accountId: 'x' }]);
+    expect(after.preferences.tradingProfile.primaryAccountId).toBeNull();
+  });
+});
