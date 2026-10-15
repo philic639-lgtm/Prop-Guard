@@ -7,18 +7,19 @@
  *   npm run econ:sync    — the same refresh the Edge Function does, written to Supabase with
  *                          SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY from .env.server.
  *
- * Config (env / .env.server): ECON_CONTACT, ECON_BEA_URL, ECON_BEA_TIMES_EASTERN,
- * ECON_FOMC_VERIFIED_TIMES, ECON_BLS_URL, ECON_FED_URL.
+ * Config (env / .env.server): ECON_CONTACT, ECON_BEA_TIMES_EASTERN, ECON_FOMC_VERIFIED_TIMES and
+ * optional overrides ECON_BLS_URL, ECON_BEA_URL, ECON_FED_URL, ECON_BLS_UPDATES_URL, ECON_FED_UPDATES_URL.
  */
 import { createClient } from '@supabase/supabase-js';
 
-import { eventToRow, rowToEvent, rowToStatus, statusToRow } from '../src/lib/engines/economicCalendar/rows';
-import { readSource, sourceConfigFromEnv, type FetchLike } from '../src/lib/engines/economicCalendar/sources';
-import { planSourceSync } from '../src/lib/engines/economicCalendar/sync';
+import { eventToRow, rowToEvent, rowToStatus, statusToRow, updateToRow } from '../src/lib/engines/economicCalendar/rows';
+import { readSource, readUpdateFeed, sourceConfigFromEnv, type FetchLike } from '../src/lib/engines/economicCalendar/sources';
+import { planSourceSync, planUpdateSync } from '../src/lib/engines/economicCalendar/sync';
 import { DEFAULT_NEWS_RULES, isRelevant } from '../src/lib/engines/economicCalendar/rules';
-import type { EconSource } from '../src/lib/engines/economicCalendar/types';
+import type { EconSource, UpdateFeed } from '../src/lib/engines/economicCalendar/types';
 
 const SOURCES: EconSource[] = ['bls', 'bea', 'fed'];
+const UPDATE_FEEDS: UpdateFeed[] = ['bls_updates', 'fed_updates'];
 const cfg = sourceConfigFromEnv((k) => process.env[k]);
 const mode = process.argv[2];
 
@@ -39,6 +40,17 @@ async function check() {
     console.log(`✓ ${source}: ${ev.length} releases (${timed} with a time), coverage ${ev[0]?.dateET ?? '—'} → ${ev[ev.length - 1]?.dateET ?? '—'}; families: ${codes}`);
     for (const e of future.filter((x) => isRelevant(x, { ...DEFAULT_NEWS_RULES, minImpact: 'medium' })).slice(0, 6))
       console.log(`    ${e.dateET} ${e.timeET ?? '--:--'} ET (${e.timeStatus})  ${e.name}  ← "${e.title}"`);
+  }
+  for (const feed of UPDATE_FEEDS) {
+    const r = await readUpdateFeed(feed, cfg, fetch as unknown as FetchLike, { etag: null, lastModified: null }, now);
+    if (!r.ok) {
+      failures++;
+      console.log(`✗ ${feed}: ${r.error}`);
+      continue;
+    }
+    const items = r.items ?? [];
+    console.log(`✓ ${feed}: ${items.length} items, newest ${items[0]?.publishedAt ?? '—'}`);
+    for (const u of items.slice(0, 3)) console.log(`    ${u.publishedAt ?? '(no date)'}  ${u.title}`);
   }
   process.exitCode = failures ? 1 : 0;
 }
@@ -68,6 +80,18 @@ async function sync() {
     }
     await db.from('economic_feed_status').upsert(statusToRow(plan.status, result.validators), { onConflict: 'source' });
     console.log(`${source}: ${plan.status.status}${plan.status.error ? ` (${plan.status.error})` : ''} — ${plan.upserts.length} upserted, ${plan.deactivate.length} deactivated`);
+  }
+  for (const feed of UPDATE_FEEDS) {
+    const { data: statusRow } = await db.from('economic_feed_status').select('*').eq('source', feed).maybeSingle();
+    const validators = { etag: (statusRow?.etag as string | null) ?? null, lastModified: (statusRow?.last_modified as string | null) ?? null };
+    const result = await readUpdateFeed(feed, cfg, fetch as unknown as FetchLike, validators, now);
+    const plan = planUpdateSync(result, statusRow ? rowToStatus(statusRow) : null, now);
+    if (plan.upserts.length) {
+      const { error } = await db.from('economic_updates').upsert(plan.upserts.map(updateToRow), { onConflict: 'id' });
+      if (error) throw new Error(`${feed}: ${error.message}`);
+    }
+    await db.from('economic_feed_status').upsert(statusToRow(plan.status, result.validators), { onConflict: 'source' });
+    console.log(`${feed}: ${plan.status.status}${plan.status.error ? ` (${plan.status.error})` : ''} — ${plan.upserts.length} items`);
   }
 }
 

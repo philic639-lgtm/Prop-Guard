@@ -174,11 +174,11 @@ describe('news risk for ES / MES / NQ / MNQ', () => {
     expect(newsRisk([cpi], new Date('2026-11-13T11:00:00Z')).state).toBe('clear');
     const soon = newsRisk([cpi], new Date('2026-11-13T12:50:00Z'));
     expect(soon).toMatchObject({ state: 'approaching', minutesToRelease: 40, impact: 'high' });
-    expect(soon.headline).toMatch(/CPI .* at 8:30 AM ET — in 40 min/);
+    expect(soon.headline).toMatch(/CPI .* at 8:30 AM EST — in 40 min/);
     expect(soon.guidance.join(' ')).toMatch(/flat, or reducing size/);
     const during = newsRisk([cpi], new Date('2026-11-13T13:25:00Z'));
     expect(during).toMatchObject({ state: 'in_window', minutesToRelease: 5, windowStart: '2026-11-13T13:15:00.000Z', windowEnd: '2026-11-13T13:45:00.000Z' });
-    expect(during.guidance.join(' ')).toMatch(/avoiding new entries until 8:45 AM ET.*50% of usual/);
+    expect(during.guidance.join(' ')).toMatch(/avoiding new entries until 8:45 AM EST.*50% of usual/);
     expect(newsRisk([cpi], new Date('2026-11-13T13:46:00Z')).state).toBe('clear');
   });
 

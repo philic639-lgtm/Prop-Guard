@@ -1,4 +1,4 @@
-import type { EconomicEvent, EconSource, FeedStatus } from './types';
+import type { EconomicEvent, EconSource, FeedStatus, OfficialUpdate, UpdateFeed } from './types';
 
 /**
  * Merge one source's fresh reading into what is stored. Pure — the Edge Function and the
@@ -41,6 +41,28 @@ export function planSourceSync(stored: EconomicEvent[], result: SourceResult, pr
     deactivate,
     status: { source: result.source, checkedAt: at, lastSuccessAt: at, status: 'ok', error: null, eventCount: fresh.length, coverageUntil: coverage },
   };
+}
+
+/**
+ * Official update feeds: items are upserted by id (never duplicated) and never deleted —
+ * an item a feed stops listing simply ages out of the app's window. A failed read changes
+ * only the status row.
+ */
+export interface UpdateResult {
+  feed: UpdateFeed;
+  ok: boolean;
+  notModified?: boolean;
+  items?: OfficialUpdate[];
+  error?: string | null;
+}
+
+export function planUpdateSync(result: UpdateResult, prev: FeedStatus | null, now: Date): { upserts: OfficialUpdate[]; status: FeedStatus } {
+  const at = now.toISOString();
+  const base: FeedStatus = prev ?? { source: result.feed, checkedAt: null, lastSuccessAt: null, status: 'never', error: null, eventCount: 0, coverageUntil: null };
+  if (!result.ok) return { upserts: [], status: { ...base, checkedAt: at, status: 'error', error: (result.error ?? 'unavailable').slice(0, 200) } };
+  if (result.notModified) return { upserts: [], status: { ...base, checkedAt: at, lastSuccessAt: at, status: 'not_modified', error: null } };
+  const items = result.items ?? [];
+  return { upserts: items, status: { source: result.feed, checkedAt: at, lastSuccessAt: at, status: 'ok', error: null, eventCount: items.length, coverageUntil: null } };
 }
 
 /** Text safe to store as a feed error: no URLs, bounded length. */

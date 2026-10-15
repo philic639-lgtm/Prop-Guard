@@ -1,4 +1,5 @@
-import type { EconCode, EconomicEvent, FeedStatus, EconSource } from './types';
+import { formatClock } from './timezone';
+import type { EconCode, EconomicEvent, FeedId, FeedStatus } from './types';
 
 /**
  * Which scheduled releases matter for US equity-index futures (ES, MES, NQ, MNQ) and how
@@ -47,6 +48,8 @@ export interface NewsRuleConfig {
   /** Suggested size inside a caution window, as a fraction of usual size (guidance only). */
   sizeFactor: number;
   overrides?: Partial<Record<EconCode, Partial<ImpactRule>>>;
+  /** The trader's time zone for displayed times (IANA, e.g. America/Los_Angeles); Eastern when unset. */
+  displayZone?: string;
 }
 
 export const DEFAULT_NEWS_RULES: NewsRuleConfig = { instruments: [...DEFAULT_INSTRUMENTS], minImpact: 'high', lookaheadMin: 60, sizeFactor: 0.5 };
@@ -97,10 +100,11 @@ export interface NewsRisk {
   guidance: string[];
 }
 
-const hhmm = (iso: string) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 
 /** The most pressing scheduled release right now for the trader's instruments. */
 export function newsRisk(events: EconomicEvent[], now: Date, cfg: NewsRuleConfig = DEFAULT_NEWS_RULES): NewsRisk {
+  // Times in the trader's zone with that date's abbreviation (EST / EDT, PST / PDT …).
+  const hhmm = (iso: string) => formatClock(iso, cfg.displayZone);
   const t = now.getTime();
   const todayET = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(now);
   const relevant = events.filter((e) => isRelevant(e, cfg));
@@ -126,9 +130,9 @@ export function newsRisk(events: EconomicEvent[], now: Date, cfg: NewsRuleConfig
       windowStart: new Date(inside.start).toISOString(),
       windowEnd: new Date(inside.end).toISOString(),
       minutesToRelease: Math.round((inside.at - t) / 60_000),
-      headline: `${inside.e.name} ${inside.at > t ? `at ${hhmm(inside.e.startsAt!)} ET` : `released at ${hhmm(inside.e.startsAt!)} ET`}${usual(inside.e)}`,
+      headline: `${inside.e.name} ${inside.at > t ? `at ${hhmm(inside.e.startsAt!)}` : `released at ${hhmm(inside.e.startsAt!)}`}${usual(inside.e)}`,
       guidance: [
-        high ? `Consider avoiding new entries until ${hhmm(new Date(inside.end).toISOString())} ET.` : `Expect faster moves until ${hhmm(new Date(inside.end).toISOString())} ET.`,
+        high ? `Consider avoiding new entries until ${hhmm(new Date(inside.end).toISOString())}.` : `Expect faster moves until ${hhmm(new Date(inside.end).toISOString())}.`,
         `If you trade, consider ${size} and a stop you can actually get filled at.`,
         'Spreads widen and stops can slip around scheduled releases.',
       ],
@@ -144,10 +148,10 @@ export function newsRisk(events: EconomicEvent[], now: Date, cfg: NewsRuleConfig
       windowStart: new Date(next.start).toISOString(),
       windowEnd: new Date(next.end).toISOString(),
       minutesToRelease: mins,
-      headline: `${next.e.name} at ${hhmm(next.e.startsAt!)} ET — in ${mins} min${usual(next.e)}`,
+      headline: `${next.e.name} at ${hhmm(next.e.startsAt!)} — in ${mins} min${usual(next.e)}`,
       guidance: [
         next.r.impact === 'high' ? 'Consider being flat, or reducing size, before the release.' : 'Consider tightening risk before the release.',
-        `Caution window: ${hhmm(new Date(next.start).toISOString())}–${hhmm(new Date(next.end).toISOString())} ET.`,
+        `Caution window: ${hhmm(new Date(next.start).toISOString())}–${hhmm(new Date(next.end).toISOString())}.`,
       ],
     };
   }
@@ -171,15 +175,30 @@ export function newsRisk(events: EconomicEvent[], now: Date, cfg: NewsRuleConfig
 
 export type Freshness = 'fresh' | 'stale' | 'failing' | 'never' | 'not_configured';
 
+/**
+ * What the app shows per source:
+ * - Connected   the last refresh succeeded and is recent;
+ * - Stale       data exists, but the last refresh failed or is too old — releases may have changed;
+ * - Unavailable never loaded (or not configured) — the app has NO data from this source.
+ * None of them is ever read as "no upcoming news".
+ */
+export type SourceConnection = 'connected' | 'stale' | 'unavailable';
+export const CONNECTION_LABEL: Record<SourceConnection, string> = { connected: 'Connected', stale: 'Stale', unavailable: 'Unavailable' };
+
+export function connectionOf(state: Freshness, lastSuccessAt: string | null): SourceConnection {
+  if (state === 'fresh') return 'connected';
+  return lastSuccessAt ? 'stale' : 'unavailable';
+}
+
 export interface CalendarFreshness {
-  perSource: { source: EconSource; state: Freshness; lastSuccessAt: string | null; error: string | null }[];
+  perSource: { source: FeedId; state: Freshness; connection: SourceConnection; lastSuccessAt: string | null; error: string | null }[];
   /** True when any source is missing, failing or older than `maxAgeHours`: events may be missing. */
   degraded: boolean;
   /** Oldest successful refresh across sources (what the app calls "last refreshed"). */
   lastRefreshedAt: string | null;
 }
 
-export function calendarFreshness(statuses: FeedStatus[], now: Date, maxAgeHours = 36, sources: EconSource[] = ['bls', 'bea', 'fed']): CalendarFreshness {
+export function calendarFreshness(statuses: FeedStatus[], now: Date, maxAgeHours = 36, sources: FeedId[] = ['bls', 'bea', 'fed']): CalendarFreshness {
   const perSource = sources.map((source) => {
     const s = statuses.find((x) => x.source === source);
     let state: Freshness;
@@ -188,7 +207,7 @@ export function calendarFreshness(statuses: FeedStatus[], now: Date, maxAgeHours
     else if (!s.lastSuccessAt) state = 'failing';
     else if (now.getTime() - Date.parse(s.lastSuccessAt) > maxAgeHours * 3_600_000) state = 'stale';
     else state = s.status === 'error' ? 'failing' : 'fresh';
-    return { source, state, lastSuccessAt: s?.lastSuccessAt ?? null, error: s?.error ?? null };
+    return { source, state, connection: connectionOf(state, s?.lastSuccessAt ?? null), lastSuccessAt: s?.lastSuccessAt ?? null, error: s?.error ?? null };
   });
   const ok = perSource.map((p) => p.lastSuccessAt).filter((x): x is string => !!x).sort();
   return { perSource, degraded: perSource.some((p) => p.state !== 'fresh'), lastRefreshedAt: ok[0] ?? null };

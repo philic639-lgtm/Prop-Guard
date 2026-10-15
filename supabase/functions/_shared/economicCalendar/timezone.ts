@@ -41,3 +41,29 @@ export function utcToEastern(iso: string): { dateET: string; timeET: string } {
   const pad = (n: number) => String(n).padStart(2, '0');
   return { dateET: `${p.year}-${pad(p.month)}-${pad(p.day)}`, timeET: `${pad(p.hour)}:${pad(p.minute)}` };
 }
+
+/** A usable IANA zone (the trader's preference), else null. */
+export function validZone(zone: string | null | undefined): string | null {
+  if (!zone) return null;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone }).format(0);
+    return zone;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * "8:30 AM EDT" — the instant shown in `zone` with the zone's own abbreviation for THAT date,
+ * so daylight saving is always right (EST in winter, EDT in summer; PST/PDT …).
+ */
+export function formatClock(iso: string, zone: string = ET): string {
+  const z = validZone(zone) ?? ET;
+  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: z, timeZoneName: 'short' }).format(new Date(iso));
+}
+
+/** "Thu, Nov 12" for an instant in `zone`. */
+export function formatDay(iso: string, zone: string = ET): string {
+  const z = validZone(zone) ?? ET;
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: z }).format(new Date(iso));
+}

@@ -1,4 +1,4 @@
-import type { EconCode, EconomicEvent, EconSource, FeedStatus, TimeStatus } from './types';
+import type { EconCode, EconomicEvent, EconSource, FeedId, FeedStatus, OfficialUpdate, TimeStatus, UpdateFeed } from './types';
 
 /** Database rows (`economic_events`, `economic_feed_status`) ↔ domain objects. */
 type Row = Record<string, unknown>;
@@ -59,7 +59,7 @@ export function statusToRow(f: FeedStatus, validators?: { etag: string | null; l
 
 export function rowToStatus(r: Row): FeedStatus {
   return {
-    source: String(r.source) as EconSource,
+    source: String(r.source) as FeedId,
     checkedAt: iso(r.checked_at),
     lastSuccessAt: iso(r.last_success_at),
     status: (['ok', 'not_modified', 'error', 'never'].includes(String(r.status)) ? r.status : 'never') as FeedStatus['status'],
@@ -67,4 +67,12 @@ export function rowToStatus(r: Row): FeedStatus {
     eventCount: Number(r.event_count ?? 0),
     coverageUntil: r.coverage_until == null ? null : String(r.coverage_until).slice(0, 10),
   };
+}
+
+export function updateToRow(u: OfficialUpdate) {
+  return { id: u.id, feed: u.feed, title: u.title, link: u.link, published_at: u.publishedAt, retrieved_at: u.retrievedAt };
+}
+
+export function rowToUpdate(r: Row): OfficialUpdate {
+  return { id: String(r.id), feed: String(r.feed) as UpdateFeed, title: String(r.title), link: String(r.link), publishedAt: iso(r.published_at), retrievedAt: iso(r.retrieved_at) ?? '' };
 }

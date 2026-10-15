@@ -1,4 +1,5 @@
 import { DEFAULT_NEWS_RULES, isRelevant, type NewsRuleConfig } from './rules';
+import { ET, formatClock, validZone } from './timezone';
 import type { EconomicEvent } from './types';
 
 /**
@@ -10,12 +11,19 @@ import type { EconomicEvent } from './types';
  */
 export interface EconAlertSettings {
   enabled: boolean;
-  /** Minutes before the release. */
-  leadMinutes: number;
+  /** Advance warnings, in minutes before the release (one alert per release and lead). */
+  leads: number[];
   minImpact: NewsRuleConfig['minImpact'];
 }
 
-export const DEFAULT_ALERT_SETTINGS: EconAlertSettings = { enabled: false, leadMinutes: 15, minImpact: 'high' };
+export const DEFAULT_ALERT_SETTINGS: EconAlertSettings = { enabled: false, leads: [15], minImpact: 'high' };
+
+/** Valid, distinct leads from stored settings (older versions stored one `leadMinutes`). */
+export function alertLeads(s: Partial<EconAlertSettings> & { leadMinutes?: number }): number[] {
+  const raw = Array.isArray(s.leads) ? s.leads : typeof s.leadMinutes === 'number' ? [s.leadMinutes] : DEFAULT_ALERT_SETTINGS.leads;
+  const ok = [...new Set(raw.filter((m) => Number.isInteger(m) && m > 0 && m <= 24 * 60))].sort((a, b) => b - a);
+  return ok.length ? ok : DEFAULT_ALERT_SETTINGS.leads;
+}
 export const LEAD_CHOICES = [5, 15, 30, 60] as const;
 /** Upper bound of pending alerts (iOS keeps at most 64 local notifications per app). */
 export const MAX_PENDING = 20;
@@ -32,25 +40,28 @@ export interface PlannedAlert {
 const PREFIX = 'econ:';
 export const isEconAlert = (identifier: string) => identifier.startsWith(PREFIX);
 
-const clockET = (iso: string) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 
 export function planEconAlerts(events: EconomicEvent[], settings: EconAlertSettings, now: Date, rules: NewsRuleConfig = DEFAULT_NEWS_RULES): PlannedAlert[] {
   if (!settings.enabled) return [];
   const cfg = { ...rules, minImpact: settings.minImpact };
+  const zone = validZone(rules.displayZone) ?? ET;
+  // Stored instant is UTC; shown in the trader's zone with that date's abbreviation (DST-aware), plus ET when different.
+  const when = (iso: string) => `${formatClock(iso, zone)}${zone !== ET ? ` (${formatClock(iso, ET)})` : ''}`;
   const from = now.getTime() + 30_000;
   const to = now.getTime() + HORIZON_DAYS * 86_400_000;
+  const leads = alertLeads(settings);
   return events
     .filter((e) => e.startsAt && isRelevant(e, cfg))
-    .map((e) => ({ e, fire: Date.parse(e.startsAt!) - settings.leadMinutes * 60_000 }))
+    .flatMap((e) => leads.map((lead) => ({ e, lead, fire: Date.parse(e.startsAt!) - lead * 60_000 })))
     .filter(({ fire }) => fire >= from && fire <= to)
     .sort((a, b) => a.fire - b.fire)
     .slice(0, MAX_PENDING)
-    .map(({ e, fire }) => ({
-      identifier: `${PREFIX}${e.id}:${settings.leadMinutes}`,
+    .map(({ e, lead, fire }) => ({
+      identifier: `${PREFIX}${e.id}:${lead}`,
       eventId: e.id,
       fireAt: new Date(fire).toISOString(),
-      title: `${e.name} in ${settings.leadMinutes} min`,
-      body: `Scheduled for ${clockET(e.startsAt!)} ET${e.timeStatus === 'conventional' ? ' (usual time — confirm)' : ''}. Consider being flat or trading smaller around the release.`,
+      title: `${e.name} in ${lead} min`,
+      body: `Scheduled for ${when(e.startsAt!)}${e.timeStatus === 'conventional' ? ' (usual time — confirm)' : ''}. Consider being flat or trading smaller around the release.`,
     }));
 }
 

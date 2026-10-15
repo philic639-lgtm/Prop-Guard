@@ -10,18 +10,14 @@ import { NewsRiskBanner } from '@/features/intelligence/NewsRiskBanner';
 import { syncEconAlerts, useEconomicCalendar } from '@/features/intelligence/useEconomicCalendar';
 import { useEconomicCalendarStore } from '@/features/intelligence/useEconomicCalendarStore';
 import { useActiveAccount } from '@/hooks/useAppData';
-import { IMPACT_RULES, SOURCE_LABEL, type EconCode, type Freshness } from '@/lib/engines/economicCalendar';
-import { LEAD_CHOICES } from '@/lib/engines/economicCalendar/alerts';
+import { CONNECTION_LABEL, FEED_LABEL, formatClock, formatDay, IMPACT_RULES, type EconCode, type SourceConnection } from '@/lib/engines/economicCalendar';
+import { alertLeads, LEAD_CHOICES } from '@/lib/engines/economicCalendar/alerts';
 import { firmNewsRule } from '@/lib/engines/economicCalendar/firmNewsRule';
 import { notificationService } from '@/services/notificationService';
 
-const FRESHNESS: Record<Freshness, { label: string; tone: 'positive' | 'warning' | 'danger' | 'neutral' }> = {
-  fresh: { label: 'Up to date', tone: 'positive' },
-  stale: { label: 'Out of date', tone: 'warning' },
-  failing: { label: 'Refresh failing', tone: 'danger' },
-  never: { label: 'Not loaded yet', tone: 'neutral' },
-  not_configured: { label: 'Not configured', tone: 'neutral' },
-};
+const CONNECTION_TONE: Record<SourceConnection, 'positive' | 'warning' | 'danger'> = { connected: 'positive', stale: 'warning', unavailable: 'danger' };
+
+const leadText = (leads: number[]) => leads.map((m) => `${m} min`).join(' and ');
 
 function ago(iso: string | null, now: Date): string {
   if (!iso) return 'never';
@@ -54,12 +50,18 @@ export default function IntelligenceScreen() {
     }
     setAlerts({ enabled: on });
     await syncEconAlerts();
-    if (on) setAlertMsg(`Alerts are on: a notification ${alerts.leadMinutes} min before each high-impact release with a confirmed time (next 14 days, refreshed when the calendar updates).`);
+    if (on) setAlertMsg(`Alerts are on: ${leadText(alertLeads(alerts))} before each high-impact release with a confirmed time (next 14 days, refreshed when the calendar updates).`);
   };
-  const setLead = async (lead: number) => {
-    setAlerts({ leadMinutes: lead });
+  const toggleLead = async (lead: number) => {
+    const cur = alertLeads(alerts);
+    const next = cur.includes(lead) ? cur.filter((m) => m !== lead) : [...cur, lead];
+    if (!next.length) return setAlertMsg('Keep at least one advance warning, or turn alerts off.');
+    setAlertMsg(null);
+    setAlerts({ leads: next });
     await syncEconAlerts();
   };
+  const zone = cal.cfg.displayZone;
+  const notLive = cal.freshness.perSource.filter((p) => p.connection !== 'connected');
 
   const header = <AppHeader title="Intelligence" subtitle="Economic calendar · scheduled releases" back />;
 
@@ -84,7 +86,13 @@ export default function IntelligenceScreen() {
         <LoadingState label="Loading the economic calendar…" />
       ) : !hasData ? (
         <Card>
-          <EmptyState icon="economic-calendar" title="Calendar unavailable" message={cal.error ?? 'The calendar could not be loaded. No releases are shown rather than guessed.'} actionLabel="Try again" onAction={() => void cal.refresh()} />
+          <EmptyState
+            icon="economic-calendar"
+            title="Calendar unavailable"
+            message={cal.error ?? (cal.connection === 'connected' ? 'The server has not loaded the official calendars yet, so upcoming releases are unknown — not “none”. Check the official calendars before trading.' : 'The calendar could not be loaded. No releases are shown rather than guessed.')}
+            actionLabel="Try again"
+            onAction={() => void cal.refresh()}
+          />
         </Card>
       ) : (
         <>
@@ -107,7 +115,19 @@ export default function IntelligenceScreen() {
           ) : null}
 
           <SectionHeader title="Right now" />
-          {cal.risk.state === 'clear' ? (
+          {cal.risk.state === 'clear' && notLive.length ? (
+            <Card tone="warning">
+              <View style={styles.row}>
+                <StatusBadge label="Can’t confirm" tone="warning" icon="alert-circle-outline" size="sm" />
+                <AppText variant="body" style={styles.flex}>
+                  No release found in the next hour on the data Prop Guard has — but {notLive.map((p) => `${FEED_LABEL[p.source]} is ${CONNECTION_LABEL[p.connection].toLowerCase()}`).join(', ')}.
+                </AppText>
+              </View>
+              <AppText variant="caption" tone="secondary" style={styles.mt}>
+                A release from that source could be missing. Check the official calendar before trading.
+              </AppText>
+            </Card>
+          ) : cal.risk.state === 'clear' ? (
             <Card>
               <View style={styles.row}>
                 <StatusBadge label="Clear" tone="positive" icon="checkmark-circle" size="sm" />
@@ -115,11 +135,6 @@ export default function IntelligenceScreen() {
                   {cal.tradesIndexFutures ? 'No major scheduled release in the next hour.' : 'No warnings for your markets.'}
                 </AppText>
               </View>
-              {cal.freshness.degraded ? (
-                <AppText variant="caption" tone="warning" style={styles.mt}>
-                  Some calendar sources are out of date or unavailable — a release could be missing. See “Calendar data” below.
-                </AppText>
-              ) : null}
             </Card>
           ) : (
             <Card>
@@ -182,16 +197,19 @@ export default function IntelligenceScreen() {
                 {cal.freshness.degraded ? ' Some sources are out of date — check “Calendar data”.' : ''}
               </AppText>
             ) : (
-              cal.list.map((e) => <EventRow key={e.id} event={e} cfg={cal.cfg} />)
+              cal.list.map((e) => <EventRow key={e.id} event={e} cfg={cal.cfg} zone={zone} />)
             )}
             <Pressable accessibilityRole="button" aria-expanded={showWhy} onPress={() => setShowWhy((v) => !v)} style={[styles.row, styles.mt]}>
               <Icon name={showWhy ? 'chevron-up' : 'chevron-down'} size={16} color={colors.accentBright} />
               <AppText variant="caption" tone="accent">
-                How Prop Guard decides impact
+                How Prop Guard rates impact
               </AppText>
             </Pressable>
             {showWhy ? (
               <View style={styles.why}>
+                <AppText variant="caption" tone="tertiary">
+                  Impact is Prop Guard’s own classification for ES / MES / NQ / MNQ — not a rating from BLS, BEA or the Federal Reserve. Times are shown in {zone} with the abbreviation for that date (daylight saving included).
+                </AppText>
                 {(Object.keys(IMPACT_RULES) as EconCode[])
                   .filter((c) => IMPACT_RULES[c].impact !== 'low')
                   .map((c) => (
@@ -206,16 +224,47 @@ export default function IntelligenceScreen() {
             ) : null}
           </Card>
 
+          <SectionHeader title="Latest official updates" />
+          <Card>
+            <AppText variant="caption" tone="tertiary">
+              Release notices as BLS and the Federal Reserve published them — title and link only. Open the release for the details.
+            </AppText>
+            {cal.updatesFreshness.perSource.every((p) => p.connection === 'unavailable') ? (
+              <AppText variant="caption" tone="warning" style={styles.mt}>
+                The official update feeds are unavailable — nothing is shown rather than an empty “no updates”.
+              </AppText>
+            ) : cal.updates.length === 0 ? (
+              <AppText variant="caption" tone="secondary" style={styles.mt}>
+                No items in the last 14 days on the feeds Prop Guard read.
+              </AppText>
+            ) : (
+              cal.updates.slice(0, 8).map((u) => (
+                <Pressable key={u.id} accessibilityRole="link" accessibilityLabel={`${u.title}, ${FEED_LABEL[u.feed]}. Opens the official page.`} onPress={() => void Linking.openURL(u.link)} style={styles.update}>
+                  <AppText variant="body">{u.title}</AppText>
+                  <AppText variant="caption" tone="tertiary">
+                    {FEED_LABEL[u.feed]}
+                    {u.publishedAt ? ` · ${formatDay(u.publishedAt, zone)}, ${formatClock(u.publishedAt, zone)}` : ''} ↗
+                  </AppText>
+                </Pressable>
+              ))
+            )}
+          </Card>
+
           <SectionHeader title="Phone alerts" />
           <Card>
             {notificationService.supported ? (
               <>
                 <ToggleRow label="Alert me before major releases" description="A local notification on this phone. Releases with an unconfirmed time get no alert." value={alerts.enabled} onChange={(v) => void toggleAlerts(v)} />
                 {alerts.enabled ? (
-                  <View style={styles.chips}>
-                    {LEAD_CHOICES.map((m) => (
-                      <Chip key={m} label={`${m} min before`} selected={alerts.leadMinutes === m} onPress={() => void setLead(m)} />
-                    ))}
+                  <View style={styles.gapSm}>
+                    <AppText variant="caption" tone="secondary">
+                      Advance warnings (choose one or more)
+                    </AppText>
+                    <View style={styles.chips}>
+                      {LEAD_CHOICES.map((m) => (
+                        <Chip key={m} label={`${m} min before`} selected={alertLeads(alerts).includes(m)} onPress={() => void toggleLead(m)} />
+                      ))}
+                    </View>
                   </View>
                 ) : null}
                 {alertMsg ? (
@@ -240,13 +289,21 @@ export default function IntelligenceScreen() {
           This device last checked {ago(cal.fetchedAt, cal.now)}. The server refreshes the official calendars a few times a day.
         </AppText>
         <View style={styles.sources}>
-          {cal.freshness.perSource.map((p) => (
-            <View key={p.source} style={styles.sourceRow}>
-              <AppText variant="caption" style={styles.flex}>
-                {SOURCE_LABEL[p.source]}
-              </AppText>
-              {/* No backend in this build: nothing will ever load — say so instead of "not loaded yet". */}
-              <StatusBadge label={notConnected ? 'Not connected' : `${FRESHNESS[p.state].label}${p.lastSuccessAt && p.state !== 'fresh' ? ` · ${ago(p.lastSuccessAt, cal.now)}` : ''}`} tone={notConnected ? 'neutral' : FRESHNESS[p.state].tone} size="sm" />
+          {[...cal.freshness.perSource, ...cal.updatesFreshness.perSource].map((p) => (
+            <View key={p.source} style={styles.gapXs}>
+              <View style={styles.sourceRow}>
+                <AppText variant="caption" style={styles.flex}>
+                  {FEED_LABEL[p.source]}
+                </AppText>
+                {/* No backend in this build: nothing will ever load — say so. */}
+                <StatusBadge label={notConnected ? 'Not connected' : CONNECTION_LABEL[p.connection]} tone={notConnected ? 'neutral' : CONNECTION_TONE[p.connection]} size="sm" />
+              </View>
+              {notConnected ? null : (
+                <AppText variant="caption" tone="tertiary">
+                  Last successful update: {p.lastSuccessAt ? `${formatDay(p.lastSuccessAt, zone)}, ${formatClock(p.lastSuccessAt, zone)} (${ago(p.lastSuccessAt, cal.now)})` : 'never'}
+                  {p.connection !== 'connected' && p.error ? ` · last attempt: ${p.error}` : ''}
+                </AppText>
+              )}
             </View>
           ))}
         </View>
@@ -273,4 +330,7 @@ const styles = StyleSheet.create({
   bold: { fontWeight: '700' },
   sources: { gap: spacing.sm, marginVertical: spacing.md },
   sourceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  gapXs: { gap: 2 },
+  gapSm: { gap: spacing.xs, marginTop: spacing.sm },
+  update: { gap: 2, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
 });

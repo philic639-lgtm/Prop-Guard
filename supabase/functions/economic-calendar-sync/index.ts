@@ -2,24 +2,27 @@
 // Deploy:   npm run shared:sync && supabase functions deploy economic-calendar-sync --no-verify-jwt
 // Secrets:  supabase secrets set ECON_SYNC_SECRET=<random string>
 //           [ECON_CONTACT=<your e-mail or URL, sent in the User-Agent>]
-//           [ECON_BEA_URL=<BEA release-schedule JSON>] [ECON_BEA_TIMES_EASTERN=true]
-//           [ECON_FOMC_VERIFIED_TIMES={"2026-12-16":"14:00"}] [ECON_BLS_URL] [ECON_FED_URL]
-// Schedule: every 6 hours via pg_cron + pg_net (see migration 20261025000000).
+//           [ECON_BEA_TIMES_EASTERN=true]  (only after confirming BEA's page lists Eastern times)
+//           [ECON_FOMC_VERIFIED_TIMES={"2026-12-16":"14:00"}]
+//           [ECON_BLS_URL] [ECON_BEA_URL] [ECON_FED_URL] [ECON_BLS_UPDATES_URL] [ECON_FED_UPDATES_URL]
+//           (the official defaults are built in — set these only to override)
+// Schedule: every 6 hours via pg_cron + pg_net (docs/ECONOMIC_CALENDAR_DEPLOY.md).
 //
-// Reads ONLY official scheduled-release calendars (BLS, BEA, Federal Reserve),
-// with conditional requests and no AI. A failed or unrecognised feed changes
-// nothing but its status row — events are never invented or dropped because a
-// source was down. No breaking news and no released numbers are stored.
+// Reads ONLY official sources — BLS iCalendar, BEA release-schedule page, FOMC calendar,
+// and the BLS / Fed monetary-policy RSS feeds — with conditional requests and no AI.
+// A failed or unrecognised feed changes nothing but its status row: events are never
+// invented or dropped because a source was down. No released numbers are stored.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-import { eventToRow, rowToEvent, rowToStatus, statusToRow } from '../_shared/economicCalendar/rows.ts';
-import { readSource, sourceConfigFromEnv } from '../_shared/economicCalendar/sources.ts';
-import { planSourceSync } from '../_shared/economicCalendar/sync.ts';
-import type { EconSource } from '../_shared/economicCalendar/types.ts';
+import { eventToRow, rowToEvent, rowToStatus, statusToRow, updateToRow } from '../_shared/economicCalendar/rows.ts';
+import { readSource, readUpdateFeed, sourceConfigFromEnv } from '../_shared/economicCalendar/sources.ts';
+import { planSourceSync, planUpdateSync } from '../_shared/economicCalendar/sync.ts';
+import type { EconSource, UpdateFeed } from '../_shared/economicCalendar/types.ts';
 
 const SECRET = Deno.env.get('ECON_SYNC_SECRET') ?? '';
 const SOURCES: EconSource[] = ['bls', 'bea', 'fed'];
+const UPDATE_FEEDS: UpdateFeed[] = ['bls_updates', 'fed_updates'];
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('method not allowed', { status: 405 });
@@ -51,8 +54,23 @@ Deno.serve(async (req) => {
     }
     // A database error must not look like a successful refresh.
     const status = writeError ? { ...plan.status, status: 'error' as const, error: 'database write failed', lastSuccessAt: prev?.lastSuccessAt ?? null } : plan.status;
-    await db.from('economic_feed_status').upsert(statusToRow(status, result.validators), { onConflict: 'source' });
+    await db.from('economic_feed_status').upsert(statusToRow(status, writeError ? validators : result.validators), { onConflict: 'source' });
     summary[source] = { status: status.status, events: plan.upserts.length, deactivated: plan.deactivate.length, error: status.error };
+  }
+  for (const feed of UPDATE_FEEDS) {
+    const { data: statusRow } = await db.from('economic_feed_status').select('*').eq('source', feed).maybeSingle();
+    const prev = statusRow ? rowToStatus(statusRow) : null;
+    const validators = { etag: (statusRow?.etag as string | null) ?? null, lastModified: (statusRow?.last_modified as string | null) ?? null };
+    const result = await readUpdateFeed(feed, cfg, fetch, validators, now);
+    const plan = planUpdateSync(result, prev, now);
+    let writeError: string | null = null;
+    if (plan.upserts.length) {
+      const { error } = await db.from('economic_updates').upsert(plan.upserts.map(updateToRow), { onConflict: 'id' });
+      if (error) writeError = error.message;
+    }
+    const status = writeError ? { ...plan.status, status: 'error' as const, error: 'database write failed', lastSuccessAt: prev?.lastSuccessAt ?? null } : plan.status;
+    await db.from('economic_feed_status').upsert(statusToRow(status, writeError ? validators : result.validators), { onConflict: 'source' });
+    summary[feed] = { status: status.status, items: plan.upserts.length, error: status.error };
   }
   // Counts and statuses only.
   return new Response(JSON.stringify(summary), { headers: { 'Content-Type': 'application/json' } });

@@ -8,3 +8,4 @@ export * from './rules';
 export * from './sync';
 export * from './sources';
 export * from './rows';
+export * from './updates';

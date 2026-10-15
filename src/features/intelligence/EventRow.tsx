@@ -2,44 +2,44 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, StatusBadge } from '@/components/ui';
 import { colors, spacing } from '@/constants/theme';
-import { ruleFor, SOURCE_LABEL, type EconomicEvent, type NewsRuleConfig } from '@/lib/engines/economicCalendar';
+import { ET, formatClock, formatDay, ruleFor, SOURCE_LABEL, validZone, type EconomicEvent, type NewsRuleConfig } from '@/lib/engines/economicCalendar';
 
-const ET_ZONE = 'America/New_York';
-
-export function eventDay(e: EconomicEvent): string {
+/** Release day: in the trader's zone when the time is known (an evening ET release can be the next day in Asia), else the official ET date. */
+export function eventDay(e: EconomicEvent, zone?: string): string {
+  if (e.startsAt) return formatDay(e.startsAt, zone ?? ET);
   return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${e.dateET}T12:00:00Z`));
 }
 
-/** "8:30 AM ET" (+ the device's local time when it is not Eastern). */
-export function eventTime(e: EconomicEvent): string {
+/** "5:30 AM PST · 8:30 AM EST" — the trader's zone first, Eastern (the official time) when different; DST-aware. */
+export function eventTime(e: EconomicEvent, zone?: string): string {
   if (!e.startsAt) return 'Time not confirmed';
-  const et = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: ET_ZONE }).format(new Date(e.startsAt));
-  const deviceZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const local = deviceZone && deviceZone !== ET_ZONE ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(e.startsAt)) : null;
-  return `${et} ET${local ? ` · ${local}` : ''}`;
+  const z = validZone(zone) ?? ET;
+  return z === ET ? formatClock(e.startsAt, ET) : `${formatClock(e.startsAt, z)} · ${formatClock(e.startsAt, ET)}`;
 }
 
-/** One scheduled release: name, time, impact, time certainty and its official source. */
-export function EventRow({ event, cfg }: { event: EconomicEvent; cfg: NewsRuleConfig }) {
+const IMPACT_LABEL = { high: 'High impact', medium: 'Medium impact', low: 'Low impact' } as const;
+
+/** One scheduled release: name, time, Prop Guard's impact rating, time certainty and its official source. */
+export function EventRow({ event, cfg, zone }: { event: EconomicEvent; cfg: NewsRuleConfig; zone?: string }) {
   const rule = ruleFor(event.code, cfg);
   return (
-    <View style={styles.row} accessible accessibilityLabel={`${event.name}, ${eventDay(event)}, ${eventTime(event)}, ${rule.impact} impact`}>
+    <View style={styles.row} accessible accessibilityLabel={`${event.name}, ${eventDay(event, zone)}, ${eventTime(event, zone)}, ${IMPACT_LABEL[rule.impact]} by Prop Guard's classification`}>
       <View style={styles.when}>
         <AppText variant="caption" tone="tertiary">
-          {eventDay(event)}
+          {eventDay(event, zone)}
         </AppText>
         <AppText variant="bodyStrong" style={styles.num}>
-          {event.startsAt ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: ET_ZONE }).format(new Date(event.startsAt)) : '—'}
+          {event.startsAt ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: validZone(zone) ?? ET }).format(new Date(event.startsAt)) : '—'}
         </AppText>
       </View>
       <View style={styles.flex}>
         <AppText variant="bodyStrong">{event.name}</AppText>
         <AppText variant="caption" tone="secondary">
-          {eventTime(event)}
+          {eventTime(event, zone)}
           {event.timeStatus === 'conventional' ? ' · usual time, confirm' : ''}
         </AppText>
         <View style={styles.badges}>
-          <StatusBadge label={rule.impact === 'high' ? 'High impact' : rule.impact === 'medium' ? 'Medium' : 'Low'} tone={rule.impact === 'high' ? 'danger' : rule.impact === 'medium' ? 'warning' : 'neutral'} size="sm" />
+          <StatusBadge label={`${IMPACT_LABEL[rule.impact]} · Prop Guard`} tone={rule.impact === 'high' ? 'danger' : rule.impact === 'medium' ? 'warning' : 'neutral'} size="sm" />
           <Pressable accessibilityRole="link" accessibilityLabel={`Open the ${SOURCE_LABEL[event.source]} calendar`} onPress={() => void Linking.openURL(event.sourceUrl)} hitSlop={6}>
             <AppText variant="caption" tone="accent">
               {SOURCE_LABEL[event.source]} ↗

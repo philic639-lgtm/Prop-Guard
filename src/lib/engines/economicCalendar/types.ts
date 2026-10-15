@@ -9,6 +9,11 @@
 
 export type EconSource = 'bls' | 'bea' | 'fed';
 
+/** Official update feeds (published-release notices), kept apart from the scheduled calendars. */
+export type UpdateFeed = 'bls_updates' | 'fed_updates';
+/** Everything with a refresh status row. */
+export type FeedId = EconSource | UpdateFeed;
+
 /** Normalised event families. `OTHER` = published by the source but not in the impact table. */
 export type EconCode =
   | 'CPI'
@@ -66,7 +71,7 @@ export interface EconomicEvent {
 }
 
 export interface FeedStatus {
-  source: EconSource;
+  source: FeedId;
   /** Last attempt, successful or not. */
   checkedAt: string | null;
   /** Last attempt that fetched AND parsed the feed. */
@@ -81,8 +86,27 @@ export interface FeedStatus {
   coverageUntil: string | null;
 }
 
+/** One item of an official update feed, exactly as published (no numbers read out of it). */
+export interface OfficialUpdate {
+  /** feed + the item's own guid / link — re-reading never duplicates. */
+  id: string;
+  feed: UpdateFeed;
+  title: string;
+  link: string;
+  /** Publication time from the feed (UTC); null when the feed gives none. */
+  publishedAt: string | null;
+  retrievedAt: string;
+}
+
 export const SOURCE_LABEL: Record<EconSource, string> = {
   bls: 'U.S. Bureau of Labor Statistics',
   bea: 'U.S. Bureau of Economic Analysis',
   fed: 'Federal Reserve Board',
+};
+
+/** Every refreshed feed by name (calendars + update feeds). */
+export const FEED_LABEL: Record<FeedId, string> = {
+  ...SOURCE_LABEL,
+  bls_updates: 'BLS latest releases (RSS)',
+  fed_updates: 'Federal Reserve monetary-policy press releases (RSS)',
 };

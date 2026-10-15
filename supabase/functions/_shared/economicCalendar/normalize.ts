@@ -17,7 +17,8 @@ export const TITLE_RULES: { code: EconCode; name: string; match: RegExp }[] = [
   { code: 'IMPORT_PRICES', name: 'Import and Export Price Indexes', match: /\bimport and export price/i },
   { code: 'REAL_EARNINGS', name: 'Real Earnings', match: /^real earnings\b/i },
   { code: 'STATE_EMPLOYMENT', name: 'State Employment and Unemployment', match: /\bstate employment and unemployment\b/i },
-  { code: 'GDP', name: 'GDP — Gross Domestic Product', match: /\bgross domestic product\b|^gdp\b/i },
+  // National GDP only — BEA's regional / industry releases ("GDP by State", "… by County") are not the market mover.
+  { code: 'GDP', name: 'GDP — Gross Domestic Product', match: /^(?!.*\bby (state|county|metropolitan|metro area|industry)\b)(gdp\b|.*\bgross domestic product\b)/i },
   { code: 'PCE', name: 'Personal Income and Outlays (PCE)', match: /\bpersonal income and outlays\b/i },
   { code: 'TRADE', name: 'U.S. International Trade in Goods and Services', match: /\binternational trade in goods and services\b/i },
   { code: 'FOMC_PRESS_CONFERENCE', name: 'FOMC press conference', match: /\bfomc\b.*\bpress conference\b/i },

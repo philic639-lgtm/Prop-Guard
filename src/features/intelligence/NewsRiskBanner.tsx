@@ -48,8 +48,35 @@ const styles = StyleSheet.create({
   kicker: { fontWeight: '700', letterSpacing: 0.6, fontSize: 11 },
 });
 
-/** Self-contained: reads the cached calendar (refreshing it when old) and shows the banner when relevant. */
+/**
+ * Self-contained: reads the cached calendar (refreshing it when old) and shows the banner when
+ * relevant. With a configured backend, a stale or unavailable source is shown as such — a
+ * failed refresh is never presented as "no upcoming news" (silence).
+ */
 export function NewsWatch({ compact }: { compact?: boolean }) {
-  const { risk } = useEconomicCalendar();
-  return <NewsRiskBanner risk={risk} compact={compact} />;
+  const { risk, freshness, connection, tradesIndexFutures, loading } = useEconomicCalendar();
+  if (risk.state !== 'clear') return <NewsRiskBanner risk={risk} compact={compact} />;
+  if (connection === 'not_configured' || !tradesIndexFutures) return null;
+  const notLive = freshness.perSource.filter((p) => p.connection !== 'connected');
+  if (!notLive.length || (loading && connection === 'never')) return null;
+  const unavailable = notLive.every((p) => p.connection === 'unavailable');
+  const text = unavailable && notLive.length === freshness.perSource.length ? 'Economic calendar unavailable' : `News data ${notLive.some((p) => p.connection === 'unavailable') ? 'incomplete' : 'stale'}`;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${text}. Scheduled releases can't be confirmed. Open Intelligence.`}
+      onPress={() => router.push('/intelligence')}
+      style={({ pressed }) => [styles.wrap, { backgroundColor: toneColor.warning.bg, borderColor: toneColor.warning.fg + '55' }, pressed && { opacity: 0.85 }]}>
+      <Icon name="alert-circle-outline" size={20} color={toneColor.warning.fg} />
+      <View style={styles.text}>
+        <AppText variant="caption" style={[styles.kicker, { color: toneColor.warning.fg }]}>
+          {text.toUpperCase()}
+        </AppText>
+        <AppText variant={compact ? 'caption' : 'body'} numberOfLines={2}>
+          Scheduled releases can’t be confirmed right now — check the official calendar before trading.
+        </AppText>
+      </View>
+      <Icon name="chevron-forward" size={16} color={colors.textTertiary} />
+    </Pressable>
+  );
 }
