@@ -1,0 +1,140 @@
+import { BEA_ICS_URL, parseBea } from './bea';
+import { parseFedCalendar, FED_CALENDAR_URL } from './fed';
+import { BLS_ICS_URL, parseBlsIcs } from './ics';
+import { feedError, type SourceResult, type UpdateResult } from './sync';
+import type { EconSource, UpdateFeed } from './types';
+import { BLS_LATEST_RSS, FED_MONETARY_RSS, parseUpdateFeed } from './updates';
+
+/**
+ * Reads one official calendar. Polite by design (public-sector sites, free data):
+ * a descriptive User-Agent with a contact, conditional requests (ETag / Last-Modified),
+ * a timeout, a size cap, and a schedule of a few runs per day — never per user or per view.
+ * `fetchImpl` is injected so the Edge Function, the CLI and tests share this code.
+ */
+export interface SourceConfig {
+  blsUrl: string;
+  /** BEA's official iCalendar by default; the HTML schedule page or a JSON schedule are read too. */
+  beaUrl: string | null;
+  /** Operator confirmation that BEA clock times are Eastern (the page may also state it). */
+  beaTimesAreEastern: boolean;
+  /** Official update feeds (published-release notices). */
+  blsUpdatesUrl: string;
+  fedUpdatesUrl: string;
+  fedUrl: string;
+  /** Human-verified FOMC statement times ("YYYY-MM-DD" → "HH:MM" ET). */
+  fomcVerifiedTimes: Record<string, string>;
+  /** Contact for the User-Agent (e-mail or URL) so a site can reach the operator. */
+  contact: string | null;
+}
+
+export const DEFAULT_SOURCE_CONFIG: SourceConfig = { blsUrl: BLS_ICS_URL, beaUrl: BEA_ICS_URL, beaTimesAreEastern: false, blsUpdatesUrl: BLS_LATEST_RSS, fedUpdatesUrl: FED_MONETARY_RSS, fedUrl: FED_CALENDAR_URL, fomcVerifiedTimes: {}, contact: null };
+
+/**
+ * HTTP header values must be plain ASCII: a pasted contact with a curly quote, a non-breaking
+ * space or an accented letter would make every request fail before it is sent. Keep only
+ * printable ASCII (and no parentheses, which delimit the User-Agent comment).
+ */
+export function headerSafe(v: string | null | undefined): string | null {
+  const t = (v ?? '').replace(/\s+/g, ' ').replace(/[^\x20-\x7E]/g, '').replace(/[()]/g, '').replace(/ +/g, ' ').trim().slice(0, 120);
+  return t || null;
+}
+
+/** Build the config from environment-style variables (Edge Function secrets / .env.server). */
+export function sourceConfigFromEnv(get: (k: string) => string | undefined): SourceConfig {
+  let verified: Record<string, string> = {};
+  try {
+    const raw = get('ECON_FOMC_VERIFIED_TIMES');
+    if (raw) verified = Object.fromEntries(Object.entries(JSON.parse(raw) as Record<string, unknown>).filter(([d, t]) => /^\d{4}-\d{2}-\d{2}$/.test(d) && typeof t === 'string' && /^\d{2}:\d{2}$/.test(t)) as [string, string][]);
+  } catch {
+    verified = {};
+  }
+  return {
+    blsUrl: get('ECON_BLS_URL') || BLS_ICS_URL,
+    beaUrl: get('ECON_BEA_URL') || BEA_ICS_URL,
+    beaTimesAreEastern: get('ECON_BEA_TIMES_EASTERN') === 'true',
+    blsUpdatesUrl: get('ECON_BLS_UPDATES_URL') || BLS_LATEST_RSS,
+    fedUpdatesUrl: get('ECON_FED_UPDATES_URL') || FED_MONETARY_RSS,
+    fedUrl: get('ECON_FED_URL') || FED_CALENDAR_URL,
+    fomcVerifiedTimes: verified,
+    contact: headerSafe(get('ECON_CONTACT')),
+  };
+}
+
+export interface Validators {
+  etag: string | null;
+  lastModified: string | null;
+}
+
+export type FetchLike = (url: string, init: { headers: Record<string, string>; signal?: AbortSignal; redirect?: 'follow' }) => Promise<{ status: number; headers: { get(name: string): string | null }; text(): Promise<string> }>;
+
+const TIMEOUT_MS = 20_000;
+const MAX_BYTES = 3_000_000;
+
+type Fetched = { ok: true; notModified: true; validators: Validators } | { ok: true; notModified?: false; body: string; validators: Validators } | { ok: false; error: string; validators: Validators };
+
+/** One polite conditional GET (shared by calendars and update feeds). */
+async function fetchFeed(url: string, accept: string, cfg: SourceConfig, fetchImpl: FetchLike, prev: Validators): Promise<Fetched> {
+  const headers: Record<string, string> = {
+    'User-Agent': `PropGuardCalendar/1.0 (scheduled economic-release calendar; refreshes a few times a day${cfg.contact ? `; contact ${headerSafe(cfg.contact)}` : ''})`,
+    Accept: accept,
+  };
+  if (prev.etag) headers['If-None-Match'] = prev.etag;
+  if (prev.lastModified) headers['If-Modified-Since'] = prev.lastModified;
+  // Every value must be a valid HTTP header (ASCII): one bad character fails the request before it is sent.
+  for (const k of Object.keys(headers)) headers[k] = headers[k].replace(/\s+/g, ' ').replace(/[^\x20-\x7E]/g, '').trim();
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = setTimeout(() => controller?.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetchImpl(url, { headers, signal: controller?.signal, redirect: 'follow' });
+    const validators = { etag: res.headers.get('etag') ?? prev.etag, lastModified: res.headers.get('last-modified') ?? prev.lastModified };
+    if (res.status === 304) return { ok: true, notModified: true, validators };
+    if (res.status < 200 || res.status >= 300) return { ok: false, error: `HTTP ${res.status}`, validators: prev };
+    return { ok: true, body: (await res.text()).slice(0, MAX_BYTES), validators };
+  } catch (e) {
+    return { ok: false, error: controller?.signal.aborted ? `timeout after ${TIMEOUT_MS / 1000} s` : feedError(e), validators: prev };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function readSource(
+  source: EconSource,
+  cfg: SourceConfig,
+  fetchImpl: FetchLike,
+  prev: Validators,
+  now: Date,
+): Promise<SourceResult & { validators: Validators }> {
+  const url = source === 'bls' ? cfg.blsUrl : source === 'bea' ? cfg.beaUrl : cfg.fedUrl;
+  if (!url) return { source, ok: false, error: 'not configured', validators: prev };
+  const accept = source === 'bls' ? 'text/calendar, text/plain;q=0.9' : source === 'bea' ? 'text/calendar, text/html;q=0.8, application/json;q=0.7' : 'text/html';
+  const r = await fetchFeed(url, accept, cfg, fetchImpl, prev);
+  if (!r.ok) return { source, ok: false, error: r.error, validators: r.validators };
+  if (r.notModified) return { source, ok: true, notModified: true, validators: r.validators };
+  // A conditional request that came back with a body must be parsed; a parse failure is a format error (status "error").
+  const validators = r.validators;
+  try {
+    const at = now.toISOString();
+    const events =
+      source === 'bls'
+        ? parseBlsIcs(r.body, at)
+        : source === 'bea'
+          ? parseBea(r.body, at, { timesAreEastern: cfg.beaTimesAreEastern })
+          : parseFedCalendar(r.body, at, { verifiedTimes: cfg.fomcVerifiedTimes });
+    return { source, ok: true, events, validators };
+  } catch (e) {
+    // Keep the old validators so the next run fetches the body again instead of "not modified".
+    return { source, ok: false, error: feedError(e), validators: prev };
+  }
+}
+
+export async function readUpdateFeed(feed: UpdateFeed, cfg: SourceConfig, fetchImpl: FetchLike, prev: Validators, now: Date): Promise<UpdateResult & { validators: Validators }> {
+  const url = feed === 'bls_updates' ? cfg.blsUpdatesUrl : cfg.fedUpdatesUrl;
+  const r = await fetchFeed(url, 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8', cfg, fetchImpl, prev);
+  if (!r.ok) return { feed, ok: false, error: r.error, validators: r.validators };
+  if (r.notModified) return { feed, ok: true, notModified: true, validators: r.validators };
+  try {
+    return { feed, ok: true, items: parseUpdateFeed(r.body, feed, now.toISOString()), validators: r.validators };
+  } catch (e) {
+    return { feed, ok: false, error: feedError(e), validators: prev };
+  }
+}

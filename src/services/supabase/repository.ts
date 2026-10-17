@@ -1,0 +1,281 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+import type { AppData } from '@/data/demo';
+import { DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES } from '@/data/demo';
+import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
+import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
+import type { Account, DisciplineEvent, PendingTrade, PracticeRun, SetupCheck, Strategy, Trade, TradePlan, TradingSession, UserPreferences } from '@/types/domain';
+
+import {
+  accountToRows,
+  eventToRow,
+  pendingToRow,
+  practiceAttemptToRow,
+  practiceLessonToRow,
+  setupCheckToRow,
+  rowToPracticeAttempt,
+  rowToPracticeLesson,
+  rowToSetupCheck,
+  rowToCopyTrade,
+  rowToCopyGroup,
+  copyGroupToRow,
+  rowToSourceTrader,
+  copyTradeToRow,
+  sourceTraderToRow,
+  planToRow,
+  practiceToRow,
+  preferencesToRow,
+  rowToPending,
+  rowToPlan,
+  rowToPractice,
+  rowsToAccount,
+  rowsToStrategy,
+  rowsToTrade,
+  rowToEvent,
+  rowToSession,
+  sessionToRow,
+  strategyToRows,
+  tradeToRows,
+} from './mappers';
+
+type Row = Record<string, unknown>;
+
+/** How much trade history to pull on login. Older history is paged on demand. */
+export const INITIAL_TRADE_LIMIT = 1000;
+
+function check<T>(res: { data: T; error: { message: string } | null }): T {
+  if (res.error) throw new Error(res.error.message);
+  return res.data;
+}
+
+export type RemovableTable = 'accounts' | 'strategies' | 'trades' | 'practice_lessons' | 'setup_checks' | 'copy_trades' | 'copy_groups';
+
+export class SupabaseRepository {
+  constructor(
+    private readonly db: SupabaseClient,
+    private readonly userId: string,
+  ) {}
+
+  async loadAll(): Promise<Partial<AppData>> {
+    const db = this.db;
+    const [plans, practice, pending, attempts, lessons, checks, sources, copies, groups] = await Promise.all([
+      db.from('trade_plans').select('*').order('created_at', { ascending: false }).limit(200),
+      db.from('practice_runs').select('*').order('created_at', { ascending: false }).limit(100),
+      db.from('pending_trades').select('*').order('created_at', { ascending: false }).limit(200),
+      db.from('practice_attempts').select('*').order('attempted_at', { ascending: false }).limit(1000),
+      db.from('practice_lessons').select('*').order('created_at', { ascending: false }).limit(300),
+      db.from('setup_checks').select('*').order('created_at', { ascending: false }).limit(500),
+      db.from('source_traders').select('*').order('updated_at', { ascending: false }).limit(200),
+      db.from('copy_trades').select('*').order('idea_at', { ascending: false }).limit(2000),
+      db.from('copy_groups').select('*').order('updated_at', { ascending: false }).limit(50),
+    ]);
+    const [accounts, rules, strategies, items, sessions, trades, events, prefs, profile] = await Promise.all([
+      db.from('accounts').select('*').order('created_at'),
+      db.from('prop_rules').select('*'),
+      db.from('strategies').select('*').order('created_at'),
+      db.from('strategy_rules').select('*'),
+      db.from('sessions').select('*').order('date', { ascending: false }).limit(400),
+      db.from('trades').select('*').order('opened_at', { ascending: false }).limit(INITIAL_TRADE_LIMIT),
+      db.from('discipline_events').select('*').order('occurred_at', { ascending: false }).limit(2000),
+      db.from('user_preferences').select('*').maybeSingle(),
+      db.from('profiles').select('*').maybeSingle(),
+    ]);
+
+    const tradeRows = check(trades) as Row[];
+    const tradeIds = tradeRows.map((t) => String(t.id));
+    const [checklists, journals] = tradeIds.length
+      ? await Promise.all([
+          db.from('trade_checklists').select('*').in('trade_id', tradeIds),
+          db.from('journal_entries').select('*').in('trade_id', tradeIds),
+        ])
+      : [{ data: [], error: null }, { data: [], error: null }];
+
+    const rulesByAccount = new Map((check(rules) as Row[]).map((r) => [String(r.account_id), r]));
+    const itemsByStrategy = groupBy(check(items) as Row[], 'strategy_id');
+    const checklistByTrade = groupBy(check(checklists) as Row[], 'trade_id');
+    const journalByTrade = new Map((check(journals) as Row[]).map((j) => [String(j.trade_id), j]));
+    const p = check(prefs) as Row | null;
+    const prof = check(profile) as Row | null;
+
+    const preferences: UserPreferences = {
+      ...DEFAULT_PREFERENCES,
+      displayName: String(prof?.display_name ?? ''),
+      email: String(prof?.email ?? ''),
+      timezone: String(p?.timezone ?? DEFAULT_PREFERENCES.timezone),
+      defaultInstrument: (p?.default_instrument as UserPreferences['defaultInstrument']) ?? 'MES',
+      markets: (p?.markets as UserPreferences['markets']) ?? DEFAULT_PREFERENCES.markets,
+      tradingType: (p?.trading_type as UserPreferences['tradingType']) ?? 'prop',
+      propFirm: String(p?.prop_firm ?? ''),
+      notifications: { ...DEFAULT_PREFERENCES.notifications, ...((p?.notifications as object) ?? {}) },
+      tradingProfile: { ...DEFAULT_PREFERENCES.tradingProfile, ...((p?.trading_profile as object) ?? {}) },
+      customInstruments: Array.isArray(p?.custom_instruments) ? (p!.custom_instruments as UserPreferences['customInstruments']) : [],
+      onboarded: p?.onboarded === true,
+      learning: p?.learning_progress && typeof p.learning_progress === 'object' ? (p.learning_progress as UserPreferences['learning']) : undefined,
+    };
+
+    return {
+      accounts: (check(accounts) as Row[]).map((a) => rowsToAccount(a, rulesByAccount.get(String(a.id)))),
+      strategies: (check(strategies) as Row[]).map((s) => rowsToStrategy(s, itemsByStrategy.get(String(s.id)) ?? [])),
+      sessions: (check(sessions) as Row[]).map(rowToSession),
+      trades: tradeRows.map((t) => rowsToTrade(t, checklistByTrade.get(String(t.id)) ?? [], journalByTrade.get(String(t.id)))),
+      events: (check(events) as Row[]).map(rowToEvent),
+      preferences,
+      tradingRules: { ...DEFAULT_TRADING_RULES, ...((p?.trading_rules as object) ?? {}) },
+      activeAccountId: (p?.active_account_id as string | null) ?? null,
+      activeStrategyId: (p?.active_strategy_id as string | null) ?? null,
+      // Older projects may not have these tables yet; treat errors as empty.
+      plans: plans.error ? [] : ((plans.data ?? []) as Row[]).map(rowToPlan),
+      practiceRuns: practice.error ? [] : ((practice.data ?? []) as Row[]).map(rowToPractice),
+      pendingTrades: pending.error ? [] : ((pending.data ?? []) as Row[]).map(rowToPending),
+      practiceAttempts: attempts.error ? [] : ((attempts.data ?? []) as Row[]).map(rowToPracticeAttempt),
+      practiceLessons: lessons.error ? [] : ((lessons.data ?? []) as Row[]).map(rowToPracticeLesson),
+      setupChecks: checks.error ? [] : ((checks.data ?? []) as Row[]).map(rowToSetupCheck),
+      sourceTraders: sources.error ? [] : ((sources.data ?? []) as Row[]).map(rowToSourceTrader),
+      copyTrades: copies.error ? [] : ((copies.data ?? []) as Row[]).map(rowToCopyTrade),
+      copyGroups: groups.error ? [] : ((groups.data ?? []) as Row[]).map(rowToCopyGroup),
+    };
+  }
+
+  /** Paged history for long journals (cursor = opened_at of the last loaded trade). */
+  async fetchTradesBefore(cursorIso: string, limit = 50): Promise<Trade[]> {
+    const rows = check(
+      await this.db.from('trades').select('*').lt('opened_at', cursorIso).order('opened_at', { ascending: false }).limit(limit),
+    ) as Row[];
+    return rows.map((r) => rowsToTrade(r, [], undefined));
+  }
+
+  /**
+   * Write the account and read it back as the signed-in user. Resolves only when the
+   * stored row shows the saved balance (RLS: a row the user cannot read back counts as
+   * failed — never reported as saved).
+   */
+  async upsertAccount(a: Account) {
+    const { account, rules } = accountToRows(a, this.userId);
+    check(await this.db.from('accounts').upsert(account));
+    check(await this.db.from('prop_rules').upsert(rules));
+    const back = check(await this.db.from('accounts').select('id, balance, starting_balance, cycle_start_balance, high_water_mark').eq('id', a.id).maybeSingle()) as Record<string, unknown> | null;
+    if (!back) throw new Error('Saved account could not be read back — check that you are signed in to the account that owns it.');
+    const same = (k: string, v: number) => Math.abs(Number(back[k]) - v) < 0.005;
+    if (!same('balance', a.balance) || !same('starting_balance', a.startingBalance) || !same('cycle_start_balance', a.cycleStartBalance) || !same('high_water_mark', a.highWaterMark))
+      throw new Error('The server returned different account values after saving.');
+  }
+
+  async upsertStrategy(s: Strategy) {
+    const { strategy, checklist } = strategyToRows(s, this.userId);
+    check(await this.db.from('strategies').upsert(strategy));
+    check(await this.db.from('strategy_rules').delete().eq('strategy_id', s.id));
+    if (checklist.length) check(await this.db.from('strategy_rules').insert(checklist));
+  }
+
+  async upsertSession(s: TradingSession) {
+    check(await this.db.from('sessions').upsert(sessionToRow(s, this.userId)));
+  }
+
+  async upsertTrade(t: Trade) {
+    const { trade, checklist, journal } = tradeToRows(t, this.userId);
+    check(await this.db.from('trades').upsert(trade));
+    if (checklist.length) check(await this.db.from('trade_checklists').upsert(checklist));
+    check(await this.db.from('journal_entries').upsert(journal));
+  }
+
+  async insertEvent(e: DisciplineEvent) {
+    check(await this.db.from('discipline_events').upsert(eventToRow(e, this.userId)));
+  }
+
+  async upsertPlan(p: TradePlan) {
+    check(await this.db.from('trade_plans').upsert(planToRow(p, this.userId)));
+  }
+
+  async upsertPendingTrade(p: PendingTrade) {
+    check(await this.db.from('pending_trades').upsert(pendingToRow(p, this.userId)));
+  }
+
+  async upsertPracticeAttempt(a: PracticeAttempt) {
+    check(await this.db.from('practice_attempts').upsert(practiceAttemptToRow(a, this.userId)));
+  }
+
+  async upsertSetupCheck(c: SetupCheck) {
+    check(await this.db.from('setup_checks').upsert(setupCheckToRow(c, this.userId)));
+  }
+
+  async upsertSourceTrader(t: SourceTrader) {
+    check(await this.db.from('source_traders').upsert(sourceTraderToRow(t, this.userId)));
+  }
+
+  async upsertCopyGroup(g: CopyGroup) {
+    check(await this.db.from('copy_groups').upsert(copyGroupToRow(g, this.userId)));
+  }
+
+  async upsertCopyTrade(c: CopyTrade) {
+    check(await this.db.from('copy_trades').upsert(copyTradeToRow(c, this.userId)));
+  }
+
+  async upsertPracticeLesson(l: PracticeLesson) {
+    check(await this.db.from('practice_lessons').upsert(practiceLessonToRow(l, this.userId)));
+  }
+
+  async insertPracticeRun(p: PracticeRun) {
+    check(await this.db.from('practice_runs').upsert(practiceToRow(p, this.userId)));
+  }
+
+  async savePreferences(state: Pick<AppData, 'preferences' | 'tradingRules' | 'activeAccountId' | 'activeStrategyId'>) {
+    check(
+      await this.db
+        .from('user_preferences')
+        .upsert(preferencesToRow(state.preferences, state.tradingRules, state.activeAccountId, state.activeStrategyId, this.userId)),
+    );
+    check(await this.db.from('profiles').update({ display_name: state.preferences.displayName }).eq('id', this.userId));
+  }
+
+  async remove(table: RemovableTable, id: string) {
+    check(await this.db.from(table).delete().eq('id', id));
+  }
+
+  /**
+   * Store REDACTED account-overview pages (JPEG base64, blacked out on the device) in the
+   * private `screenshots` bucket under this user's folder, and link them to the account and
+   * the update-history record. Returns the storage paths; throws on any failure.
+   */
+  async uploadAccountSnapshot(accountId: string, recordId: string, pages: string[], dashboardDate: string | null): Promise<string[]> {
+    const paths: string[] = [];
+    for (const [i, b64] of pages.entries()) {
+      const path = `${this.userId}/accounts/${accountId}/${recordId}-${i + 1}.jpg`;
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const up = await this.db.storage.from('screenshots').upload(path, bytes, { contentType: 'image/jpeg', upsert: true });
+      if (up.error) throw new Error(up.error.message);
+      paths.push(path);
+    }
+    check(
+      await this.db.from('screenshots').insert(
+        paths.map((storage_path) => ({ user_id: this.userId, account_id: accountId, kind: 'account', redacted: true, record_id: recordId, dashboard_date: dashboardDate, storage_path })),
+      ),
+    );
+    return paths;
+  }
+
+  /** The account's stored snapshot copies, newest first. */
+  async listAccountSnapshots(accountId: string): Promise<{ id: string; storagePath: string; recordId: string | null; createdAt: string }[]> {
+    const rows = check(await this.db.from('screenshots').select('id, storage_path, record_id, created_at').eq('account_id', accountId).eq('kind', 'account').order('created_at', { ascending: false })) as Row[];
+    return (rows ?? []).map((r) => ({ id: String(r.id), storagePath: String(r.storage_path), recordId: (r.record_id as string | null) ?? null, createdAt: String(r.created_at) }));
+  }
+
+  /** Delete the account's stored snapshot copies (files and rows). */
+  async deleteAccountSnapshots(accountId: string): Promise<number> {
+    const list = await this.listAccountSnapshots(accountId);
+    if (!list.length) return 0;
+    const rm = await this.db.storage.from('screenshots').remove(list.map((x) => x.storagePath));
+    if (rm.error) throw new Error(rm.error.message);
+    check(await this.db.from('screenshots').delete().eq('account_id', accountId).eq('kind', 'account'));
+    return list.length;
+  }
+}
+
+function groupBy(rows: Row[], key: string): Map<string, Row[]> {
+  const map = new Map<string, Row[]>();
+  for (const r of rows) {
+    const k = String(r[key]);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(r);
+  }
+  return map;
+}

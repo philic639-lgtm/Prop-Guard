@@ -1,0 +1,241 @@
+import { router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { TradeCard } from '@/components/domain/TradeCard';
+import { AppHeader, AppText, Button, Card, Chip, EmptyState, HeaderIconButton, SectionHeader } from '@/components/ui';
+import { PLANS } from '@/config/plans';
+import { colors, GUTTER, spacing, TAB_BAR_HEIGHT } from '@/constants/theme';
+import { MonthCalendar } from '@/features/journal/MonthCalendar';
+import { PendingTradeCard } from '@/features/journal/PendingTradeCard';
+import { useAccountTrades, usePendingTrades } from '@/hooks/useAppData';
+import { dailyPnl } from '@/lib/engines';
+import { filterByOrigin, type OriginFilter } from '@/lib/engines/copyTradeEngine';
+import { useAppStore } from '@/store/useAppStore';
+import { useSubscriptionStore } from '@/store/useSubscriptionStore';
+import type { Trade } from '@/types/domain';
+import { dayKey } from '@/utils/dates';
+import { money } from '@/utils/format';
+
+type Outcome = 'all' | 'wins' | 'losses' | 'pending';
+const PAGE = 20;
+
+export default function JournalScreen() {
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ origin?: OriginFilter }>();
+  const trades = useAccountTrades();
+  const [origin, setOrigin] = useState<OriginFilter>(params.origin === 'copied' || params.origin === 'self' ? params.origin : 'all');
+  const [sourceTraderId, setSourceTraderId] = useState<string | null>(null);
+  const copiedSources = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of trades) if (t.origin === 'copied' && t.sourceTraderId) m.set(t.sourceTraderId, t.sourceTraderName ?? 'Source trader');
+    return [...m.entries()];
+  }, [trades]);
+  const pending = usePendingTrades();
+  const lessons = useAppStore((s) => s.practiceLessons);
+  const setupChecks = useAppStore((s) => s.setupChecks);
+  const reviews = useMemo(() => setupChecks.filter((c) => c.kind === 'setup_review'), [setupChecks]);
+  const [showAllPending, setShowAllPending] = useState(false);
+  const strategies = useAppStore((s) => s.strategies);
+  const plan = useSubscriptionStore((s) => s.plan);
+  const [outcome, setOutcome] = useState<Outcome>('all');
+  const [strategyId, setStrategyId] = useState<string | null>(null);
+  const [instrument, setInstrument] = useState<string | null>(null);
+  const [day, setDay] = useState<string | null>(null);
+  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [visible, setVisible] = useState(PAGE);
+
+  const names = useMemo(() => new Map(strategies.map((s) => [s.id, s.name])), [strategies]);
+  const pnlByDay = useMemo(() => dailyPnl(trades), [trades]);
+  const instruments = useMemo(() => [...new Set(trades.map((t) => t.instrument))], [trades]);
+  const limit = PLANS[plan].limits.journalTrades;
+
+  const filtered = useMemo(() => {
+    return filterByOrigin(trades, origin, origin === 'copied' ? sourceTraderId : null).filter((t) => {
+      if (outcome === 'wins' && !((t.pnl ?? 0) > 0)) return false;
+      if (outcome === 'losses' && !((t.pnl ?? 0) < 0)) return false;
+      if (outcome === 'pending' && (t.journaled || t.status !== 'closed')) return false;
+      if (strategyId && t.strategyId !== strategyId) return false;
+      if (instrument && t.instrument !== instrument) return false;
+      if (day && dayKey(t.openedAt) !== day) return false;
+      return true;
+    });
+  }, [trades, origin, sourceTraderId, outcome, strategyId, instrument, day]);
+
+  const capped = filtered.slice(0, Math.min(visible, limit));
+  const hitPlanLimit = filtered.length > limit && visible >= limit;
+  const monthNet = useMemo(() => {
+    let sum = 0;
+    for (const [k, v] of pnlByDay) if (k.startsWith(dayKey(month).slice(0, 7))) sum += v;
+    return sum;
+  }, [pnlByDay, month]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: Trade }) => (
+      <TradeCard
+        trade={item}
+        strategyName={item.strategyId ? (names.get(item.strategyId) ?? item.strategyName) : null}
+        onPress={() => router.push(item.status === 'open' ? { pathname: '/session/live', params: { id: item.id } } : { pathname: '/journal/[id]', params: { id: item.id } })}
+      />
+    ),
+    [names],
+  );
+
+  const header = (
+    <View style={styles.headerContent}>
+      {pending.length > 0 ? (
+        <View style={styles.pending}>
+          <SectionHeader
+            title={`Pending results · ${pending.length}`}
+            action={pending.length > 2 ? (showAllPending ? 'Show less' : 'Show all') : undefined}
+            onAction={() => setShowAllPending((v) => !v)}
+          />
+          <AppText variant="caption">Trades you checked in Prop Guard. Add the result and the journal entry is created for you.</AppText>
+          {(showAllPending ? pending : pending.slice(0, 2)).map((p) => (
+            <PendingTradeCard
+              key={p.id}
+              pending={p}
+              strategyName={p.strategyId ? names.get(p.strategyId) : null}
+              onPress={() => router.push({ pathname: '/journal/complete/[id]', params: { id: p.id } })}
+            />
+          ))}
+        </View>
+      ) : null}
+      {reviews.length > 0 ? (
+        <Card onPress={() => router.push('/setup-check/history')} accessibilityLabel={`Setup reviews, ${reviews.length} saved`}>
+          <View style={styles.lessonHead}>
+            <AppText variant="label" tone="accent" style={{ flex: 1 }}>
+              Setup reviews · {reviews.length}
+            </AppText>
+            <AppText variant="caption">Not executed trades</AppText>
+          </View>
+          <AppText variant="caption" style={{ marginTop: spacing.xs }}>
+            {reviews.filter((r) => r.setupDecision?.displayStatus === 'WAIT').length} wait · {reviews.filter((r) => r.setupDecision?.displayStatus === 'STAND_DOWN').length} stand down · {reviews.filter((r) => r.setupDecision?.displayStatus === 'BLOCKED').length} blocked — setups you analysed and did not take.
+          </AppText>
+        </Card>
+      ) : null}
+      {lessons.length > 0 ? (
+        <Card onPress={() => router.push('/journal/lessons')} accessibilityLabel={`Practice lessons, ${lessons.length} saved`}>
+          <View style={styles.lessonHead}>
+            <AppText variant="label" tone="accent" style={{ flex: 1 }}>
+              Practice lessons · {lessons.length}
+            </AppText>
+            <AppText variant="caption">Not real trades</AppText>
+          </View>
+          <AppText variant="bodyStrong" style={{ marginTop: spacing.xs }}>
+            {lessons[0].strategyName} · score {lessons[0].score}
+          </AppText>
+          <AppText variant="caption" numberOfLines={2}>
+            {lessons[0].lesson}
+          </AppText>
+        </Card>
+      ) : null}
+      <MonthCalendar
+        month={month}
+        pnlByDay={pnlByDay}
+        selected={day}
+        onSelect={setDay}
+        onMonthChange={(d) => setMonth((m) => new Date(m.getFullYear(), m.getMonth() + d, 1))}
+      />
+      <View style={styles.monthNet}>
+        <AppText variant="caption">Month net</AppText>
+        <AppText variant="bodyStrong" tone={monthNet > 0 ? 'positive' : monthNet < 0 ? 'danger' : 'secondary'}>
+          {money(monthNet, { sign: true })}
+        </AppText>
+      </View>
+      {copiedSources.length || origin !== 'all' ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+          {(['all', 'self', 'copied'] as OriginFilter[]).map((o) => (
+            <Chip key={o} label={o === 'all' ? 'All trades' : o === 'self' ? 'My trades' : 'Copied'} icon={o === 'copied' ? 'copy-outline' : o === 'self' ? 'person-outline' : undefined} selected={origin === o} onPress={() => setOrigin(o)} />
+          ))}
+          {origin === 'copied'
+            ? copiedSources.map(([id, name]) => <Chip key={id} label={name} selected={sourceTraderId === id} onPress={() => setSourceTraderId(sourceTraderId === id ? null : id)} />)
+            : null}
+        </ScrollView>
+      ) : null}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+        {(['all', 'wins', 'losses', 'pending'] as Outcome[]).map((o) => (
+          <Chip key={o} label={o === 'pending' ? 'Needs notes' : o[0].toUpperCase() + o.slice(1)} selected={outcome === o} onPress={() => setOutcome(o)} />
+        ))}
+      </ScrollView>
+      {strategies.length > 1 || instruments.length > 1 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+          {strategies.map((s) => (
+            <Chip key={s.id} label={s.name} selected={strategyId === s.id} onPress={() => setStrategyId(strategyId === s.id ? null : s.id)} />
+          ))}
+          {instruments.map((i) => (
+            <Chip key={i} label={i} selected={instrument === i} onPress={() => setInstrument(instrument === i ? null : i)} />
+          ))}
+        </ScrollView>
+      ) : null}
+      {day ? (
+        <Chip label={`${new Date(day + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ✕`} selected onPress={() => setDay(null)} />
+      ) : null}
+    </View>
+  );
+
+  return (
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <AppHeader
+        title="Journal"
+        right={
+          <>
+            <HeaderIconButton icon="stats-chart-outline" label="Performance" onPress={() => router.push('/performance')} />
+            <HeaderIconButton icon="add" label="Journal a trade" onPress={() => router.push('/journal/new')} />
+          </>
+        }
+      />
+      <FlatList
+        data={capped}
+        keyExtractor={(t) => t.id}
+        renderItem={renderItem}
+        ListHeaderComponent={header}
+        ItemSeparatorComponent={Separator}
+        contentContainerStyle={[styles.list, { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + spacing.xxl }]}
+        initialNumToRender={8}
+        windowSize={7}
+        removeClippedSubviews
+        onEndReachedThreshold={0.4}
+        onEndReached={() => setVisible((v) => (v < filtered.length ? v + PAGE : v))}
+        ListEmptyComponent={
+          <Card>
+            {trades.length === 0 ? (
+              <EmptyState
+                illustration="journal"
+                title="No trades yet"
+                message="Your journal will automatically organize your trading history."
+                actionLabel="Journal a trade"
+                onAction={() => router.push('/journal/new')}
+              />
+            ) : (
+              <EmptyState icon="filter-outline" title="Nothing matches" message={origin === 'copied' ? 'No copied trades match — log one from Copy Trade.' : 'Try a different filter or day.'} />
+            )}
+          </Card>
+        }
+        ListFooterComponent={
+          hitPlanLimit ? (
+            <Card style={{ marginTop: spacing.md }}>
+              <AppText variant="bodyStrong">Free journal shows your latest {limit} trades.</AppText>
+              <Button label="Unlock unlimited journal" size="md" onPress={() => router.push('/paywall')} style={{ marginTop: spacing.md }} />
+            </Card>
+          ) : null
+        }
+      />
+    </View>
+  );
+}
+
+function Separator() {
+  return <View style={{ height: spacing.md }} />;
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.bg },
+  list: { paddingHorizontal: GUTTER },
+  headerContent: { gap: spacing.md, marginBottom: spacing.md },
+  pending: { gap: spacing.sm, marginBottom: spacing.sm },
+  lessonHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  monthNet: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.xs },
+  filters: { gap: spacing.sm },
+});

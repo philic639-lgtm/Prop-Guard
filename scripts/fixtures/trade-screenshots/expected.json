@@ -1,0 +1,42 @@
+{
+  "_note": "SYNTHETIC mock-ups of Tradovate / TradingView layouts (not real broker screenshots, no real accounts). 'optional' fields may be null or the given value; 'mustNotContain' strings must not appear anywhere in the reading.",
+  "fixtures": [
+    {
+      "file": "tradovate-completed.png",
+      "expect": { "kind": "completed_trade", "platform": "Tradovate", "instrument": "MNQ", "direction": "long", "entryPrice": 21512.25, "exitPrice": 21530.75, "stopPrice": 21498, "targetPrice": null, "quantity": 2, "realizedPnl": 74 },
+      "optional": ["stopPrice", "platform"],
+      "mustNotContain": ["123456"]
+    },
+    {
+      "file": "tradovate-open.png",
+      "expect": { "kind": "open_position", "platform": "Tradovate", "instrument": "ES", "direction": "long", "entryPrice": 5004.25, "exitPrice": null, "stopPrice": 4998, "targetPrice": 5016, "quantity": 1, "realizedPnl": null },
+      "optional": ["platform"],
+      "mustNotContain": ["778812"]
+    },
+    {
+      "file": "tradovate-pending.png",
+      "expect": { "kind": "pending_order", "platform": "Tradovate", "instrument": "MES", "direction": "long", "entryPrice": null, "exitPrice": null, "stopPrice": 4984, "targetPrice": null, "quantity": 3, "realizedPnl": null },
+      "optional": ["platform", "stopPrice", "quantity", "direction"],
+      "mustNotContain": []
+    },
+    {
+      "file": "tradingview-position-tool.png",
+      "expect": { "kind": "chart_only", "platform": "TradingView", "instrument": "NQ", "direction": "long", "entryPrice": 21500, "exitPrice": null, "stopPrice": 21480, "targetPrice": 21560, "quantity": 1, "realizedPnl": null },
+      "optional": ["platform", "quantity", "entryPrice", "direction"],
+      "mustNotContain": []
+    },
+    {
+      "file": "tradingview-misleading.png",
+      "expect": { "kind": "open_position", "platform": "TradingView", "instrument": "ES", "direction": "short", "entryPrice": 5062.5, "exitPrice": null, "stopPrice": 5070, "targetPrice": null, "quantity": 1, "realizedPnl": null },
+      "optional": ["platform"],
+      "mustNotContain": ["9999"]
+    },
+    {
+      "file": "blurry-fills.png",
+      "expect": { "kind": "completed_trade", "legible": false, "instrument": null, "entryPrice": null, "exitPrice": null },
+      "optional": ["kind", "instrument"],
+      "mustNotContain": ["123456"],
+      "nullsOnly": true
+    }
+  ]
+}

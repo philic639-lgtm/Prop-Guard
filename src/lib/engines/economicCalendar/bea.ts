@@ -1,0 +1,206 @@
+import { pageText } from './fed';
+import { FeedFormatError, parseIcsCalendar } from './ics';
+import { dedupeEvents, makeEvent } from './normalize';
+import { utcToEastern } from './timezone';
+import type { EconomicEvent } from './types';
+
+/**
+ * BEA release schedule (JSON). The address is configuration (`ECON_BEA_URL`) — Prop Guard
+ * ships no guessed default. The reader looks for a list of release records and takes, from
+ * each, a release name and a release date (+ time):
+ *
+ *   name:  release_name | releaseName | name | title | release
+ *   date:  release_date | releaseDate | date | datetime | release_datetime
+ *   time:  release_time | releaseTime | time            (optional)
+ *
+ * Dates may be ISO dates, ISO date-times (with Z / an offset → converted exactly) or
+ * "Month D, YYYY". A bare clock time ("8:30 AM") is read as Eastern ONLY when
+ * `timesAreEastern` is set (BEA publishes its schedule in Eastern time — confirm this on the
+ * first live run); otherwise the time is left unknown. A record without a name or a
+ * readable date is skipped, and a feed with no readable records is a format error —
+ * never an empty "all clear".
+ */
+export const BEA_SCHEDULE_PAGE = 'https://www.bea.gov/news/schedule';
+/**
+ * BEA's official calendar subscription (linked from the schedule page): every release with an
+ * exact UTC start time — the default BEA source. Checked 2026-10-17: its upcoming releases
+ * match the schedule page row for row (dates and "8:30 AM" = 12:30 / 13:30 UTC).
+ */
+export const BEA_ICS_URL = 'https://www.bea.gov/news/schedule/ics/online-calendar-subscription.ics';
+
+const NAME_KEYS = ['release_name', 'releaseName', 'ReleaseName', 'name', 'Name', 'title', 'Title', 'release', 'Release'];
+const DATE_KEYS = ['release_date', 'releaseDate', 'ReleaseDate', 'date', 'Date', 'datetime', 'release_datetime', 'releaseDateTime'];
+const TIME_KEYS = ['release_time', 'releaseTime', 'ReleaseTime', 'time', 'Time'];
+const URL_KEYS = ['url', 'URL', 'link', 'Link'];
+
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const pad = (n: number) => String(n).padStart(2, '0');
+
+function pick(o: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = o[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+/** "8:30 AM" / "08:30" / "8:30 a.m. ET" → "08:30" (24 h). */
+export function clock(raw: string): string | null {
+  const m = /(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)?/i.exec(raw);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const mer = m[3]?.toLowerCase().replace(/\./g, '');
+  if (mer === 'pm' && h < 12) h += 12;
+  if (mer === 'am' && h === 12) h = 0;
+  return h < 24 && Number(m[2]) < 60 ? `${pad(h)}:${m[2]}` : null;
+}
+
+/** A date / date-time string → Eastern date (+ time if exact). */
+function readWhen(dateRaw: string, timeRaw: string | null, timesAreEastern: boolean): { dateET: string; timeET: string | null; exact: boolean } | null {
+  const isoZoned = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/.exec(dateRaw);
+  if (isoZoned && !Number.isNaN(Date.parse(dateRaw))) {
+    const et = utcToEastern(new Date(dateRaw).toISOString());
+    return { ...et, exact: true };
+  }
+  let dateET: string | null = null;
+  let inlineTime: string | null = null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}:\d{2}))?/.exec(dateRaw);
+  if (iso) {
+    dateET = `${iso[1]}-${iso[2]}-${iso[3]}`;
+    inlineTime = iso[4] ?? null;
+  } else {
+    const us = /([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})/.exec(dateRaw);
+    const mi = us ? MONTHS.findIndex((m) => m.startsWith(us[1].toLowerCase().slice(0, 3))) : -1;
+    if (us && mi >= 0) dateET = `${us[3]}-${pad(mi + 1)}-${pad(Number(us[2]))}`;
+    inlineTime = clock(dateRaw.replace(us?.[0] ?? '', ''));
+  }
+  if (!dateET) return null;
+  const t = timeRaw ? clock(timeRaw) : inlineTime ? clock(inlineTime) : null;
+  return t && timesAreEastern ? { dateET, timeET: t, exact: true } : { dateET, timeET: null, exact: false };
+}
+
+/** The first array of objects found in the document (the release list). */
+function findRecords(doc: unknown, depth = 0): Record<string, unknown>[] | null {
+  if (depth > 4 || doc == null) return null;
+  if (Array.isArray(doc)) return doc.length && doc.every((x) => x && typeof x === 'object' && !Array.isArray(x)) ? (doc as Record<string, unknown>[]) : null;
+  if (typeof doc === 'object') for (const v of Object.values(doc as Record<string, unknown>)) {
+    const r = findRecords(v, depth + 1);
+    if (r) return r;
+  }
+  return null;
+}
+
+export function parseBeaSchedule(json: unknown, retrievedAt: string, opts: { timesAreEastern?: boolean } = {}): EconomicEvent[] {
+  const records = findRecords(json);
+  if (!records) throw new FeedFormatError('no release list found in the BEA schedule');
+  const out: EconomicEvent[] = [];
+  for (const r of records) {
+    const title = pick(r, NAME_KEYS);
+    const dateRaw = pick(r, DATE_KEYS);
+    if (!title || !dateRaw) continue;
+    const when = readWhen(dateRaw, pick(r, TIME_KEYS), opts.timesAreEastern === true);
+    if (!when) continue;
+    out.push(
+      makeEvent({
+        source: 'bea',
+        title,
+        dateET: when.dateET,
+        timeET: when.timeET,
+        timeStatus: when.exact ? 'published' : 'unknown',
+        sourceUrl: pick(r, URL_KEYS) ?? BEA_SCHEDULE_PAGE,
+        retrievedAt,
+      }),
+    );
+  }
+  if (!out.length) throw new FeedFormatError('BEA schedule format not recognised (no record with a release name and date)');
+  return dedupeEvents(out);
+}
+
+/**
+ * BEA release schedule PAGE (https://www.bea.gov/news/schedule, HTML) — the default source.
+ * Read from the visible text, in order:
+ *
+ *   a year heading         "2026" / "Year 2026" / "2026 Release Schedule"
+ *   a release date         "October 29" / "Oct 29" / "October 29, 2026"
+ *   an optional time       "8:30 AM" (same line or the next one)
+ *   the release title      the next line that is not a date, time or column header
+ *
+ * Times: BEA publishes in Eastern time; a clock time is used only when the page says so
+ * ("ET", "EST", "EDT", "Eastern") or the operator confirmed it (`timesAreEastern`).
+ * Otherwise the release keeps its date and an unknown time (no alert is scheduled).
+ * A date without a year takes the year heading above it; with no heading, the year that
+ * puts it closest to the retrieval date. A page with no readable release is a format
+ * error — never an empty "no releases".
+ */
+const MONTH_DAY = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b(.*)$/i;
+const CLOCK_LINE = /^\d{1,2}:\d{2}\s*(a\.?m\.?|p\.?m\.?)?(\s*(et|est|edt|eastern(\s+time)?))?\.?$/i;
+const YEAR_LINE = /^(?:year\s+)?(20\d{2})(?:\s+(?:release\s+)?schedule)?$/i;
+const HEADERS = /^(date|time|release|releases|title|release title|release date|schedule|news release schedule|subscribe|print|share)$/i;
+const EASTERN_NOTE = /\b(eastern|e\.?s\.?t\.?|e\.?d\.?t\.?|ET)\b/;
+
+function inferYear(month: number, day: number, retrievedAt: string): number {
+  const ref = new Date(retrievedAt);
+  const y = ref.getUTCFullYear();
+  const options = [y - 1, y, y + 1].map((yy) => ({ yy, d: Math.abs(Date.UTC(yy, month, day) - ref.getTime()) }));
+  return options.sort((a, b) => a.d - b.d)[0]!.yy;
+}
+
+export function parseBeaSchedulePage(html: string, retrievedAt: string, opts: { timesAreEastern?: boolean } = {}): EconomicEvent[] {
+  const lines = pageText(html);
+  const eastern = opts.timesAreEastern === true || lines.some((l) => /\d{1,2}:\d{2}/.test(l) && EASTERN_NOTE.test(l)) || lines.some((l) => /release times?\b.*\b(eastern|ET)\b/i.test(l));
+  const out: EconomicEvent[] = [];
+  let year: number | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const y = YEAR_LINE.exec(lines[i]);
+    if (y) {
+      year = Number(y[1]);
+      continue;
+    }
+    const md = MONTH_DAY.exec(lines[i]);
+    if (!md) continue;
+    const mi = MONTHS.findIndex((m) => m.startsWith(md[1].toLowerCase().slice(0, 3)));
+    const day = Number(md[2]);
+    if (mi < 0 || day < 1 || day > 31) continue;
+    let rest = (md[4] ?? '').trim();
+    let time = rest ? clock(rest) : null;
+    if (time) rest = rest.replace(/^\s*\d{1,2}:\d{2}\s*(a\.?m\.?|p\.?m\.?)?\s*(et|est|edt|eastern( time)?)?/i, '').trim();
+    let j = i + 1;
+    if (!time && lines[j] && CLOCK_LINE.test(lines[j])) {
+      time = clock(lines[j]);
+      j++;
+    }
+    let title = rest.replace(/^[-–—:|]\s*/, '');
+    // The real page puts a split "N" + "ews" icon between the time and the title.
+    while (!title && j < lines.length && j <= i + 5) {
+      const l = lines[j];
+      if (MONTH_DAY.test(l) || YEAR_LINE.test(l)) break;
+      if (!CLOCK_LINE.test(l) && !HEADERS.test(l) && l.length > 3) title = l;
+      j++;
+    }
+    if (!title) continue;
+    const yy = md[3] ? Number(md[3]) : (year ?? inferYear(mi, day, retrievedAt));
+    const dateET = `${yy}-${pad(mi + 1)}-${pad(day)}`;
+    out.push(
+      makeEvent({
+        source: 'bea',
+        title,
+        dateET,
+        timeET: time && eastern ? time : null,
+        timeStatus: time && eastern ? 'published' : 'unknown',
+        sourceUrl: BEA_SCHEDULE_PAGE,
+        retrievedAt,
+      }),
+    );
+    i = j - 1;
+  }
+  if (!out.length) throw new FeedFormatError('BEA schedule page format not recognised (no release with a date and title)');
+  return dedupeEvents(out);
+}
+
+/** The configured BEA address may serve the official iCalendar (default), the HTML schedule page or a JSON schedule. */
+export function parseBea(body: string, retrievedAt: string, opts: { timesAreEastern?: boolean } = {}): EconomicEvent[] {
+  const t = body.trimStart();
+  if (t.startsWith('BEGIN:VCALENDAR')) return parseIcsCalendar(t, retrievedAt, 'bea', BEA_SCHEDULE_PAGE);
+  if (t.startsWith('{') || t.startsWith('[')) return parseBeaSchedule(JSON.parse(t), retrievedAt, opts);
+  return parseBeaSchedulePage(body, retrievedAt, opts);
+}

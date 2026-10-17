@@ -1,0 +1,812 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
+
+import { createDemoData, DEFAULT_PREFERENCES, DEFAULT_TRADING_RULES, EMPTY_DATA, type AppData } from '@/data/demo';
+import { setCustomInstruments } from '@/lib/engines/instrumentEngine';
+import { withJournalBalance } from '@/lib/engines/accountDetails';
+import { mergeRemoteAccounts, movesBalance, tradeInBalance, verifyPersisted } from '@/lib/engines/accountSync';
+import type { BrokerImportAction } from '@/lib/engines/journalEngine';
+import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
+import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
+import { realizedPnl, realizedR } from '@/lib/engines/riskEngine';
+import { syncService, type SyncEvent } from '@/services/syncService';
+import type {
+  Account,
+  AppAlert,
+  PendingTrade,
+  PracticeRun,
+  SetupCheck,
+  TradePlan,
+  DisciplineEvent,
+  Emotion,
+  ExperienceMode,
+  LearningProgress,
+  NotificationPrefs,
+  SessionReview,
+  Strategy,
+  Trade,
+  TradingRules,
+  TradingSession,
+  UserPreferences,
+} from '@/types/domain';
+import { dayKey } from '@/utils/dates';
+import { uuid } from '@/utils/id';
+
+import type { AppMode, AuthUser, PreTradeDraft } from './types';
+
+/**
+ * Cloud write status. `unsynced` = records saved on this device whose upload has not been
+ * confirmed by the server (`account:<id>`, `preferences`) — persisted, so a reload or an
+ * offline restart never lets older cloud data replace them.
+ */
+export interface SyncState {
+  unsynced: string[];
+  error: string | null;
+  lastSyncedAt: string | null;
+}
+const EMPTY_SYNC: SyncState = { unsynced: [], error: null, lastSyncedAt: null };
+
+/**
+ * Local persistence with the outcome of every write recorded, so a save can be confirmed
+ * by reading the stored copy back (`confirmAccountSaved`) instead of being assumed.
+ */
+const STORE_KEY = 'prop-guard-store';
+let lastWrite: Promise<void> = Promise.resolve();
+let lastWriteError: string | null = null;
+const trackedStorage = {
+  getItem: (name: string) => AsyncStorage.getItem(name),
+  setItem: (name: string, value: string) => {
+    // Promise.resolve().then: a storage call that throws synchronously is recorded too.
+    lastWrite = Promise.resolve()
+      .then(() => AsyncStorage.setItem(name, value))
+      .then(
+        () => {
+          lastWriteError = null;
+        },
+        (e: Error) => {
+          lastWriteError = e?.message || 'Storage write failed';
+        },
+      );
+    return lastWrite;
+  },
+  removeItem: (name: string) => AsyncStorage.removeItem(name),
+};
+
+/** Timestamp a saved account record. */
+const stamp = (a: Account): Account => ({ ...a, updatedAt: new Date().toISOString() });
+
+export interface AppState extends AppData {
+  mode: AppMode;
+  user: AuthUser | null;
+  hydrated: boolean;
+  draft: PreTradeDraft | null;
+  /** Library templates the trader opened recently (local only). */
+  recentTemplateIds: string[];
+  sync: SyncState;
+  /** Apply a sync event from the cloud write queue. */
+  onSyncEvent: (e: SyncEvent) => void;
+  /** Cloud data loaded after sign-in / reload: merged so unsynced local saves are kept and re-uploaded. */
+  hydrateFromCloud: (remote: Partial<AppData>) => void;
+
+  // lifecycle
+  setHydrated: () => void;
+  loadDemo: () => void;
+  startFresh: (mode: AppMode) => void;
+  replaceData: (data: Partial<AppData>) => void;
+  setUser: (user: AuthUser | null) => void;
+  signOutLocal: () => void;
+
+  // selection
+  setActiveAccount: (id: string) => void;
+  setActiveStrategy: (id: string | null) => void;
+
+  // accounts & rules
+  upsertAccount: (account: Account) => void;
+  deleteAccount: (id: string) => void;
+  setTradingRules: (rules: TradingRules) => void;
+  setPreferences: (prefs: Partial<UserPreferences>) => void;
+  setNotificationPref: (key: keyof NotificationPrefs, value: boolean) => void;
+  /** Update beginner learning progress (lessons, assessment, plan) from the latest state. */
+  updateLearning: (fn: (current: LearningProgress | undefined) => LearningProgress) => void;
+  /** Switch beginner / experienced. Only changes what the app shows — no data is touched. */
+  setExperienceMode: (mode: ExperienceMode) => void;
+
+  // strategies
+  upsertStrategy: (strategy: Strategy) => void;
+  deleteStrategy: (id: string) => void;
+  markTemplateUsed: (templateId: string) => void;
+
+  // trading
+  setDraft: (draft: PreTradeDraft | null) => void;
+  patchDraft: (patch: Partial<PreTradeDraft>) => void;
+  ensureSession: () => TradingSession | null;
+  /** Pre-trade session: "Strategy I'm trading today" — active strategy + today's session. */
+  setTodayStrategy: (strategyId: string) => void;
+  endSession: (sessionId: string, review: SessionReview | null) => void;
+  setSessionReview: (sessionId: string, review: SessionReview) => void;
+  openTrade: (trade: Trade) => void;
+  updateTrade: (id: string, patch: Partial<Trade>) => void;
+  closeTrade: (id: string, exitPrice: number, at?: Date, extra?: { pnl?: number | null; externalId?: string | null }) => Trade | null;
+  cancelTrade: (id: string) => void;
+  journalTrade: (id: string, entry: { notes: string; emotion: Emotion | null; setupRating: number | null }) => void;
+  deleteTrade: (id: string) => void;
+  /** Assign (or clear) the strategy on a journaled trade. */
+  assignTradeStrategy: (tradeId: string, strategyId: string | null) => void;
+
+  // discipline
+  recordEvent: (event: Omit<DisciplineEvent, 'id' | 'at'> & { at?: string }) => void;
+
+  // plans, practice, alerts, manual journal
+  savePlan: (plan: TradePlan) => void;
+  setPlanStatus: (id: string, status: TradePlan['status']) => void;
+  addPracticeRun: (run: PracticeRun) => void;
+  addPracticeAttempt: (attempt: PracticeAttempt) => void;
+  savePracticeLesson: (lesson: PracticeLesson) => void;
+  deletePracticeLesson: (id: string) => void;
+  /** Save (or update) an AI Setup Check. */
+  saveSetupCheck: (check: SetupCheck) => void;
+  /** Connect a Setup Check to the trade taken from it (both directions). */
+  linkSetupCheck: (checkId: string, tradeId: string) => void;
+  deleteSetupCheck: (id: string) => void;
+  pushAlert: (alert: Omit<AppAlert, 'id' | 'at' | 'read'> & { at?: string }) => void;
+  markAlertsRead: () => void;
+  /** Record an already-closed trade (manual or screenshot journaling). Updates balance. */
+  addJournalTrade: (trade: Trade) => void;
+
+  // copy trade (assistant only — nothing is executed)
+  upsertSourceTrader: (trader: SourceTrader) => void;
+  /** Archive (or restore) a source trader. History is kept. */
+  archiveSourceTrader: (id: string, archived: boolean) => void;
+  /**
+   * Log a copied trade. Live copies also open a journal trade (origin `copied`)
+   * that is closed through the usual live monitor / journal flows.
+   */
+  logCopyTrade: (copy: CopyTrade, trade: Trade | null) => void;
+  updateCopyTrade: (id: string, patch: Partial<CopyTrade>) => void;
+  deleteCopyTrade: (id: string) => void;
+  /** Save an account-copier setup (master, followers, state, activity). Never executes anything. */
+  upsertCopyGroup: (group: CopyGroup) => void;
+  deleteCopyGroup: (id: string) => void;
+
+  // automatic journaling
+  /** Create or refresh the pending journal entry for a checked trade. */
+  upsertPendingTrade: (pending: PendingTrade) => void;
+  setPendingStatus: (id: string, status: PendingTrade['status'], tradeId?: string | null) => void;
+  /** Turn a pending trade into its closed journal entry (records its rule events). */
+  completePending: (pendingId: string, trade: Trade) => void;
+  /** Apply a planned broker import (see journalEngine.planBrokerImport). */
+  applyBrokerImport: (actions: BrokerImportAction[]) => number;
+}
+
+const nowIso = () => new Date().toISOString();
+
+/** Snapshot the strategy name on the trade so the journal keeps it if the strategy is renamed or deleted. */
+function withStrategyName(trade: Trade, strategies: Strategy[]): Trade {
+  if (!trade.strategyId || trade.strategyName) return trade;
+  const name = strategies.find((x) => x.id === trade.strategyId)?.name;
+  return name ? { ...trade, strategyName: name } : trade;
+}
+
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      ...EMPTY_DATA,
+      mode: 'demo',
+      user: null,
+      hydrated: false,
+      draft: null,
+      recentTemplateIds: [],
+      sync: EMPTY_SYNC,
+
+      onSyncEvent: (e) =>
+        set((s) => {
+          const unsynced = new Set(s.sync.unsynced);
+          if (e.type === 'queued') unsynced.add(e.key);
+          if (e.type === 'synced') unsynced.delete(e.key);
+          return {
+            sync: {
+              unsynced: [...unsynced],
+              error: e.type === 'failed' ? e.error : e.type === 'synced' && unsynced.size === 0 ? null : s.sync.error,
+              lastSyncedAt: e.type === 'synced' ? new Date().toISOString() : s.sync.lastSyncedAt,
+            },
+          };
+        }),
+
+      hydrateFromCloud: (remote) => {
+        const s = get();
+        const accountIds = s.sync.unsynced.filter((k) => k.startsWith('account:')).map((k) => k.slice('account:'.length));
+        const merged = mergeRemoteAccounts(s.accounts, remote.accounts ?? [], accountIds);
+        // The active account the trader picked on this device wins while its upload is pending.
+        const keepActive = s.sync.unsynced.includes('preferences') && !!s.activeAccountId && merged.accounts.some((a) => a.id === s.activeAccountId);
+        const wanted = keepActive ? s.activeAccountId : (remote.activeAccountId ?? null);
+        set({
+          ...remote,
+          accounts: merged.accounts,
+          activeAccountId: wanted && merged.accounts.some((a) => a.id === wanted) ? wanted : (merged.accounts[0]?.id ?? null),
+          mode: 'cloud',
+        });
+        for (const a of merged.reupload) syncService.upsertAccount(a);
+        if (keepActive) syncService.savePreferences(get());
+      },
+
+      setHydrated: () => set({ hydrated: true }),
+
+      loadDemo: () => set({ ...createDemoData(), mode: 'demo', draft: null }),
+
+      startFresh: (mode) =>
+        set({
+          ...EMPTY_DATA,
+          sync: EMPTY_SYNC,
+          tradingRules: DEFAULT_TRADING_RULES,
+          preferences: { ...DEFAULT_PREFERENCES, email: get().user?.email ?? '' },
+          mode,
+          draft: null,
+        }),
+
+      replaceData: (data) => set({ ...data }),
+
+      setUser: (user) => set({ user, mode: user ? 'cloud' : get().mode }),
+
+      signOutLocal: () => set({ ...EMPTY_DATA, sync: EMPTY_SYNC, user: null, mode: 'demo', draft: null }),
+
+      setActiveAccount: (id) => {
+        set({ activeAccountId: id });
+        syncService.savePreferences(get());
+      },
+      setActiveStrategy: (id) => {
+        set({ activeStrategyId: id });
+        syncService.savePreferences(get());
+      },
+
+      upsertAccount: (input) => {
+        const account = stamp(input);
+        set((s) => {
+          const exists = s.accounts.some((a) => a.id === account.id);
+          return {
+            accounts: exists ? s.accounts.map((a) => (a.id === account.id ? account : a)) : [...s.accounts, account],
+            activeAccountId: s.activeAccountId ?? account.id,
+          };
+        });
+        syncService.upsertAccount(account);
+      },
+
+      deleteAccount: (id) => {
+        // Mirrors the database (on delete cascade): the account's trades, pending trades, plans,
+        // sessions and events go with it. Records that only point at it (Setup Checks, copy trades,
+        // copier groups, copy settings, primary account) are unlinked, so their history stays.
+        const unlinked = { copyTrades: [] as CopyTrade[], setupChecks: [] as SetupCheck[], copyGroups: [] as CopyGroup[], sourceTraders: [] as SourceTrader[] };
+        set((s) => {
+          const accounts = s.accounts.filter((a) => a.id !== id);
+          const copyTrades = s.copyTrades.map((c) => (c.accountId === id ? (unlinked.copyTrades.push({ ...c, accountId: null }), { ...c, accountId: null }) : c));
+          const setupChecks = s.setupChecks.map((c) => (c.accountId === id ? (unlinked.setupChecks.push({ ...c, accountId: null }), { ...c, accountId: null }) : c));
+          const copyGroups = s.copyGroups.map((g) => {
+            if (g.masterAccountId !== id && !g.followers.some((f) => f.accountId === id)) return g;
+            const next = { ...g, masterAccountId: g.masterAccountId === id ? null : g.masterAccountId, followers: g.followers.filter((f) => f.accountId !== id) };
+            unlinked.copyGroups.push(next);
+            return next;
+          });
+          const sourceTraders = s.sourceTraders.map((t) => {
+            if (t.settings.accountId !== id) return t;
+            const next = { ...t, settings: { ...t.settings, accountId: null } };
+            unlinked.sourceTraders.push(next);
+            return next;
+          });
+          const profile = s.preferences.tradingProfile;
+          return {
+            accounts,
+            activeAccountId: s.activeAccountId === id ? (accounts[0]?.id ?? null) : s.activeAccountId,
+            trades: s.trades.filter((t) => t.accountId !== id),
+            pendingTrades: s.pendingTrades.filter((t) => t.accountId !== id),
+            plans: s.plans.filter((t) => t.accountId !== id),
+            sessions: s.sessions.filter((t) => t.accountId !== id),
+            events: s.events.filter((e) => e.accountId !== id),
+            copyTrades,
+            setupChecks,
+            copyGroups,
+            sourceTraders,
+            ...(profile.primaryAccountId === id ? { preferences: { ...s.preferences, tradingProfile: { ...profile, primaryAccountId: null } } } : {}),
+          };
+        });
+        syncService.remove('accounts', id);
+        for (const c of unlinked.copyTrades) syncService.upsertCopyTrade(c);
+        for (const c of unlinked.setupChecks) syncService.upsertSetupCheck(c);
+        for (const g of unlinked.copyGroups) syncService.upsertCopyGroup(g);
+        for (const t of unlinked.sourceTraders) syncService.upsertSourceTrader(t);
+        syncService.savePreferences(get());
+      },
+
+      setTradingRules: (rules) => {
+        set({ tradingRules: rules });
+        syncService.savePreferences(get());
+      },
+
+      setPreferences: (prefs) => {
+        set((s) => ({ preferences: { ...s.preferences, ...prefs } }));
+        syncService.savePreferences(get());
+      },
+
+      updateLearning: (fn) => {
+        set((s) => ({ preferences: { ...s.preferences, learning: fn(s.preferences.learning) } }));
+        syncService.savePreferences(get());
+      },
+
+      setExperienceMode: (mode) => {
+        set((s) => ({ preferences: { ...s.preferences, tradingProfile: { ...s.preferences.tradingProfile, mode } } }));
+        syncService.savePreferences(get());
+      },
+
+      setNotificationPref: (key, value) => {
+        set((s) => ({
+          preferences: { ...s.preferences, notifications: { ...s.preferences.notifications, [key]: value } },
+        }));
+        syncService.savePreferences(get());
+      },
+
+      upsertStrategy: (strategy) => {
+        set((s) => {
+          const exists = s.strategies.some((x) => x.id === strategy.id);
+          return {
+            strategies: exists ? s.strategies.map((x) => (x.id === strategy.id ? strategy : x)) : [...s.strategies, strategy],
+            activeStrategyId: s.activeStrategyId ?? strategy.id,
+          };
+        });
+        syncService.upsertStrategy(strategy);
+      },
+
+      deleteStrategy: (id) => {
+        set((s) => ({
+          strategies: s.strategies.filter((x) => x.id !== id),
+          activeStrategyId: s.activeStrategyId === id ? (s.strategies.find((x) => x.id !== id)?.id ?? null) : s.activeStrategyId,
+        }));
+        syncService.remove('strategies', id);
+      },
+
+      markTemplateUsed: (templateId) =>
+        set((s) => ({ recentTemplateIds: [templateId, ...s.recentTemplateIds.filter((x) => x !== templateId)].slice(0, 8) })),
+
+      setDraft: (draft) => set({ draft }),
+      patchDraft: (patch) => set((s) => (s.draft ? { draft: { ...s.draft, ...patch } } : {})),
+
+      ensureSession: () => {
+        const { activeAccountId, activeStrategyId, sessions } = get();
+        if (!activeAccountId) return null;
+        const today = dayKey(new Date());
+        const existing = sessions.find((x) => x.accountId === activeAccountId && x.date === today && x.status === 'active');
+        if (existing) return existing;
+        const session: TradingSession = {
+          id: uuid(),
+          accountId: activeAccountId,
+          strategyId: activeStrategyId,
+          date: today,
+          startedAt: nowIso(),
+          endedAt: null,
+          status: 'active',
+          review: null,
+        };
+        set({ sessions: [...sessions, session] });
+        syncService.upsertSession(session);
+        return session;
+      },
+
+      setTodayStrategy: (strategyId) => {
+        get().setActiveStrategy(strategyId);
+        const session = get().ensureSession();
+        if (session && session.strategyId !== strategyId) {
+          const updated = { ...session, strategyId };
+          set((s) => ({ sessions: s.sessions.map((x) => (x.id === session.id ? updated : x)) }));
+          syncService.upsertSession(updated);
+        }
+      },
+
+      endSession: (sessionId, review) => {
+        let updated: TradingSession | undefined;
+        set((s) => ({
+          sessions: s.sessions.map((x) => {
+            if (x.id !== sessionId) return x;
+            updated = { ...x, status: 'ended', endedAt: nowIso(), review: review ?? x.review };
+            return updated;
+          }),
+        }));
+        if (updated) syncService.upsertSession(updated);
+      },
+
+      setSessionReview: (sessionId, review) => {
+        let updated: TradingSession | undefined;
+        set((s) => ({
+          sessions: s.sessions.map((x) => {
+            if (x.id !== sessionId) return x;
+            updated = { ...x, review };
+            return updated;
+          }),
+        }));
+        if (updated) syncService.upsertSession(updated);
+      },
+
+      openTrade: (input) => {
+        const trade = withStrategyName(input, get().strategies);
+        set((s) => ({ trades: [...s.trades, trade] }));
+        syncService.upsertTrade(trade);
+      },
+
+      updateTrade: (id, patch) => {
+        let updated: Trade | undefined;
+        const before = get().trades.find((t) => t.id === id);
+        // A changed result on a closed trade moves the account balance by the difference.
+        const delta = before && before.status === 'closed' && 'pnl' in patch ? (patch.pnl ?? 0) - (before.pnl ?? 0) : 0;
+        // A trade that closed before the balance was confirmed (screenshot / typed) is already in it.
+        const owner = before ? get().accounts.find((a) => a.id === before.accountId) : undefined;
+        const shifts = !!delta && !!owner && !!before && movesBalance(before) && !tradeInBalance(owner, before.closedAt);
+        set((s) => ({
+          trades: s.trades.map((t) => {
+            if (t.id !== id) return t;
+            updated = { ...t, ...patch };
+            return updated;
+          }),
+          accounts:
+            shifts && before
+              ? s.accounts.map((a) => (a.id === before.accountId ? stamp(withJournalBalance(a, Math.round((a.balance + delta) * 100) / 100, new Date().toISOString())) : a))
+              : s.accounts,
+        }));
+        if (updated) syncService.upsertTrade(updated);
+        if (shifts && before) {
+          const account = get().accounts.find((a) => a.id === before.accountId);
+          if (account) syncService.upsertAccount(account);
+        }
+      },
+
+      closeTrade: (id, exitPrice, at = new Date(), extra) => {
+        const trade = get().trades.find((t) => t.id === id);
+        if (!trade || trade.status !== 'open') return null;
+        const pnl = extra?.pnl ?? realizedPnl(trade.instrument, trade.direction, trade.entryPrice, exitPrice, trade.contracts);
+        const pts = trade.direction === 'long' ? exitPrice - trade.entryPrice : trade.entryPrice - exitPrice;
+        const closed: Trade = {
+          ...trade,
+          exitPrice,
+          pnl,
+          points: Math.round(pts * 100) / 100,
+          realizedR: realizedR(pnl, trade.riskDollars),
+          status: 'closed',
+          closedAt: at.toISOString(),
+          externalId: extra?.externalId ?? trade.externalId ?? null,
+        };
+        set((s) => ({
+          trades: s.trades.map((t) => (t.id === id ? closed : t)),
+          accounts: s.accounts.map((a) => {
+            if (a.id !== trade.accountId || tradeInBalance(a, closed.closedAt)) return a;
+            return stamp(withJournalBalance(a, Math.round((a.balance + pnl) * 100) / 100, new Date().toISOString()));
+          }),
+        }));
+        syncService.upsertTrade(closed);
+        const account = get().accounts.find((a) => a.id === trade.accountId);
+        if (account) syncService.upsertAccount(account);
+        if (trade.pendingId) get().setPendingStatus(trade.pendingId, 'completed', trade.id);
+        return closed;
+      },
+
+      cancelTrade: (id) => get().updateTrade(id, { status: 'cancelled', closedAt: nowIso() }),
+
+      journalTrade: (id, entry) => {
+        const trade = get().trades.find((t) => t.id === id);
+        if (!trade) return;
+        const firstTime = !trade.journaled;
+        get().updateTrade(id, { ...entry, journaled: true });
+        if (firstTime) {
+          get().recordEvent({
+            type: 'JOURNAL_COMPLETED',
+            category: 'journal',
+            accountId: trade.accountId,
+            tradeId: trade.id,
+            sessionId: trade.sessionId,
+            detail: 'Journal completed',
+          });
+        }
+      },
+
+      assignTradeStrategy: (tradeId, strategyId) => {
+        const name = strategyId ? (get().strategies.find((x) => x.id === strategyId)?.name ?? null) : null;
+        get().updateTrade(tradeId, { strategyId, strategyName: name });
+      },
+
+      deleteTrade: (id) => {
+        const trade = get().trades.find((t) => t.id === id);
+        // Deleting a closed trade removes its result from the balance (the high-water mark is kept:
+        // a past peak can't be un-made, and keeping it is the conservative choice for trailing drawdown).
+        const owner = trade ? get().accounts.find((a) => a.id === trade.accountId) : undefined;
+        // A trade already contained in the confirmed balance is removed from the journal only.
+        const pnl = trade && trade.status === 'closed' && trade.pnl != null && owner && movesBalance(trade) && !tradeInBalance(owner, trade.closedAt) ? trade.pnl : 0;
+        set((s) => ({
+          trades: s.trades.filter((t) => t.id !== id),
+          events: s.events.filter((e) => e.tradeId !== id),
+          accounts:
+            pnl && trade
+              ? s.accounts.map((a) => (a.id === trade.accountId ? stamp(withJournalBalance(a, Math.round((a.balance - pnl) * 100) / 100, new Date().toISOString())) : a))
+              : s.accounts,
+        }));
+        syncService.remove('trades', id);
+        if (pnl && trade) {
+          const account = get().accounts.find((a) => a.id === trade.accountId);
+          if (account) syncService.upsertAccount(account);
+        }
+      },
+
+      savePlan: (plan) => {
+        set((s) => ({ plans: [plan, ...s.plans.filter((p) => p.id !== plan.id)] }));
+        syncService.upsertPlan(plan);
+      },
+
+      setPlanStatus: (id, status) => {
+        let updated: TradePlan | undefined;
+        set((s) => ({
+          plans: s.plans.map((p) => {
+            if (p.id !== id) return p;
+            updated = { ...p, status };
+            return updated;
+          }),
+        }));
+        if (updated) syncService.upsertPlan(updated);
+      },
+
+      addPracticeAttempt: (attempt) => {
+        set((s) => ({ practiceAttempts: [attempt, ...s.practiceAttempts.filter((a) => a.id !== attempt.id)].slice(0, 1000) }));
+        syncService.upsertPracticeAttempt(attempt);
+      },
+
+      savePracticeLesson: (lesson) => {
+        set((s) => ({ practiceLessons: [lesson, ...s.practiceLessons.filter((l) => l.attemptId !== lesson.attemptId)].slice(0, 300) }));
+        syncService.upsertPracticeLesson(lesson);
+      },
+
+      deletePracticeLesson: (id) => {
+        set((s) => ({ practiceLessons: s.practiceLessons.filter((l) => l.id !== id) }));
+        syncService.remove('practice_lessons', id);
+      },
+
+      saveSetupCheck: (check) => {
+        const saved = { ...check, saved: true };
+        set((s) => ({ setupChecks: [saved, ...s.setupChecks.filter((c) => c.id !== check.id)].slice(0, 500) }));
+        syncService.upsertSetupCheck(saved);
+      },
+
+      linkSetupCheck: (checkId, tradeId) => {
+        const check = get().setupChecks.find((c) => c.id === checkId);
+        const trade = get().trades.find((t) => t.id === tradeId);
+        if (!check) return;
+        const linked = { ...check, tradeId };
+        set((s) => ({
+          setupChecks: s.setupChecks.map((c) => (c.id === checkId ? linked : c)),
+          trades: s.trades.map((t) => (t.id === tradeId ? { ...t, setupCheckId: checkId } : t)),
+        }));
+        syncService.upsertSetupCheck(linked);
+        if (trade) syncService.upsertTrade({ ...trade, setupCheckId: checkId });
+      },
+
+      deleteSetupCheck: (id) => {
+        set((s) => ({ setupChecks: s.setupChecks.filter((c) => c.id !== id), trades: s.trades.map((t) => (t.setupCheckId === id ? { ...t, setupCheckId: null } : t)) }));
+        syncService.remove('setup_checks', id);
+      },
+
+      addPracticeRun: (run) => {
+        set((s) => ({ practiceRuns: [run, ...s.practiceRuns].slice(0, 100) }));
+        syncService.insertPracticeRun(run);
+      },
+
+      pushAlert: (alert) =>
+        set((s) => ({ alerts: [{ ...alert, id: uuid(), at: alert.at ?? nowIso(), read: false }, ...s.alerts].slice(0, 60) })),
+
+      markAlertsRead: () => set((s) => ({ alerts: s.alerts.map((a) => (a.read ? a : { ...a, read: true })) })),
+
+      upsertSourceTrader: (trader) => {
+        const saved = { ...trader, updatedAt: nowIso() };
+        set((s) => ({ sourceTraders: [saved, ...s.sourceTraders.filter((t) => t.id !== trader.id)] }));
+        syncService.upsertSourceTrader(saved);
+      },
+      archiveSourceTrader: (id, archived) => {
+        const t = get().sourceTraders.find((x) => x.id === id);
+        if (!t) return;
+        get().upsertSourceTrader({ ...t, archived, isActive: archived ? false : t.isActive });
+      },
+      logCopyTrade: (copy, trade) => {
+        const linked: CopyTrade = trade ? { ...copy, tradeId: trade.id, mode: 'live' } : copy;
+        set((s) => ({ copyTrades: [linked, ...s.copyTrades.filter((c) => c.id !== copy.id)] }));
+        syncService.upsertCopyTrade(linked);
+        if (trade) get().openTrade({ ...trade, origin: 'copied', copyTradeId: linked.id, sourceTraderId: linked.sourceTraderId, sourceTraderName: linked.sourceTraderName });
+      },
+      updateCopyTrade: (id, patch) => {
+        let updated: CopyTrade | undefined;
+        set((s) => ({ copyTrades: s.copyTrades.map((c) => (c.id === id ? (updated = { ...c, ...patch, updatedAt: nowIso() }) : c)) }));
+        if (updated) syncService.upsertCopyTrade(updated);
+      },
+      deleteCopyTrade: (id) => {
+        set((s) => ({ copyTrades: s.copyTrades.filter((c) => c.id !== id), trades: s.trades.map((t) => (t.copyTradeId === id ? { ...t, copyTradeId: null } : t)) }));
+        syncService.remove('copy_trades', id);
+      },
+
+      upsertCopyGroup: (group) => {
+        set((s) => ({ copyGroups: [group, ...s.copyGroups.filter((g) => g.id !== group.id)] }));
+        syncService.upsertCopyGroup(group);
+      },
+      deleteCopyGroup: (id) => {
+        set((s) => ({ copyGroups: s.copyGroups.filter((g) => g.id !== id) }));
+        syncService.remove('copy_groups', id);
+      },
+
+      addJournalTrade: (input) => {
+        const trade = withStrategyName(input, get().strategies);
+        set((s) => ({
+          trades: [...s.trades, trade],
+          accounts: s.accounts.map((a) => {
+            // Trade screenshots never move the balance on their own (Home asks for an account update).
+            if (a.id !== trade.accountId || trade.pnl == null || !movesBalance(trade) || tradeInBalance(a, trade.closedAt)) return a;
+            return stamp(withJournalBalance(a, Math.round((a.balance + trade.pnl) * 100) / 100, new Date().toISOString()));
+          }),
+        }));
+        syncService.upsertTrade(trade);
+        const account = get().accounts.find((a) => a.id === trade.accountId);
+        if (account) syncService.upsertAccount(account);
+        const base = { accountId: trade.accountId, tradeId: trade.id, sessionId: trade.sessionId };
+        if (trade.journaled) get().recordEvent({ ...base, type: 'JOURNAL_COMPLETED', category: 'journal', detail: 'Journal completed', at: trade.closedAt ?? undefined });
+        if (trade.followedPlan === false) {
+          get().recordEvent({ ...base, type: 'STRATEGY_VIOLATION', category: 'entry', detail: 'Self-reported: did not follow the plan.', at: trade.openedAt });
+        }
+      },
+
+      upsertPendingTrade: (pending) => {
+        set((s) => ({ pendingTrades: [pending, ...s.pendingTrades.filter((p) => p.id !== pending.id)].slice(0, 200) }));
+        syncService.upsertPendingTrade(pending);
+      },
+
+      setPendingStatus: (id, status, tradeId) => {
+        let updated: PendingTrade | undefined;
+        set((s) => ({
+          pendingTrades: s.pendingTrades.map((p) => {
+            if (p.id !== id) return p;
+            updated = { ...p, status, tradeId: tradeId === undefined ? p.tradeId : tradeId, updatedAt: nowIso() };
+            return updated;
+          }),
+        }));
+        if (updated) syncService.upsertPendingTrade(updated);
+      },
+
+      completePending: (pendingId, trade) => {
+        const pending = get().pendingTrades.find((p) => p.id === pendingId);
+        if (!pending || pending.status === 'completed') return;
+        get().addJournalTrade(pending.setupCheckId ? { ...trade, setupCheckId: pending.setupCheckId } : trade);
+        if (pending.setupCheckId) get().linkSetupCheck(pending.setupCheckId, trade.id);
+        const base = { accountId: trade.accountId, tradeId: trade.id, sessionId: trade.sessionId, at: trade.openedAt };
+        if (pending.ruleEvents.length === 0 && pending.setupGrade) {
+          get().recordEvent({ ...base, type: 'RULE_FOLLOWED', category: 'strategy', detail: 'Trade taken as checked — all rules followed.' });
+        }
+        for (const e of pending.ruleEvents) get().recordEvent({ ...base, ...e });
+        get().setPendingStatus(pendingId, 'completed', trade.id);
+      },
+
+      applyBrokerImport: (actions) => {
+        let applied = 0;
+        for (const a of actions) {
+          if (a.kind === 'complete-pending') {
+            get().completePending(a.pendingId, a.trade);
+            applied++;
+          } else if (a.kind === 'close-open') {
+            if (get().closeTrade(a.tradeId, a.exitPrice, new Date(a.closedAt), { pnl: a.pnl, externalId: a.externalId })) applied++;
+          } else if (!get().trades.some((t) => t.externalId && t.externalId === a.trade.externalId)) {
+            get().addJournalTrade(a.trade);
+            applied++;
+          }
+        }
+        return applied;
+      },
+
+      recordEvent: (event) => {
+        const full: DisciplineEvent = { ...event, id: uuid(), at: event.at ?? nowIso() };
+        set((s) => ({ events: [...s.events, full] }));
+        syncService.insertEvent(full);
+      },
+    }),
+    {
+      name: STORE_KEY,
+      version: 8,
+      migrate: (persisted, version) => {
+        const st = (persisted ?? {}) as Partial<AppState>;
+        if (version < 3) {
+          return {
+            ...st,
+            plans: st.plans ?? [],
+            pendingTrades: st.pendingTrades ?? [],
+            practiceRuns: st.practiceRuns ?? [],
+            practiceAttempts: st.practiceAttempts ?? [],
+            practiceLessons: st.practiceLessons ?? [],
+            setupChecks: st.setupChecks ?? [],
+            alerts: st.alerts ?? [],
+            sourceTraders: st.sourceTraders ?? [],
+            copyTrades: st.copyTrades ?? [],
+            copyGroups: st.copyGroups ?? [],
+            preferences: {
+              ...DEFAULT_PREFERENCES,
+              ...(st.preferences ?? {}),
+              markets: (st.preferences?.markets ?? DEFAULT_PREFERENCES.markets).filter((m) => m !== 'OTHER'),
+              customInstruments: st.preferences?.customInstruments ?? [],
+              tradingProfile: { ...DEFAULT_PREFERENCES.tradingProfile, ...(st.preferences?.tradingProfile ?? {}) },
+            },
+          } as AppState;
+        }
+        // v7: Copy Trade collections (added empty to every older state).
+        // v8: account copier groups.
+        const copy = { sourceTraders: st.sourceTraders ?? [], copyTrades: st.copyTrades ?? [], copyGroups: st.copyGroups ?? [] };
+        if (version < 4) return { ...st, ...copy, pendingTrades: st.pendingTrades ?? [], setupChecks: st.setupChecks ?? [] } as AppState;
+        if (version < 5) return { ...st, ...copy, setupChecks: st.setupChecks ?? [] } as AppState;
+        // v6: Setup Check engine replaced — earlier (v1) checks used a different scoring model and are dropped.
+        if (version < 6) return { ...st, ...copy, setupChecks: (st.setupChecks ?? []).filter((c) => (c as { version?: number }).version === 2) } as AppState;
+        return { ...st, ...copy } as AppState;
+      },
+      storage: createJSONStorage(() => trackedStorage),
+      partialize: (s) => ({
+        accounts: s.accounts,
+        strategies: s.strategies,
+        trades: s.trades,
+        sessions: s.sessions,
+        events: s.events,
+        tradingRules: s.tradingRules,
+        preferences: s.preferences,
+        activeAccountId: s.activeAccountId,
+        activeStrategyId: s.activeStrategyId,
+        plans: s.plans,
+        pendingTrades: s.pendingTrades,
+        practiceRuns: s.practiceRuns,
+        practiceAttempts: s.practiceAttempts,
+        practiceLessons: s.practiceLessons,
+        setupChecks: s.setupChecks,
+        alerts: s.alerts,
+        sourceTraders: s.sourceTraders,
+        copyTrades: s.copyTrades,
+        copyGroups: s.copyGroups,
+        recentTemplateIds: s.recentTemplateIds,
+        sync: s.sync,
+        mode: s.mode,
+        user: s.user,
+        draft: s.draft,
+      }),
+      // Always mark hydrated — even if storage failed — so the app never hangs on launch.
+      onRehydrateStorage: () => () => {
+        useAppStore.setState({ hydrated: true });
+      },
+    },
+  ),
+);
+
+// Keep the instrument registry in sync with the trader's custom contracts so every
+// engine (risk, sizing, journaling, analytics) can price them.
+setCustomInstruments(useAppStore.getState().preferences.customInstruments);
+useAppStore.subscribe((s) => setCustomInstruments(s.preferences.customInstruments));
+
+// Cloud write outcomes → persisted sync status (which accounts are saved only on this device).
+syncService.subscribe((e) => useAppStore.getState().onSyncEvent(e));
+
+export type SaveConfirmation = { ok: true; cloud: 'synced' | 'pending' | 'local_only' } | { ok: false; error: string };
+
+/**
+ * Confirm an account save: wait for the device write, read the stored copy back and compare
+ * it with what was saved. With cloud sync, also waits (briefly) for the server to confirm —
+ * `pending` means saved on this device, upload still running or failed (never reported as synced).
+ */
+export async function confirmAccountSaved(expected: Account, opts: { waitForCloudMs?: number } = {}): Promise<SaveConfirmation> {
+  await lastWrite;
+  if (lastWriteError) return { ok: false, error: `Could not save on this device: ${lastWriteError}` };
+  let stored: Account | undefined;
+  try {
+    const raw = await AsyncStorage.getItem(STORE_KEY);
+    stored = raw ? (JSON.parse(raw) as { state?: { accounts?: Account[] } }).state?.accounts?.find((a) => a.id === expected.id) : undefined;
+  } catch (e) {
+    return { ok: false, error: `Could not read the saved account back: ${(e as Error).message}` };
+  }
+  const mismatch = verifyPersisted(expected, stored);
+  if (mismatch) return { ok: false, error: `Save not confirmed — ${mismatch}` };
+  if (!syncService.enabled) return { ok: true, cloud: 'local_only' };
+  const key = `account:${expected.id}`;
+  const deadline = Date.now() + (opts.waitForCloudMs ?? 4000);
+  await syncService.flush();
+  while (useAppStore.getState().sync.unsynced.includes(key) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return { ok: true, cloud: useAppStore.getState().sync.unsynced.includes(key) ? 'pending' : 'synced' };
+}
