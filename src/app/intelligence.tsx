@@ -13,6 +13,8 @@ import { useActiveAccount } from '@/hooks/useAppData';
 import { CONNECTION_LABEL, ET, FEED_LABEL, formatClock, formatDay, IMPACT_RULES, type EconCode, type SourceConnection } from '@/lib/engines/economicCalendar';
 import { alertLeads, LEAD_CHOICES } from '@/lib/engines/economicCalendar/alerts';
 import { firmNewsRule } from '@/lib/engines/economicCalendar/firmNewsRule';
+import { env } from '@/config/env';
+import { DIAGNOSTICS_BUILD, runConnectionTest } from '@/services/connectionDiagnostics';
 import { notificationService } from '@/services/notificationService';
 
 const CONNECTION_TONE: Record<SourceConnection, 'positive' | 'warning' | 'danger'> = { connected: 'positive', stale: 'warning', unavailable: 'danger' };
@@ -61,6 +63,17 @@ export default function IntelligenceScreen() {
   const setShowMedium = useEconomicCalendarStore((s) => s.setShowMedium);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [showWhy, setShowWhy] = useState(false);
+  const [testLines, setTestLines] = useState<string[] | null>(null);
+  const [testing, setTesting] = useState(false);
+  const runTest = async () => {
+    setTesting(true);
+    setTestLines(null);
+    try {
+      setTestLines(await runConnectionTest(env.supabaseUrl, env.supabaseAnonKey));
+    } finally {
+      setTesting(false);
+    }
+  };
   const hasData = cal.events.length > 0 || cal.statuses.length > 0;
 
   const toggleAlerts = async (on: boolean) => {
@@ -339,6 +352,16 @@ export default function IntelligenceScreen() {
             Connection details: {cal.errorDetail}
           </AppText>
         ) : null}
+        {!notConnected && cal.connection === 'error' ? (
+          <View style={styles.gapSm}>
+            <Button label={testing ? 'Testing the connection…' : 'Run connection test'} variant="ghost" size="md" icon="pulse-outline" disabled={testing} onPress={() => void runTest()} />
+            {testLines ? (
+              <AppText variant="caption" tone="secondary" selectable accessibilityLabel="Connection test results">
+                {testLines.join('\n')}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
         {notConnected ? null : (
           <AppText variant="caption" tone="tertiary">
             {cal.serverLastSyncAt
@@ -367,6 +390,9 @@ export default function IntelligenceScreen() {
             </View>
           ))}
         </View>
+        <AppText variant="caption" tone="tertiary">
+          Build {DIAGNOSTICS_BUILD}
+        </AppText>
         {cal.freshness.degraded && hasData ? (
           <AppText variant="caption" tone="warning">
             Releases from a source that is out of date or not configured may be missing. Prop Guard never fills the gap with guesses.

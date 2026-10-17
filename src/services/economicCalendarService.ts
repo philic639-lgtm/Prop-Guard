@@ -21,7 +21,9 @@ const UPDATES_DAYS = 14;
 const UNREACHABLE = 'The calendar server could not be reached. Check your connection — a preview that blocks outside connections cannot load it.';
 
 /** What the request was (address only — never the key or query) and how the browser answered. */
-function failure(browserError: string, startedAt: string): { status: 'error'; message: string; detail: string } {
+async function failure(browserError: string, startedAt: string): Promise<{ status: 'error'; message: string; detail: string }> {
+  // Browsers dispatch a security-policy report shortly after the failed request.
+  await new Promise((r) => setTimeout(r, 300));
   const url = `${env.supabaseUrl}/rest/v1/economic_events`;
   const block = policyBlockFor(url, startedAt);
   const detail = [`Request: GET ${url}`, `Browser error: ${browserError.slice(0, 160)}`, block ? `Blocked by this page's Content Security Policy (${block.directive}) for ${block.blockedOrigin}` : null].filter(Boolean).join(' · ');
@@ -46,10 +48,10 @@ export async function readEconomicCalendar(client: SupabaseClient | null = defau
       client.from('economic_updates').select('*').gte('published_at', new Date(now.getTime() - UPDATES_DAYS * 86_400_000).toISOString()).order('published_at', { ascending: false }).limit(30),
     ]);
     const err = ev.error ?? st.error;
-    if (err) return /fetch|network|load failed/i.test(err.message) ? failure(err.message, startedAt) : { status: 'error', message: `The calendar server answered with an error (${err.message.slice(0, 120)}).`, detail: `Request: GET ${env.supabaseUrl}/rest/v1/economic_events · Server error: ${err.message.slice(0, 160)}` };
+    if (err) return /fetch|network|load failed/i.test(err.message) ? await failure(err.message, startedAt) : { status: 'error', message: `The calendar server answered with an error (${err.message.slice(0, 120)}).`, detail: `Request: GET ${env.supabaseUrl}/rest/v1/economic_events · Server error: ${err.message.slice(0, 160)}` };
     // The update list is optional: a backend without it (older migration) still serves the calendar.
     return { status: 'ok', events: (ev.data ?? []).map(rowToEvent), statuses: (st.data ?? []).map(rowToStatus), updates: up.error ? [] : (up.data ?? []).map(rowToUpdate), fetchedAt: now.toISOString() };
   } catch (e) {
-    return failure(e instanceof Error ? `${e.name}: ${e.message}` : String(e), startedAt);
+    return await failure(e instanceof Error ? `${e.name}: ${e.message}` : String(e), startedAt);
   }
 }
