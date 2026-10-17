@@ -205,6 +205,10 @@ describe('request headers', () => {
     expect(ua).toMatch(/^[\x20-\x7E]+$/);
     expect(ua).toContain('contact phil@example.com me caf)');
     expect(headerSafe('\u00e9\u00e9')).toBeNull();
+    // A stored validator with a stray character is cleaned too.
+    let etag = '';
+    await readUpdateFeed('bls_updates', cfg, async (_u, init) => ((etag = init.headers['If-None-Match']), { status: 304, headers: { get: () => null }, text: async () => '' }), { etag: '"v1\u2019"', lastModified: null }, new Date(AT));
+    expect(etag).toBe('"v1"');
   });
 });
 

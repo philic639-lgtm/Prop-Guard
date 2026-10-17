@@ -80,6 +80,8 @@ async function fetchFeed(url: string, accept: string, cfg: SourceConfig, fetchIm
   };
   if (prev.etag) headers['If-None-Match'] = prev.etag;
   if (prev.lastModified) headers['If-Modified-Since'] = prev.lastModified;
+  // Every value must be a valid HTTP header (ASCII): one bad character fails the request before it is sent.
+  for (const k of Object.keys(headers)) headers[k] = headers[k].replace(/\s+/g, ' ').replace(/[^\x20-\x7E]/g, '').trim();
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = setTimeout(() => controller?.abort(), TIMEOUT_MS);
   try {

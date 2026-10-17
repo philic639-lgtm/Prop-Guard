@@ -21,17 +21,21 @@ import { planSourceSync, planUpdateSync } from '../_shared/economicCalendar/sync
 import type { EconSource, UpdateFeed } from '../_shared/economicCalendar/types.ts';
 
 const SECRET = Deno.env.get('ECON_SYNC_SECRET') ?? '';
+/** Shown by GET and in every run's summary, so the deployed version can be checked without secrets. */
+const VERSION = 'econ-sync-2026-10-17.2';
 const SOURCES: EconSource[] = ['bls', 'bea', 'fed'];
 const UPDATE_FEEDS: UpdateFeed[] = ['bls_updates', 'fed_updates'];
 
 Deno.serve(async (req) => {
+  // GET: version only (no data, no secrets) — lets the operator confirm which code is deployed.
+  if (req.method === 'GET') return new Response(JSON.stringify({ function: 'economic-calendar-sync', version: VERSION }), { headers: { 'Content-Type': 'application/json' } });
   if (req.method !== 'POST') return new Response('method not allowed', { status: 405 });
   if (!SECRET || req.headers.get('x-sync-secret') !== SECRET) return new Response('unauthorized', { status: 401 });
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
   const cfg = sourceConfigFromEnv((k) => Deno.env.get(k));
   const now = new Date();
   const todayET = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(now);
-  const summary: Record<string, unknown> = {};
+  const summary: Record<string, unknown> = { version: VERSION };
 
   for (const source of SOURCES) {
     const [{ data: statusRow }, { data: storedRows }] = await Promise.all([
