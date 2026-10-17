@@ -14,6 +14,8 @@ export type CalendarRead = { status: 'ok'; events: EconomicEvent[]; statuses: Fe
 const DAYS_BACK = 1;
 const DAYS_AHEAD = 21;
 const UPDATES_DAYS = 14;
+/** Offline, or a host that blocks outside connections (e.g. a sandboxed preview frame). */
+const UNREACHABLE = 'The calendar server could not be reached. Check your connection — a preview that blocks outside connections cannot load it.';
 
 export async function readEconomicCalendar(client: SupabaseClient | null = defaultClient, now = new Date()): Promise<CalendarRead> {
   if (!client) return { status: 'not_configured' };
@@ -24,10 +26,11 @@ export async function readEconomicCalendar(client: SupabaseClient | null = defau
       client.from('economic_feed_status').select('*'),
       client.from('economic_updates').select('*').gte('published_at', new Date(now.getTime() - UPDATES_DAYS * 86_400_000).toISOString()).order('published_at', { ascending: false }).limit(30),
     ]);
-    if (ev.error || st.error) return { status: 'error', message: 'The calendar could not be loaded. Try again later.' };
+    const err = ev.error ?? st.error;
+    if (err) return { status: 'error', message: /fetch|network|load failed/i.test(err.message) ? UNREACHABLE : `The calendar server answered with an error (${err.message.slice(0, 120)}).` };
     // The update list is optional: a backend without it (older migration) still serves the calendar.
     return { status: 'ok', events: (ev.data ?? []).map(rowToEvent), statuses: (st.data ?? []).map(rowToStatus), updates: up.error ? [] : (up.data ?? []).map(rowToUpdate), fetchedAt: now.toISOString() };
   } catch {
-    return { status: 'error', message: 'The calendar could not be loaded — check your connection.' };
+    return { status: 'error', message: UNREACHABLE };
   }
 }

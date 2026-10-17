@@ -159,4 +159,25 @@ describe('reading the calendar from the backend', () => {
     expect(ok).toMatchObject({ status: 'ok', events: [{ id: row.id, startsAt: '2026-11-13T13:30:00.000Z', kind: 'scheduled_release' }], statuses: [{ source: 'bls', lastSuccessAt: '2026-11-10T06:23:00.000Z', coverageUntil: '2026-12-31' }] });
     expect(await readEconomicCalendar(fake({ data: null, error: { message: 'x' } }, { data: [], error: null }), NOW)).toMatchObject({ status: 'error' });
   });
+
+  it('a blocked or offline request says the server could not be reached (never a silent "never")', async () => {
+    const net = await readEconomicCalendar(fake({ data: null, error: { message: 'TypeError: Failed to fetch' } }, { data: null, error: { message: 'TypeError: Failed to fetch' } }), NOW);
+    expect(net).toMatchObject({ status: 'error', message: expect.stringMatching(/could not be reached/) });
+    const thrown = await readEconomicCalendar({ from: () => { throw new Error('blocked'); } } as never, NOW);
+    expect(thrown).toMatchObject({ status: 'error', message: expect.stringMatching(/could not be reached/) });
+    const server = await readEconomicCalendar(fake({ data: null, error: { message: 'permission denied' } }, { data: [], error: null }), NOW);
+    expect(server).toMatchObject({ status: 'error', message: expect.stringMatching(/answered with an error \(permission denied\)/) });
+  });
+});
+
+describe('device check time (store)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useEconomicCalendarStore } = require('@/features/intelligence/useEconomicCalendarStore') as typeof import('@/features/intelligence/useEconomicCalendarStore');
+  it('a successful read sets both "last refreshed" and "last checked"; a failure sets only "last checked" with the error', () => {
+    const st = useEconomicCalendarStore.getState();
+    st.setCalendar({ events: [], statuses: [], updates: [], fetchedAt: '2026-10-17T10:52:00.000Z' });
+    expect(useEconomicCalendarStore.getState()).toMatchObject({ fetchedAt: '2026-10-17T10:52:00.000Z', lastCheckedAt: '2026-10-17T10:52:00.000Z', connection: 'connected' });
+    st.setConnection('error', 'The calendar server could not be reached.', '2026-10-17T11:00:00.000Z');
+    expect(useEconomicCalendarStore.getState()).toMatchObject({ fetchedAt: '2026-10-17T10:52:00.000Z', lastCheckedAt: '2026-10-17T11:00:00.000Z', connection: 'error', error: 'The calendar server could not be reached.' });
+  });
 });

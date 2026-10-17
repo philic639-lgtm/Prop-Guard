@@ -53,6 +53,7 @@ export function useEconomicCalendar(opts: { autoRefresh?: boolean } = {}) {
   const events = useEconomicCalendarStore((s) => s.events);
   const statuses = useEconomicCalendarStore((s) => s.statuses);
   const fetchedAt = useEconomicCalendarStore((s) => s.fetchedAt);
+  const lastCheckedAt = useEconomicCalendarStore((s) => s.lastCheckedAt);
   const connection = useEconomicCalendarStore((s) => s.connection);
   const error = useEconomicCalendarStore((s) => s.error);
   const loading = useEconomicCalendarStore((s) => s.loading);
@@ -79,8 +80,10 @@ export function useEconomicCalendar(opts: { autoRefresh?: boolean } = {}) {
   const risk = useMemo(() => newsRisk(events, now, cfg), [events, now, cfg]);
   const list = useMemo(() => upcoming(events, now, 14, cfg), [events, now, cfg]);
   const freshness = useMemo(() => calendarFreshness(statuses, now), [statuses, now]);
+  // The backend's newest successful sync of any official source (each source's own time is in `freshness`).
+  const serverLastSyncAt = useMemo(() => statuses.map((x) => x.lastSuccessAt).filter((x): x is string => !!x).sort().pop() ?? null, [statuses]);
   const updatesFreshness = useMemo(() => calendarFreshness(statuses, now, 36, ['bls_updates', 'fed_updates']), [statuses, now]);
   const refresh = useCallback(() => refreshEconomicCalendar(), []);
 
-  return { events, statuses, updates, fetchedAt, connection, error, loading, risk, list, freshness, updatesFreshness, tradesIndexFutures, cfg, now, refresh };
+  return { events, statuses, updates, fetchedAt, lastCheckedAt, serverLastSyncAt, connection, error, loading, risk, list, freshness, updatesFreshness, tradesIndexFutures, cfg, now, refresh };
 }

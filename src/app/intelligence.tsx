@@ -1,8 +1,8 @@
-import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 
-import { AppHeader, AppText, Button, Card, Chip, EmptyState, LoadingState, Screen, SectionHeader, StatusBadge, ToggleRow } from '@/components/ui';
+import { AppHeader, AppText, Button, Card, Chip, EmptyState, HeaderIconButton, LoadingState, Screen, SectionHeader, StatusBadge, ToggleRow } from '@/components/ui';
 import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
 import { EventRow } from '@/features/intelligence/EventRow';
@@ -10,12 +10,15 @@ import { NewsRiskBanner } from '@/features/intelligence/NewsRiskBanner';
 import { syncEconAlerts, useEconomicCalendar } from '@/features/intelligence/useEconomicCalendar';
 import { useEconomicCalendarStore } from '@/features/intelligence/useEconomicCalendarStore';
 import { useActiveAccount } from '@/hooks/useAppData';
-import { CONNECTION_LABEL, FEED_LABEL, formatClock, formatDay, IMPACT_RULES, type EconCode, type SourceConnection } from '@/lib/engines/economicCalendar';
+import { CONNECTION_LABEL, ET, FEED_LABEL, formatClock, formatDay, IMPACT_RULES, type EconCode, type SourceConnection } from '@/lib/engines/economicCalendar';
 import { alertLeads, LEAD_CHOICES } from '@/lib/engines/economicCalendar/alerts';
 import { firmNewsRule } from '@/lib/engines/economicCalendar/firmNewsRule';
 import { notificationService } from '@/services/notificationService';
 
 const CONNECTION_TONE: Record<SourceConnection, 'positive' | 'warning' | 'danger'> = { connected: 'positive', stale: 'warning', unavailable: 'danger' };
+
+/** Sync timestamps are always shown in New York time (the official calendars' zone), with EST / EDT. */
+const nyStamp = (iso: string) => `${formatDay(iso, ET)}, ${formatClock(iso, ET)}`;
 
 const leadText = (leads: number[]) => leads.map((m) => `${m} min`).join(' and ');
 
@@ -30,7 +33,25 @@ function ago(iso: string | null, now: Date): string {
 
 /** Prop Guard Intelligence — scheduled economic releases for ES / MES / NQ / MNQ traders. */
 export default function IntelligenceScreen() {
-  const cal = useEconomicCalendar();
+  // This screen refreshes itself: on open, whenever it regains focus, and when the app returns to the foreground.
+  const cal = useEconomicCalendar({ autoRefresh: false });
+  const lastAsked = useRef(0);
+  const { refresh } = cal;
+  const refreshNow = useCallback(() => {
+    lastAsked.current = Date.now();
+    void refresh();
+  }, [refresh]);
+  useFocusEffect(
+    useCallback(() => {
+      if (Date.now() - lastAsked.current > 5_000) refreshNow();
+    }, [refreshNow]),
+  );
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && Date.now() - lastAsked.current > 5_000) refreshNow();
+    });
+    return () => sub.remove();
+  }, [refreshNow]);
   const notConnected = cal.connection === 'not_configured';
   const account = useActiveAccount();
   const firm = useMemo(() => firmNewsRule(account), [account]);
@@ -63,10 +84,17 @@ export default function IntelligenceScreen() {
   const zone = cal.cfg.displayZone;
   const notLive = cal.freshness.perSource.filter((p) => p.connection !== 'connected');
 
-  const header = <AppHeader title="Intelligence" subtitle="Economic calendar · scheduled releases" back />;
+  const header = (
+    <AppHeader
+      title="Intelligence"
+      subtitle="Economic calendar · scheduled releases"
+      back
+      right={notConnected ? undefined : <HeaderIconButton icon="refresh" label={cal.loading ? 'Refreshing the calendar' : 'Refresh the calendar'} onPress={refreshNow} />}
+    />
+  );
 
   return (
-    <Screen header={header} refreshing={cal.loading} onRefresh={() => void cal.refresh()}>
+    <Screen header={header} refreshing={cal.loading} onRefresh={refreshNow}>
       <View style={styles.scope}>
         <Icon name="information-circle-outline" size={16} color={colors.textTertiary} />
         <AppText variant="caption" tone="tertiary" style={styles.flex}>
@@ -91,7 +119,7 @@ export default function IntelligenceScreen() {
             title="Calendar unavailable"
             message={cal.error ?? (cal.connection === 'connected' ? 'The server has not loaded the official calendars yet, so upcoming releases are unknown — not “none”. Check the official calendars before trading.' : 'The calendar could not be loaded. No releases are shown rather than guessed.')}
             actionLabel="Try again"
-            onAction={() => void cal.refresh()}
+            onAction={refreshNow}
           />
         </Card>
       ) : (
@@ -284,10 +312,37 @@ export default function IntelligenceScreen() {
 
       <SectionHeader title="Calendar data" />
       <Card>
-        <AppText variant="bodyStrong">Last refreshed {ago(cal.freshness.lastRefreshedAt, cal.now)}</AppText>
-        <AppText variant="caption" tone="tertiary">
-          This device last checked {ago(cal.fetchedAt, cal.now)}. The server refreshes the official calendars a few times a day.
-        </AppText>
+        {notConnected ? (
+          <AppText variant="bodyStrong" accessibilityRole="alert">
+            Not connected — this build has no calendar server settings, so nothing can be loaded.
+          </AppText>
+        ) : cal.fetchedAt ? (
+          <AppText variant="bodyStrong">
+            Last refreshed {nyStamp(cal.fetchedAt)} ({ago(cal.fetchedAt, cal.now)})
+          </AppText>
+        ) : cal.loading ? (
+          <AppText variant="bodyStrong">Refreshing the calendar…</AppText>
+        ) : (
+          <AppText variant="bodyStrong" tone="danger" accessibilityRole="alert">
+            Couldn’t load the calendar{cal.error ? `: ${cal.error}` : '.'}
+          </AppText>
+        )}
+        {notConnected ? null : (
+          <AppText variant="caption" tone={cal.connection === 'error' ? 'warning' : 'tertiary'}>
+            {cal.lastCheckedAt
+              ? `This device last checked ${nyStamp(cal.lastCheckedAt)} — ${cal.connection === 'error' ? (cal.fetchedAt ? `failed (${(cal.error ?? 'unknown error').replace(/\.$/, '')}); showing the copy from the last refresh.` : 'failed (see above).') : 'OK.'}`
+              : 'This device is checking now.'}
+          </AppText>
+        )}
+        {notConnected ? null : (
+          <AppText variant="caption" tone="tertiary">
+            {cal.serverLastSyncAt
+              ? `Server’s last successful sync of the official sources: ${nyStamp(cal.serverLastSyncAt)} (${ago(cal.serverLastSyncAt, cal.now)}). It syncs every 6 hours.`
+              : cal.fetchedAt
+                ? 'The server has not completed a sync of the official sources yet.'
+                : 'Server sync time appears once the calendar loads.'}
+          </AppText>
+        )}
         <View style={styles.sources}>
           {[...cal.freshness.perSource, ...cal.updatesFreshness.perSource].map((p) => (
             <View key={p.source} style={styles.gapXs}>
@@ -300,7 +355,7 @@ export default function IntelligenceScreen() {
               </View>
               {notConnected ? null : (
                 <AppText variant="caption" tone="tertiary">
-                  Last successful update: {p.lastSuccessAt ? `${formatDay(p.lastSuccessAt, zone)}, ${formatClock(p.lastSuccessAt, zone)} (${ago(p.lastSuccessAt, cal.now)})` : 'never'}
+                  Last successful sync: {p.lastSuccessAt ? `${nyStamp(p.lastSuccessAt)} (${ago(p.lastSuccessAt, cal.now)})` : 'none yet on the server'}
                   {p.connection !== 'connected' && p.error ? ` · last attempt: ${p.error}` : ''}
                 </AppText>
               )}
@@ -312,7 +367,7 @@ export default function IntelligenceScreen() {
             Releases from a source that is out of date or not configured may be missing. Prop Guard never fills the gap with guesses.
           </AppText>
         ) : null}
-        {notConnected ? null : <Button label={cal.loading ? 'Refreshing…' : 'Refresh now'} variant="secondary" size="md" icon="refresh" disabled={cal.loading} onPress={() => void cal.refresh()} style={styles.mt} />}
+        {notConnected ? null : <Button label={cal.loading ? 'Refreshing…' : 'Refresh now'} variant="secondary" size="md" icon="refresh" disabled={cal.loading} onPress={refreshNow} style={styles.mt} />}
       </Card>
     </Screen>
   );
