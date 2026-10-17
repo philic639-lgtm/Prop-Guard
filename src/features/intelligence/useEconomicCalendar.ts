@@ -29,7 +29,7 @@ export function refreshEconomicCalendar(): Promise<void> {
     const r = await readEconomicCalendar();
     if (r.status === 'ok') st.setCalendar(r);
     else if (r.status === 'not_configured') st.setConnection('not_configured');
-    else st.setConnection('error', r.message); // cached events stay, marked by their age
+    else st.setConnection('error', r.message, undefined, r.detail ?? null); // cached events stay, marked by their age
     await syncEconAlerts().catch(() => null);
   })().finally(() => {
     st.setLoading(false);
@@ -56,6 +56,7 @@ export function useEconomicCalendar(opts: { autoRefresh?: boolean } = {}) {
   const lastCheckedAt = useEconomicCalendarStore((s) => s.lastCheckedAt);
   const connection = useEconomicCalendarStore((s) => s.connection);
   const error = useEconomicCalendarStore((s) => s.error);
+  const errorDetail = useEconomicCalendarStore((s) => s.errorDetail);
   const loading = useEconomicCalendarStore((s) => s.loading);
   const showMedium = useEconomicCalendarStore((s) => s.showMedium);
   const markets = useAppStore((s) => s.preferences.markets);
@@ -85,5 +86,5 @@ export function useEconomicCalendar(opts: { autoRefresh?: boolean } = {}) {
   const updatesFreshness = useMemo(() => calendarFreshness(statuses, now, 36, ['bls_updates', 'fed_updates']), [statuses, now]);
   const refresh = useCallback(() => refreshEconomicCalendar(), []);
 
-  return { events, statuses, updates, fetchedAt, lastCheckedAt, serverLastSyncAt, connection, error, loading, risk, list, freshness, updatesFreshness, tradesIndexFutures, cfg, now, refresh };
+  return { events, statuses, updates, fetchedAt, lastCheckedAt, serverLastSyncAt, connection, error, errorDetail, loading, risk, list, freshness, updatesFreshness, tradesIndexFutures, cfg, now, refresh };
 }

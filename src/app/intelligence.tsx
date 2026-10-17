@@ -334,6 +334,11 @@ export default function IntelligenceScreen() {
               : 'This device is checking now.'}
           </AppText>
         )}
+        {!notConnected && cal.connection === 'error' && cal.errorDetail ? (
+          <AppText variant="caption" tone="tertiary" selectable>
+            Connection details: {cal.errorDetail}
+          </AppText>
+        ) : null}
         {notConnected ? null : (
           <AppText variant="caption" tone="tertiary">
             {cal.serverLastSyncAt

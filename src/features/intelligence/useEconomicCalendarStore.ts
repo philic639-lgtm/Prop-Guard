@@ -23,12 +23,14 @@ interface EconState {
   lastCheckedAt: string | null;
   connection: CalendarConnection;
   error: string | null;
+  /** Request address + browser error of the last failure (no credentials). */
+  errorDetail: string | null;
   loading: boolean;
   alerts: EconAlertSettings;
   /** Min impact for the list / banners ("high" by default; "medium" shows more). */
   showMedium: boolean;
   setCalendar: (p: { events: EconomicEvent[]; statuses: FeedStatus[]; updates: OfficialUpdate[]; fetchedAt: string }) => void;
-  setConnection: (c: CalendarConnection, error?: string | null, at?: string) => void;
+  setConnection: (c: CalendarConnection, error?: string | null, at?: string, detail?: string | null) => void;
   setLoading: (v: boolean) => void;
   setAlerts: (p: Partial<EconAlertSettings>) => void;
   setShowMedium: (v: boolean) => void;
@@ -44,11 +46,12 @@ export const useEconomicCalendarStore = create<EconState>()(
       lastCheckedAt: null,
       connection: 'never',
       error: null,
+      errorDetail: null,
       loading: false,
       alerts: DEFAULT_ALERT_SETTINGS,
       showMedium: false,
-      setCalendar: ({ events, statuses, updates, fetchedAt }) => set({ events, statuses, updates, fetchedAt, lastCheckedAt: fetchedAt, connection: 'connected', error: null }),
-      setConnection: (connection, error = null, at = new Date().toISOString()) => set({ connection, error, lastCheckedAt: at }),
+      setCalendar: ({ events, statuses, updates, fetchedAt }) => set({ events, statuses, updates, fetchedAt, lastCheckedAt: fetchedAt, connection: 'connected', error: null, errorDetail: null }),
+      setConnection: (connection, error = null, at = new Date().toISOString(), errorDetail = null) => set({ connection, error, errorDetail, lastCheckedAt: at }),
       setLoading: (loading) => set({ loading }),
       setAlerts: (p) => set((s) => ({ alerts: { ...s.alerts, ...p } })),
       setShowMedium: (showMedium) => set({ showMedium }),
@@ -63,7 +66,7 @@ export const useEconomicCalendarStore = create<EconState>()(
         return p as never;
       },
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (s) => ({ events: s.events, statuses: s.statuses, updates: s.updates, fetchedAt: s.fetchedAt, lastCheckedAt: s.lastCheckedAt, connection: s.connection, error: s.error, alerts: s.alerts, showMedium: s.showMedium }),
+      partialize: (s) => ({ events: s.events, statuses: s.statuses, updates: s.updates, fetchedAt: s.fetchedAt, lastCheckedAt: s.lastCheckedAt, connection: s.connection, error: s.error, errorDetail: s.errorDetail, alerts: s.alerts, showMedium: s.showMedium }),
     },
   ),
 );

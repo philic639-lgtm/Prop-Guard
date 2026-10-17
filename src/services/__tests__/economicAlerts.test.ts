@@ -165,6 +165,18 @@ describe('reading the calendar from the backend', () => {
     expect(net).toMatchObject({ status: 'error', message: expect.stringMatching(/could not be reached/) });
     const thrown = await readEconomicCalendar({ from: () => { throw new Error('blocked'); } } as never, NOW);
     expect(thrown).toMatchObject({ status: 'error', message: expect.stringMatching(/could not be reached/) });
+    expect(net).toMatchObject({ detail: expect.stringMatching(/^Request: GET .*\/rest\/v1\/economic_events · Browser error: TypeError: Failed to fetch$/) });
+    expect((net as { detail: string }).detail).not.toMatch(/apikey|sb_publishable|Bearer/);
+    // When the browser reported a Content Security Policy block for that host, the message says so.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { recordPolicyBlock } = require('@/services/connectionDiagnostics') as typeof import('@/services/connectionDiagnostics');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { env } = require('@/config/env') as typeof import('@/config/env');
+    if (env.supabaseUrl) {
+      recordPolicyBlock({ blockedOrigin: new URL(env.supabaseUrl).origin, directive: 'connect-src', at: new Date(Date.now() + 1000).toISOString() });
+      const csp = await readEconomicCalendar(fake({ data: null, error: { message: 'TypeError: Failed to fetch' } }, { data: null, error: null }), NOW);
+      expect(csp).toMatchObject({ message: expect.stringMatching(/security policy \(connect-src\)/), detail: expect.stringMatching(/Content Security Policy \(connect-src\)/) });
+    }
     const server = await readEconomicCalendar(fake({ data: null, error: { message: 'permission denied' } }, { data: [], error: null }), NOW);
     expect(server).toMatchObject({ status: 'error', message: expect.stringMatching(/answered with an error \(permission denied\)/) });
   });
