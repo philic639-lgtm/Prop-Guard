@@ -23,6 +23,7 @@ import {
   planUpdateSync,
   readSource,
   readUpdateFeed,
+  headerSafe,
   sourceConfigFromEnv,
   DEFAULT_NEWS_RULES,
   type FetchLike,
@@ -194,3 +195,16 @@ describe('changed release dates', () => {
     expect(p.deactivate).toEqual([old.id]);
   });
 });
+
+describe('request headers', () => {
+  it('a contact with non-ASCII characters never breaks the request (header values must be ASCII)', async () => {
+    const cfg = sourceConfigFromEnv((k) => (k === 'ECON_CONTACT' ? '\u201cphil@example.com\u201d\u00a0(me) caf\u00e9' : undefined));
+    expect(cfg.contact).toBe('phil@example.com me caf');
+    let ua = '';
+    await readUpdateFeed('bls_updates', cfg, async (_u, init) => ((ua = init.headers['User-Agent']), { status: 304, headers: { get: () => null }, text: async () => '' }), { etag: null, lastModified: null }, new Date(AT));
+    expect(ua).toMatch(/^[\x20-\x7E]+$/);
+    expect(ua).toContain('contact phil@example.com me caf)');
+    expect(headerSafe('\u00e9\u00e9')).toBeNull();
+  });
+});
+

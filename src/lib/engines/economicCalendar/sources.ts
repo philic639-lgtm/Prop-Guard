@@ -29,6 +29,16 @@ export interface SourceConfig {
 
 export const DEFAULT_SOURCE_CONFIG: SourceConfig = { blsUrl: BLS_ICS_URL, beaUrl: BEA_SCHEDULE_PAGE, beaTimesAreEastern: false, blsUpdatesUrl: BLS_LATEST_RSS, fedUpdatesUrl: FED_MONETARY_RSS, fedUrl: FED_CALENDAR_URL, fomcVerifiedTimes: {}, contact: null };
 
+/**
+ * HTTP header values must be plain ASCII: a pasted contact with a curly quote, a non-breaking
+ * space or an accented letter would make every request fail before it is sent. Keep only
+ * printable ASCII (and no parentheses, which delimit the User-Agent comment).
+ */
+export function headerSafe(v: string | null | undefined): string | null {
+  const t = (v ?? '').replace(/\s+/g, ' ').replace(/[^\x20-\x7E]/g, '').replace(/[()]/g, '').replace(/ +/g, ' ').trim().slice(0, 120);
+  return t || null;
+}
+
 /** Build the config from environment-style variables (Edge Function secrets / .env.server). */
 export function sourceConfigFromEnv(get: (k: string) => string | undefined): SourceConfig {
   let verified: Record<string, string> = {};
@@ -46,7 +56,7 @@ export function sourceConfigFromEnv(get: (k: string) => string | undefined): Sou
     fedUpdatesUrl: get('ECON_FED_UPDATES_URL') || FED_MONETARY_RSS,
     fedUrl: get('ECON_FED_URL') || FED_CALENDAR_URL,
     fomcVerifiedTimes: verified,
-    contact: get('ECON_CONTACT') || null,
+    contact: headerSafe(get('ECON_CONTACT')),
   };
 }
 
@@ -65,7 +75,7 @@ type Fetched = { ok: true; notModified: true; validators: Validators } | { ok: t
 /** One polite conditional GET (shared by calendars and update feeds). */
 async function fetchFeed(url: string, accept: string, cfg: SourceConfig, fetchImpl: FetchLike, prev: Validators): Promise<Fetched> {
   const headers: Record<string, string> = {
-    'User-Agent': `PropGuardCalendar/1.0 (scheduled economic-release calendar; refreshes a few times a day${cfg.contact ? `; contact ${cfg.contact}` : ''})`,
+    'User-Agent': `PropGuardCalendar/1.0 (scheduled economic-release calendar; refreshes a few times a day${cfg.contact ? `; contact ${headerSafe(cfg.contact)}` : ''})`,
     Accept: accept,
   };
   if (prev.etag) headers['If-None-Match'] = prev.etag;
