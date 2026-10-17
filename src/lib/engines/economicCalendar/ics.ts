@@ -1,6 +1,6 @@
 import { dedupeEvents, makeEvent } from './normalize';
 import { isEastern, utcToEastern } from './timezone';
-import type { EconomicEvent } from './types';
+import type { EconomicEvent, EconSource } from './types';
 
 /**
  * BLS release calendar (iCalendar / RFC 5545). Minimal, strict reader: unfolds lines,
@@ -59,7 +59,13 @@ function readStart(p: Prop): { dateET: string; timeET: string | null; known: boo
   return { ...local, timeET: null, known: false };
 }
 
+/** The BLS release calendar (iCalendar). */
 export function parseBlsIcs(text: string, retrievedAt: string): EconomicEvent[] {
+  return parseIcsCalendar(text, retrievedAt, 'bls', BLS_SCHEDULE_PAGE);
+}
+
+/** Any official iCalendar release calendar (BLS, BEA): exact times only from UTC or an Eastern TZID. */
+export function parseIcsCalendar(text: string, retrievedAt: string, source: EconSource, fallbackUrl: string): EconomicEvent[] {
   if (!/BEGIN:VCALENDAR/.test(text)) throw new FeedFormatError('not an iCalendar file');
   const out: EconomicEvent[] = [];
   let cur: Prop[] | null = null;
@@ -74,12 +80,12 @@ export function parseBlsIcs(text: string, retrievedAt: string): EconomicEvent[] 
         if (summary && when) {
           out.push(
             makeEvent({
-              source: 'bls',
+              source,
               title: unescape(summary.value),
               dateET: when.dateET,
               timeET: when.timeET,
               timeStatus: when.known ? 'published' : 'unknown',
-              sourceUrl: get('URL')?.value.trim() || BLS_SCHEDULE_PAGE,
+              sourceUrl: /^https:\/\//i.test(get('URL')?.value.trim() ?? '') ? get('URL')!.value.trim() : fallbackUrl,
               sourceEventId: get('UID')?.value.trim() ?? null,
               retrievedAt,
             }),
@@ -92,6 +98,6 @@ export function parseBlsIcs(text: string, retrievedAt: string): EconomicEvent[] 
       if (p) cur.push(p);
     }
   }
-  if (!out.length) throw new FeedFormatError('no events found in the BLS calendar');
+  if (!out.length) throw new FeedFormatError(`no events found in the ${source.toUpperCase()} calendar`);
   return dedupeEvents(out);
 }

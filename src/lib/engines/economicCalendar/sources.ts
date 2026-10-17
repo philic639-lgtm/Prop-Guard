@@ -1,4 +1,4 @@
-import { BEA_SCHEDULE_PAGE, parseBea } from './bea';
+import { BEA_ICS_URL, parseBea } from './bea';
 import { parseFedCalendar, FED_CALENDAR_URL } from './fed';
 import { BLS_ICS_URL, parseBlsIcs } from './ics';
 import { feedError, type SourceResult, type UpdateResult } from './sync';
@@ -13,7 +13,7 @@ import { BLS_LATEST_RSS, FED_MONETARY_RSS, parseUpdateFeed } from './updates';
  */
 export interface SourceConfig {
   blsUrl: string;
-  /** The official BEA schedule page (HTML) by default; a JSON schedule is read too. */
+  /** BEA's official iCalendar by default; the HTML schedule page or a JSON schedule are read too. */
   beaUrl: string | null;
   /** Operator confirmation that BEA clock times are Eastern (the page may also state it). */
   beaTimesAreEastern: boolean;
@@ -27,7 +27,7 @@ export interface SourceConfig {
   contact: string | null;
 }
 
-export const DEFAULT_SOURCE_CONFIG: SourceConfig = { blsUrl: BLS_ICS_URL, beaUrl: BEA_SCHEDULE_PAGE, beaTimesAreEastern: false, blsUpdatesUrl: BLS_LATEST_RSS, fedUpdatesUrl: FED_MONETARY_RSS, fedUrl: FED_CALENDAR_URL, fomcVerifiedTimes: {}, contact: null };
+export const DEFAULT_SOURCE_CONFIG: SourceConfig = { blsUrl: BLS_ICS_URL, beaUrl: BEA_ICS_URL, beaTimesAreEastern: false, blsUpdatesUrl: BLS_LATEST_RSS, fedUpdatesUrl: FED_MONETARY_RSS, fedUrl: FED_CALENDAR_URL, fomcVerifiedTimes: {}, contact: null };
 
 /**
  * HTTP header values must be plain ASCII: a pasted contact with a curly quote, a non-breaking
@@ -50,7 +50,7 @@ export function sourceConfigFromEnv(get: (k: string) => string | undefined): Sou
   }
   return {
     blsUrl: get('ECON_BLS_URL') || BLS_ICS_URL,
-    beaUrl: get('ECON_BEA_URL') || BEA_SCHEDULE_PAGE,
+    beaUrl: get('ECON_BEA_URL') || BEA_ICS_URL,
     beaTimesAreEastern: get('ECON_BEA_TIMES_EASTERN') === 'true',
     blsUpdatesUrl: get('ECON_BLS_UPDATES_URL') || BLS_LATEST_RSS,
     fedUpdatesUrl: get('ECON_FED_UPDATES_URL') || FED_MONETARY_RSS,
@@ -106,7 +106,7 @@ export async function readSource(
 ): Promise<SourceResult & { validators: Validators }> {
   const url = source === 'bls' ? cfg.blsUrl : source === 'bea' ? cfg.beaUrl : cfg.fedUrl;
   if (!url) return { source, ok: false, error: 'not configured', validators: prev };
-  const accept = source === 'bls' ? 'text/calendar, text/plain;q=0.9' : source === 'bea' ? 'text/html, application/json;q=0.9' : 'text/html';
+  const accept = source === 'bls' ? 'text/calendar, text/plain;q=0.9' : source === 'bea' ? 'text/calendar, text/html;q=0.8, application/json;q=0.7' : 'text/html';
   const r = await fetchFeed(url, accept, cfg, fetchImpl, prev);
   if (!r.ok) return { source, ok: false, error: r.error, validators: r.validators };
   if (r.notModified) return { source, ok: true, notModified: true, validators: r.validators };

@@ -1,5 +1,5 @@
 import { pageText } from './fed';
-import { FeedFormatError } from './ics';
+import { FeedFormatError, parseIcsCalendar } from './ics';
 import { dedupeEvents, makeEvent } from './normalize';
 import { utcToEastern } from './timezone';
 import type { EconomicEvent } from './types';
@@ -21,6 +21,12 @@ import type { EconomicEvent } from './types';
  * never an empty "all clear".
  */
 export const BEA_SCHEDULE_PAGE = 'https://www.bea.gov/news/schedule';
+/**
+ * BEA's official calendar subscription (linked from the schedule page): every release with an
+ * exact UTC start time — the default BEA source. Checked 2026-10-17: its upcoming releases
+ * match the schedule page row for row (dates and "8:30 AM" = 12:30 / 13:30 UTC).
+ */
+export const BEA_ICS_URL = 'https://www.bea.gov/news/schedule/ics/online-calendar-subscription.ics';
 
 const NAME_KEYS = ['release_name', 'releaseName', 'ReleaseName', 'name', 'Name', 'title', 'Title', 'release', 'Release'];
 const DATE_KEYS = ['release_date', 'releaseDate', 'ReleaseDate', 'date', 'Date', 'datetime', 'release_datetime', 'releaseDateTime'];
@@ -164,7 +170,8 @@ export function parseBeaSchedulePage(html: string, retrievedAt: string, opts: { 
       j++;
     }
     let title = rest.replace(/^[-–—:|]\s*/, '');
-    while (!title && j < lines.length && j <= i + 3) {
+    // The real page puts a split "N" + "ews" icon between the time and the title.
+    while (!title && j < lines.length && j <= i + 5) {
       const l = lines[j];
       if (MONTH_DAY.test(l) || YEAR_LINE.test(l)) break;
       if (!CLOCK_LINE.test(l) && !HEADERS.test(l) && l.length > 3) title = l;
@@ -190,9 +197,10 @@ export function parseBeaSchedulePage(html: string, retrievedAt: string, opts: { 
   return dedupeEvents(out);
 }
 
-/** The configured BEA address may serve the HTML page (default) or a JSON schedule. */
+/** The configured BEA address may serve the official iCalendar (default), the HTML schedule page or a JSON schedule. */
 export function parseBea(body: string, retrievedAt: string, opts: { timesAreEastern?: boolean } = {}): EconomicEvent[] {
   const t = body.trimStart();
+  if (t.startsWith('BEGIN:VCALENDAR')) return parseIcsCalendar(t, retrievedAt, 'bea', BEA_SCHEDULE_PAGE);
   if (t.startsWith('{') || t.startsWith('[')) return parseBeaSchedule(JSON.parse(t), retrievedAt, opts);
   return parseBeaSchedulePage(body, retrievedAt, opts);
 }

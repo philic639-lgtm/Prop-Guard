@@ -6,7 +6,7 @@ Supabase, and the app reads the stored copy. Nothing paid, no API keys, no AI.
 | Feed id | Source | What is stored |
 |---|---|---|
 | `bls` | https://www.bls.gov/schedule/news_release/bls.ics | Scheduled BLS releases (date + published time) |
-| `bea` | https://www.bea.gov/news/schedule | Scheduled BEA releases (date; time only when the page states Eastern time or `ECON_BEA_TIMES_EASTERN=true`) |
+| `bea` | https://www.bea.gov/news/schedule/ics/online-calendar-subscription.ics (BEA's official calendar, linked from https://www.bea.gov/news/schedule) | Scheduled BEA releases with exact UTC times. The schedule page itself is a fallback (`ECON_BEA_URL`); its times are used only when it states Eastern time or `ECON_BEA_TIMES_EASTERN=true` |
 | `fed` | https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm | FOMC statement / press-conference dates (2:00 / 2:30 PM ET shown as "usual time — confirm") |
 | `bls_updates` | https://www.bls.gov/feed/bls_latest.rss | Release notices: title, link, publication time |
 | `fed_updates` | https://www.federalreserve.gov/feeds/press_monetary.xml | Monetary-policy press releases: title, link, publication time |

@@ -22,7 +22,7 @@ import type { EconSource, UpdateFeed } from '../_shared/economicCalendar/types.t
 
 const SECRET = Deno.env.get('ECON_SYNC_SECRET') ?? '';
 /** Shown by GET and in every run's summary, so the deployed version can be checked without secrets. */
-const VERSION = 'econ-sync-2026-10-17.2';
+const VERSION = 'econ-sync-2026-10-17.3';
 const SOURCES: EconSource[] = ['bls', 'bea', 'fed'];
 const UPDATE_FEEDS: UpdateFeed[] = ['bls_updates', 'fed_updates'];
 

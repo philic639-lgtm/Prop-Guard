@@ -23,6 +23,8 @@ import {
   planUpdateSync,
   readSource,
   readUpdateFeed,
+  parseIcsCalendar,
+  BEA_ICS_URL,
   headerSafe,
   sourceConfigFromEnv,
   DEFAULT_NEWS_RULES,
@@ -129,8 +131,8 @@ describe('BEA release-schedule page (HTML)', () => {
     expect(parseBea(page, AT).length).toBe(4);
   });
 
-  it('BEA is read from the official page by default (no longer "not configured")', async () => {
-    const cfg = sourceConfigFromEnv(() => undefined);
+  it('a configured BEA page address is read as HTML (ECON_BEA_URL override)', async () => {
+    const cfg = sourceConfigFromEnv((k) => (k === 'ECON_BEA_URL' ? 'https://www.bea.gov/news/schedule' : undefined));
     expect(cfg.beaUrl).toBe('https://www.bea.gov/news/schedule');
     let asked = '';
     const r = await readSource('bea', cfg, async (url) => ((asked = url), { status: 200, headers: { get: () => null }, text: async () => page }), { etag: null, lastModified: null }, new Date(AT));
@@ -209,6 +211,42 @@ describe('request headers', () => {
     let etag = '';
     await readUpdateFeed('bls_updates', cfg, async (_u, init) => ((etag = init.headers['If-None-Match']), { status: 304, headers: { get: () => null }, text: async () => '' }), { etag: '"v1\u2019"', lastModified: null }, new Date(AT));
     expect(etag).toBe('"v1"');
+  });
+});
+
+describe('BEA — real data captured from bea.gov on 2026-10-17 (fixtures/econ)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { readFileSync } = require('node:fs') as { readFileSync: (p: string, e: string) => string };
+  const fx = (f: string) => readFileSync(`src/lib/engines/__tests__/fixtures/econ/${f}`, 'utf8');
+
+  it('official iCalendar: exact UTC times → Eastern, DST-correct, BEA source and link', () => {
+    const ev = parseBea(fx('bea-calendar-2026-10-17.ics'), AT);
+    const by = (d: string, code: string) => ev.find((e) => e.dateET === d && e.code === code)!;
+    expect(by('2026-10-29', 'GDP')).toMatchObject({ source: 'bea', timeET: '08:30', timeStatus: 'published', startsAt: '2026-10-29T12:30:00.000Z', sourceUrl: 'https://www.bea.gov/news/schedule' }); // EDT
+    expect(by('2026-10-29', 'PCE')).toMatchObject({ timeET: '08:30', startsAt: '2026-10-29T12:30:00.000Z' });
+    expect(by('2026-11-04', 'TRADE')).toMatchObject({ timeET: '08:30', startsAt: '2026-11-04T13:30:00.000Z' }); // EST
+    expect(by('2025-01-07', 'TRADE').timeET).toBe('08:30');
+    expect(by('2026-12-02', 'OTHER').title).toBe('GDP by County and Personal Income by County, 2025'); // not national GDP
+    expect(new Set(ev.map((e) => e.id)).size).toBe(ev.length);
+  });
+
+  it('the schedule page (fallback) reads the same rows; times stay unknown because the page does not state a zone', () => {
+    const ev = parseBea(fx('bea-schedule-page-2026-10-17.html'), AT);
+    expect(ev.map((e) => [e.dateET, e.code])).toEqual([
+      ['2026-10-29', 'GDP'],
+      ['2026-10-29', 'PCE'],
+      ['2026-11-04', 'TRADE'],
+      ['2026-11-20', 'OTHER'],
+    ]);
+    expect(ev.every((e) => e.timeStatus === 'unknown')).toBe(true);
+    // Same release, same id from either BEA source — switching sources never duplicates.
+    const fromIcs = parseBea(fx('bea-calendar-2026-10-17.ics'), AT).map((e) => e.id);
+    expect(fromIcs).toEqual(expect.arrayContaining(ev.slice(0, 3).map((e) => e.id)));
+  });
+
+  it('BEA defaults to the official iCalendar; the BLS reader still labels BLS', () => {
+    expect(sourceConfigFromEnv(() => undefined).beaUrl).toBe(BEA_ICS_URL);
+    expect(parseIcsCalendar(fx('bea-calendar-2026-10-17.ics'), AT, 'bls', 'https://www.bls.gov/')[0].source).toBe('bls');
   });
 });
 
