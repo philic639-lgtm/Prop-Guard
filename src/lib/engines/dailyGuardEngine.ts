@@ -1,7 +1,7 @@
 import type { Account, GuardStatus, Trade, TradingRules } from '@/types/domain';
 import { dayKey } from '@/utils/dates';
 
-import { dailyLossLimitFor, drawdownBuffer } from './propRuleEngine';
+import { dailyLossLimitFor, drawdownBuffer, floorStatus } from './propRuleEngine';
 
 export interface CooldownState {
   active: boolean;
@@ -47,6 +47,8 @@ export interface DailyGuard {
   snapshot: { at: string; ageHours: number; stale: boolean; missing: string[] } | null;
   /** Prop account whose drawdown floor is not known — no buffer is shown or used. */
   drawdownUnknown: boolean;
+  /** Intraday trailing floor known only as a minimum — the buffer is an upper bound. */
+  drawdownMinimum: boolean;
 }
 
 /** Plain-language name of the limit behind a Daily Guard number, so personal and firm limits are never blurred. */
@@ -164,6 +166,9 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
   // Unknown drawdown floor (no verified allowance, no confirmed threshold): never treated as room to lose.
   const drawdownUnknown = account.kind === 'prop' && buffer == null;
   if (drawdownUnknown) cautionReasons.push('Drawdown floor unknown — additional account information required. Add the liquidation threshold (MLL / NLL) before relying on risk room.');
+  // Intraday trailing floor known only as a minimum: the real buffer may be smaller — never "safe".
+  const drawdownMinimum = account.kind === 'prop' && buffer != null && floorStatus(account).minimum === true;
+  if (drawdownMinimum) cautionReasons.push('Intraday trailing drawdown — open profits may have raised your floor. The buffer shown is a maximum; re-confirm the liquidation threshold from your dashboard.');
   if (buffer != null && buffer > 0 && buffer < rules.maxRiskPerTrade * 2) {
     cautionReasons.push('Drawdown buffer is less than two full-risk trades.');
   }
@@ -224,6 +229,7 @@ export function computeDailyGuard({ account, rules, trades, now = new Date() }: 
     cooldown,
     drawdownBuffer: buffer,
     drawdownUnknown,
+    drawdownMinimum,
     personalDailyStop,
     personalRoom: personalDailyStop != null ? Math.max(0, personalDailyStop - riskUsed) : null,
     firmDailyLimit: accountDaily,

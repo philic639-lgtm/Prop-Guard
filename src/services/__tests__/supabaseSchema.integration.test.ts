@@ -160,6 +160,26 @@ d('Supabase schema × repository (Postgres integration)', () => {
     expect(runSql(url, `select count(*) from public.screenshots where account_id = '${a}'`, USER_B)).toBe('0');
   });
 
+  it('another user cannot change or delete the owner’s rows (accounts, trades, journal)', () => {
+    const a = data.accounts[0].id;
+    const t = data.trades[0].id;
+    for (const sql of [`update public.accounts set balance = 1 where id = '${a}'`, `delete from public.accounts where id = '${a}'`, `update public.trades set pnl = 0 where id = '${t}'`, `delete from public.trades where id = '${t}'`])
+      runSql(url, sql, USER_B); // RLS: matches no row
+    expect(runSql(url, `select balance::float8::text from public.accounts where id = '${a}'`, USER_A)).toBe(String(data.accounts[0].balance));
+    expect(runSql(url, `select count(*) from public.trades where id = '${t}'`, USER_A)).toBe('1');
+  });
+
+  it('private screenshot storage: each user reads and writes only their own folder', () => {
+    runSql(url, `insert into storage.buckets (id, name, public) values ('screenshots', 'screenshots', false) on conflict do nothing`, null);
+    runSql(url, `insert into storage.objects (bucket_id, name) values ('screenshots', '${USER_A}/accounts/x/ref.jpg')`, USER_A);
+    expect(() => runSql(url, `insert into storage.objects (bucket_id, name) values ('screenshots', '${USER_A}/accounts/x/evil.jpg')`, USER_B)).toThrow(/row-level security/);
+    expect(runSql(url, `select count(*) from storage.objects where name like '${USER_A}/%'`, USER_B)).toBe('0');
+    runSql(url, `delete from storage.objects where name like '${USER_A}/%'`, USER_B);
+    expect(runSql(url, `select count(*) from storage.objects where name like '${USER_A}/%'`, USER_A)).toBe('1');
+    expect(runSql(url, `set local role anon; select count(*) from storage.objects where bucket_id = 'screenshots'`, null)).toBe('0');
+    runSql(url, `delete from storage.objects where name like '${USER_A}/%'`, USER_A);
+  });
+
   it('signed-out (anon) clients read only public reference data', () => {
     const asAnon = (sql: string) => runSql(url, `set local role anon; ${sql}`, null);
     expect(asAnon('select count(*) from public.accounts')).toBe('0');

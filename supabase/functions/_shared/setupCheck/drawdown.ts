@@ -48,6 +48,12 @@ export interface FloorResult {
   needs: FloorNeed[];
   /** Plain-language explanation shown next to the number (or instead of it). */
   reason: string;
+  /**
+   * True when the floor is only a MINIMUM: an intraday trailing drawdown follows the highest
+   * balance including open profits, which Prop Guard cannot see — the real floor may be higher
+   * (the buffer smaller). Never treated as safe room; re-confirm from the dashboard.
+   */
+  minimum?: boolean;
 }
 
 const EPS = 0.005;
@@ -61,6 +67,15 @@ export function trailingFloor(peak: number, startingBalance: number, maxDrawdown
 }
 
 export function resolveFloor(i: FloorInputs): FloorResult {
+  const r = resolveFloorExact(i);
+  // Intraday trailing: open-profit peaks since the threshold was confirmed may have raised it — unless it already
+  // sits at its lock. (An untouched account's floor is the policy's rule 3: the peak is the start.)
+  if (r.floor == null || i.method !== 'trailing' || !i.methodKnown || (r.basis !== 'confirmed' && r.basis !== 'confirmed_trailed')) return r;
+  if (i.lockOffset != null && r.floor >= i.startingBalance + i.lockOffset - EPS) return r;
+  return { ...r, minimum: true, reason: `${r.reason} Intraday trailing: open profits since then may have raised it — treat it as a minimum and re-confirm from your dashboard.` };
+}
+
+function resolveFloorExact(i: FloorInputs): FloorResult {
   const dd = i.maxDrawdown != null && i.maxDrawdown > 0 ? i.maxDrawdown : null;
   const trailing = i.method !== 'static';
 

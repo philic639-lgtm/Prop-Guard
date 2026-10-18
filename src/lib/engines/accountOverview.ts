@@ -81,6 +81,13 @@ export function accountCard(a: Account, ctx: { trades: Trade[]; rules: TradingRu
     else if (floor != null && a.balance <= floor) attention.push({ level: 'critical', text: 'Balance at or below the saved drawdown floor — check with your firm' });
     else if ((remainingShare != null && remainingShare <= CRITICAL_SHARE) || (remainingShare == null && remaining <= CRITICAL_DOLLARS))
       attention.push({ level: 'critical', text: remainingShare != null ? `Critically low drawdown left (${Math.round(remainingShare * 100)}% of the allowance)` : `Critically low drawdown left (under $${CRITICAL_DOLLARS})` });
+    // Daily loss is per account: a stop or a nearly used firm DLL is never hidden behind a healthy drawdown.
+    if (guard.firmDailyLimit != null && guard.firmDailyRoom != null && guard.firmDailyRoom <= 0)
+      attention.push({ level: 'critical', text: "Firm daily loss limit reached today" });
+    else if (guard.firmDailyLimit != null && guard.firmDailyRoom != null && guard.firmDailyRoom <= guard.firmDailyLimit * CRITICAL_SHARE)
+      attention.push({ level: 'warning', text: `Firm daily loss limit nearly used — $${Math.round(guard.firmDailyRoom)} left today` });
+    else if (guard.status === 'STOP') attention.push({ level: 'warning', text: `Daily Guard: stop — ${guard.reasons[0] ?? 'a limit is reached'}` });
+    if (guard.drawdownMinimum) attention.push({ level: 'info', text: 'Intraday trailing floor — re-confirm the threshold' });
     if (fresh.stale) attention.push({ level: 'info', text: 'Values are from an earlier trading day — update' });
     const awaiting = tradesAwaitingBalance(a, ctx.trades);
     if (awaiting.length) attention.push({ level: 'info', text: `${awaiting.length} trade screenshot${awaiting.length > 1 ? 's' : ''} not in the balance yet` });

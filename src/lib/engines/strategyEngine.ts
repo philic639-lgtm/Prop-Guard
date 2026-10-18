@@ -129,24 +129,36 @@ export function evaluateSetup(input: SetupEvaluationInput): SetupEvaluation {
     if (!hasTarget) violations.push('Your rules require a target before entry.');
   }
 
+  // Missing limits are never read as "no limit": without them Prop Guard cannot approve a trade.
+  const hasTradeLimit = rules.maxRiskPerTrade > 0;
+  const hasDailyLimit = guard.dailyLimit > 0;
+  if (!hasTradeLimit) {
+    checks.push({ id: 'risk_per_trade', label: 'Per-trade risk limit set', passed: false, severity: 'rule', detail: 'Missing' });
+    violations.push('No max risk per trade is set — add it in your trading rules before Prop Guard can check this trade.');
+  }
+  if (!hasDailyLimit) {
+    checks.push({ id: 'risk_daily', label: 'Daily loss limit set', passed: false, severity: 'rule', detail: 'Missing' });
+    violations.push('No daily loss limit is set (personal daily stop or firm limit) — add one before Prop Guard can check this trade.');
+  }
+
   if (risk.valid) {
     const withinTradeRisk = riskDollars <= rules.maxRiskPerTrade;
-    checks.push({
+    if (hasTradeLimit) checks.push({
       id: 'risk_per_trade',
       label: 'Risk within per-trade limit',
       passed: withinTradeRisk,
       severity: 'rule',
       detail: `$${riskDollars.toFixed(0)} vs $${rules.maxRiskPerTrade.toFixed(0)} max`,
     });
-    if (!withinTradeRisk) {
+    if (hasTradeLimit && !withinTradeRisk) {
       violations.push(
         `Risk of $${riskDollars.toFixed(0)} exceeds your $${rules.maxRiskPerTrade.toFixed(0)} per-trade limit.`,
       );
     }
 
-    const withinDaily = guard.dailyLimit <= 0 || riskDollars <= guard.riskRemaining;
-    checks.push({ id: 'risk_daily', label: 'Risk below daily limit', passed: withinDaily, severity: 'rule' });
-    if (!withinDaily) {
+    const withinDaily = riskDollars <= guard.riskRemaining;
+    if (hasDailyLimit) checks.push({ id: 'risk_daily', label: 'Risk below daily limit', passed: withinDaily, severity: 'rule' });
+    if (hasDailyLimit && !withinDaily) {
       violations.push(`A stop-out would exceed your remaining daily risk of $${guard.riskRemaining.toFixed(0)}.`);
     }
 
