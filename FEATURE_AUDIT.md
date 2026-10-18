@@ -31,7 +31,7 @@ These were **not** counted as working: placeholder data, hard-coded success stat
 
 Vercel production builds from `main`. `main` contains only `45c23e6 Initial commit` (a README), so production serves nothing and returns 404. All app code is on `claude/ecstatic-clarke-ismxpx`, which has `main` as its ancestor, so a fast-forward is possible.
 
-**Fix:** fast-forward `main` to the audited branch (approved by the owner). The Vercel preview of the branch was reported "Ready" by Vercel's GitHub status. This audit cannot load deployed pages itself, so the production check is listed in the manual checklist at the end.
+**Fix (done):** `main` was fast-forwarded to `4a0bcb0` (owner-approved). Vercel reported "Deployment has completed" for projects `propguard` and `propguardd` on 2026-10-18, and the owner confirmed the production site opens without a 404.
 
 ---
 

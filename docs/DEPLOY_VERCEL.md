@@ -50,13 +50,13 @@ Output: `dist/` (~23 MB, of which ~15 MB OCR files that load only when a screens
 4. Add the environment variables below (Settings → Environment Variables), then **Deploy**.
 
 ### 3. Which branch
-All current work is on `claude/ecstatic-clarke-ismxpx` (pull request #1, not merged).
-- **Preview first (recommended):** Vercel builds every pushed branch automatically. Open
-  the deployment for `claude/ecstatic-clarke-ismxpx` (Deployments tab, or the link Vercel
-  posts on pull request #1) — that is a normal URL you can open on your iPhone.
-- **Production URL** (`<project>.vercel.app` / your domain) is built from the production
-  branch (`main` by default). It shows the new app only after PR #1 is merged — or set
-  Settings → Git → Production Branch to the feature branch temporarily.
+- **Production** (`<project>.vercel.app` / your domain) builds from `main` (Settings → Git →
+  Production Branch). Pull request #1 was merged into `main` on 2026-10-18, so every push to
+  `main` deploys the live site.
+- **Preview:** every other pushed branch gets its own preview URL (Deployments tab, or the
+  link Vercel posts on the pull request).
+- Keep ONE Vercel project per site. Two projects connected to the same repository both build
+  every push; remove or disconnect the one you don't use.
 
 ## Environment variables
 
