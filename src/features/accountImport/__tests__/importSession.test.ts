@@ -138,6 +138,56 @@ describe('reading screenshots', () => {
   });
 });
 
+describe('stale data', () => {
+  const photo = (id: string, bytes: number) => ({ id, uri: `blob:${id}`, name: 'image.jpg', width: 1500, height: 2000, type: 'image/jpeg', bytes });
+
+  it('a NEW photo with the same file name and size as an earlier one is read, not skipped for the old reading', async () => {
+    mockRecognize.mockResolvedValueOnce(linesPage(['Account Balance $25,318.00'])).mockResolvedValueOnce(linesPage(['Account Balance $25,390.00']));
+    S().add([photo('old', 401_000)]);
+    await S().readAll(db);
+    expect(S().add([photo('new', 433_374)])).toMatchObject({ added: 1, skipped: 0 });
+    await S().readAll(db);
+    expect(S().images.map((i) => i.page?.fields.balance?.value)).toEqual([25_318, 25_390]);
+    expect(mockRecognize).toHaveBeenCalledTimes(2);
+  });
+
+  it('the same file picked twice is added once', () => {
+    S().add([photo('a', 433_374)]);
+    expect(S().add([photo('b', 433_374)])).toMatchObject({ added: 0, skipped: 1 });
+  });
+
+  it('a corrected value typed for the old screenshot does not carry over to a new one', async () => {
+    mockRecognize.mockResolvedValue(linesPage(['Account Balance $25,390.00']));
+    S().add([photo('old', 1)]);
+    await S().readAll(db);
+    S().setEdit('balance', 25_318);
+    S().remove('old');
+    expect(S().edits).toEqual({});
+    S().setEdit('balance', 25_318);
+    S().add([photo('new', 2)]);
+    expect(S().edits).toEqual({});
+  });
+
+  it('two OCR passes of one photo are merged: agreeing values kept, disagreeing ones become a conflict', async () => {
+    const page = linesPage(['Account Balance $25,300.00', 'Trading Days 11']);
+    page.passes = [linesPage(['Account Balance $25,390.00', 'Trading Days 11'])];
+    mockRecognize.mockResolvedValue(page);
+    S().add([photo('p', 3)]);
+    await S().readAll(db);
+    const f = S().images[0].page!.fields;
+    expect(f.tradingDays).toMatchObject({ value: 11 });
+    expect(f.tradingDays?.alternatives).toBeUndefined();
+    expect([f.balance!.value, ...f.balance!.alternatives!.map((a) => a.value)].sort()).toEqual([25_300, 25_390]);
+  });
+
+  it('an unreadable image: error state, nothing extracted', async () => {
+    mockRecognize.mockRejectedValue(new OcrError('image_failed', 'This file could not be opened as an image.'));
+    S().add([photo('x', 9)]);
+    await S().readAll(db);
+    expect(S().images[0]).toMatchObject({ status: 'error', page: null, error: 'This file could not be opened as an image.' });
+  });
+});
+
 describe('confirm → account saved', () => {
   it('confirmed screenshot values (with a trader edit) update the account balance and drawdown tracking', async () => {
     mockRecognize.mockResolvedValue(lucid as OcrPage);

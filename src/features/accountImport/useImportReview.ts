@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { useFirmRules } from '@/features/accounts/useFirmRules';
-import { crossCheck, matchImport, mergeAmbiguous, mergePages, screenshotChecks, type ExtractedField, type Extraction, type FieldKey, type FieldMap } from '@/lib/engines/accountImport';
+import { crossCheck, matchImport, mergeAmbiguous, mergePages, offeredSizes, screenshotChecks, type ExtractedField, type Extraction, type FieldKey, type FieldMap } from '@/lib/engines/accountImport';
 import { useAppStore } from '@/store/useAppStore';
 import type { Account } from '@/types/domain';
 
@@ -24,10 +24,13 @@ export function useImportReview(mode: 'new' | 'update', target: Account | null, 
         cleared.add(k);
       } else merged[k] = { key: k, value: v, confidence: 1, source: 'user', evidence: 'Entered by you', page: -1 } satisfies ExtractedField;
     }
-    const cc = crossCheck(merged, { noDerive: cleared });
+    // Plausibility: the sizes the firm sells, and (update) the account's own size as the reference.
+    const firmName = mode === 'update' && target ? target.firm : typeof merged.firm?.value === 'string' ? merged.firm.value : null;
+    const context = { sizes: offeredSizes(db, firmName), firmName, account: mode === 'update' && target ? { size: target.size, startingBalance: target.startingBalance } : null };
+    const cc = crossCheck(merged, { noDerive: cleared, context });
     const fields = cc.fields;
     const checks = [...screenshotChecks(pages), ...cc.checks];
-    const ambiguous = mergeAmbiguous(pages, fields);
+    const ambiguous = [...mergeAmbiguous(pages, fields), ...cc.ambiguous];
     const sensitive = pages.flatMap((p) => p.sensitive);
     const extraction: Extraction = {
       fields,

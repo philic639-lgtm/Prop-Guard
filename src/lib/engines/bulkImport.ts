@@ -19,9 +19,10 @@ import {
   type ImportConflict,
   LOW_CONFIDENCE,
   type PageExtraction,
+  type PlausibilityContext,
 } from './accountImport';
 import { findFirm } from './firmRulesEngine';
-import { compareUpdate, type ChangeRow } from './accountUpdate';
+import { compareUpdate, providedFigures, type ChangeRow } from './accountUpdate';
 import { findLikelyDuplicate, olderSnapshot } from './accountSync';
 
 /**
@@ -47,7 +48,7 @@ export interface BulkMatch {
 }
 
 /** One screenshot's own extraction (+ the trader's corrections for it). */
-export function extractionOf(page: PageExtraction, edits: Partial<Record<FieldKey, number | string | null>> = {}): Extraction {
+export function extractionOf(page: PageExtraction, edits: Partial<Record<FieldKey, number | string | null>> = {}, context?: PlausibilityContext): Extraction {
   const merged: FieldMap = mergePages([page]);
   const cleared = new Set<FieldKey>();
   for (const [k, v] of Object.entries(edits) as [FieldKey, number | string | null][]) {
@@ -56,8 +57,8 @@ export function extractionOf(page: PageExtraction, edits: Partial<Record<FieldKe
       cleared.add(k);
     } else merged[k] = { key: k, value: v, confidence: 1, source: 'user', evidence: 'Entered by you', page: -1 } satisfies ExtractedField;
   }
-  const cc = crossCheck(merged, { noDerive: cleared });
-  const ambiguous = mergeAmbiguous([page], cc.fields);
+  const cc = crossCheck(merged, { noDerive: cleared, context });
+  const ambiguous = [...mergeAmbiguous([page], cc.fields), ...cc.ambiguous];
   return {
     fields: cc.fields,
     ...(ambiguous.length ? { ambiguous } : {}),
@@ -145,6 +146,10 @@ export function planBulk(items: BulkItemInput[], ctx: { accounts: Account[]; db:
       return !v || (v.source !== 'user' && v.source !== 'derived' && v.confidence < LOW_CONFIDENCE) || (x.ambiguous ?? []).some((a) => a.key === k);
     };
     if (typeof f.balance?.value !== 'number') return { ...base, status: 'needs_values', reasons: ['The balance could not be read — enter it, or skip this screenshot.'] };
+    // Readings that disagree, or values that do not add up, need a correction — never a tick in a bulk list.
+    const contradictions = x.checks.filter((c) => c.status === 'conflict' && c.id !== 'different-accounts' && !c.fields.every((k) => f[k]?.source === 'user'));
+    if (contradictions.length)
+      return { ...base, status: 'single_update', reasons: [`${contradictions[0].message} Open it as a single update to correct it.`] };
     if (unclear('balance')) base.acksNeeded.push({ id: 'uncertain-balance', text: `Needs verification: the balance reading ($${Number(f.balance.value).toLocaleString('en-US')}) is uncertain — check it against the screenshot or correct it.` });
 
     // Same checks as a single update: wrong account, firm / size / stage, lower floor.
@@ -171,7 +176,7 @@ export function planBulk(items: BulkItemInput[], ctx: { accounts: Account[]; db:
     } catch (e) {
       return { ...base, status: 'single_update', reasons: [`This update could not be prepared (${(e as Error).message}). Open it as a single update.`] };
     }
-    base.changes = compareUpdate(account, preview.account);
+    base.changes = compareUpdate(account, preview.account, providedFigures(Object.keys(confirmed.values).filter((k) => confirmed.sources[k as FieldKey]?.source !== 'derived')));
     base.confirmed = confirmed;
     const missingAcks = base.acksNeeded.filter((a) => !it.acks[a.id]);
     return { ...base, status: missingAcks.length ? 'needs_ack' : 'ready' };

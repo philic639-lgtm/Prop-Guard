@@ -251,3 +251,13 @@ describe('9. static vs trailing drawdown in the comparison', () => {
     expect(f.remaining).toBe(25_400 - (f.floor as number));
   });
 });
+
+describe('bulk: values that do not add up are never saved from a list', () => {
+  it('balance − threshold ≠ the remaining drawdown shown → single update to correct it', () => {
+    const a = flex('a');
+    const shot = lucidShot('$25,246.00', '$24,270.00', { extra: ['Remaining Drawdown $1,500.00'] });
+    const p = planBulk([item('s', shot, [a], { accountId: a.id, matchConfirmed: true })], { accounts: [a], db, now: NOW })[0]!;
+    expect(p.status).toBe('single_update');
+    expect(p.reasons[0]).toMatch(/does not equal the remaining drawdown.*single update/);
+  });
+});

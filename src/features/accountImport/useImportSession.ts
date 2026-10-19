@@ -79,17 +79,21 @@ export const useImportSession = create<State>((set, get) => ({
       if (why) rejected.push(why);
       return !why;
     });
-    const fresh = valid.filter((i) => !cur.some((c) => c.image.name === i.name && c.image.width === i.width && c.image.height === i.height));
+    // The same file picked twice. Name + size alone is not enough ("image.jpg", 1500×2000 from every phone
+    // photo): a NEW screenshot that only shares those must be read, never skipped in favour of the old reading.
+    const sameFile = (a: ImportImage, b: ImportImage) => a.name === b.name && a.width === b.width && a.height === b.height && a.bytes != null && b.bytes != null && a.bytes === b.bytes;
+    const fresh = valid.filter((i) => !cur.some((c) => sameFile(c.image, i)));
     const take = fresh.slice(0, room);
     releaseImages(incoming.filter((i) => !take.includes(i)));
-    set({ images: [...cur, ...take.map((image) => ({ image, status: 'queued' as const, step: null, page: null, error: null, errorDetail: null, run: 0, reader: null }))] });
+    // New screenshots: corrections typed for the old readings no longer apply.
+    set({ images: [...cur, ...take.map((image) => ({ image, status: 'queued' as const, step: null, page: null, error: null, errorDetail: null, run: 0, reader: null }))], ...(take.length ? { edits: {} } : {}) });
     return { added: take.length, skipped: valid.length - take.length, rejected };
   },
 
   remove: (id) => {
     const img = get().images.find((i) => i.image.id === id);
     if (img) releaseImages([img.image]);
-    set({ images: get().images.filter((i) => i.image.id !== id).map((i, n) => (i.page ? { ...i, page: { ...i.page, page: n } } : i)) });
+    set({ images: get().images.filter((i) => i.image.id !== id).map((i, n) => (i.page ? { ...i, page: { ...i.page, page: n } } : i)), edits: {} });
   },
 
   readAll: async (db) => {
@@ -134,7 +138,7 @@ export const useImportSession = create<State>((set, get) => ({
 
   retry: async (id, db) => {
     if (get().reading) return;
-    set({ images: patch(get().images, id, { status: 'queued', step: null, page: null, error: null, errorDetail: null, reader: null }) });
+    set({ images: patch(get().images, id, { status: 'queued', step: null, page: null, error: null, errorDetail: null, reader: null }), edits: {} });
     await get().readAll(db);
   },
 

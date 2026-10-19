@@ -291,13 +291,25 @@ export function ocrScale(w: number, h: number): number {
 }
 
 /**
+ * Scale of the second reading of the same image, or null. A phone PHOTO of a screen is a large
+ * image with small text (read at 1× by `ocrScale`, which assumes a screenshot); a desktop capture
+ * is upscaled. Reading at a second scale and comparing catches the digits one scale misreads
+ * ("$25,300" vs "$25,390") — disagreements become conflicts, never a silent choice.
+ */
+export function secondScale(w: number, h: number, first: number): number | null {
+  const cap = Math.sqrt(MAX_PIXELS / Math.max(1, w * h));
+  const s = Math.round((first <= 1.2 ? Math.min(1.6, cap) : 1) * 100) / 100;
+  return Math.abs(s - first) >= 0.3 ? s : null;
+}
+
+/**
  * Prepare for OCR: rescale (see `ocrScale`), grayscale, invert dark themes
  * (dark dashboards read better as dark-on-light) and stretch contrast.
  */
-function preprocess(img: HTMLImageElement): { canvas: HTMLCanvasElement; scale: number; dark: boolean } {
+function preprocess(img: HTMLImageElement, at?: number): { canvas: HTMLCanvasElement; scale: number; dark: boolean } {
   const w0 = img.naturalWidth || img.width;
   const h0 = img.naturalHeight || img.height;
-  const scale = ocrScale(w0, h0);
+  const scale = at ?? ocrScale(w0, h0);
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(w0 * scale);
   canvas.height = Math.round(h0 * scale);
@@ -334,23 +346,37 @@ function preprocess(img: HTMLImageElement): { canvas: HTMLCanvasElement; scale: 
 
 const unscale = (b: OcrBox, s: number): OcrBox => ({ x0: Math.round(b.x0 / s), y0: Math.round(b.y0 / s), x1: Math.round(b.x1 / s), y1: Math.round(b.y1 / s) });
 
+function toPage(data: TData, img: HTMLImageElement, scale: number): OcrPage {
+  const lines: OcrLine[] = [];
+  for (const b of data.blocks ?? [])
+    for (const p of b.paragraphs)
+      for (const l of p.lines) {
+        const words = l.words.filter((w) => w.text.trim()).map((w) => ({ text: w.text.trim(), confidence: Math.round(w.confidence), bbox: unscale(w.bbox, scale) }));
+        if (words.length) lines.push({ text: l.text.trim(), confidence: Math.round(l.confidence), bbox: unscale(l.bbox, scale), words });
+      }
+  return { width: img.naturalWidth, height: img.naturalHeight, confidence: Math.round(data.confidence), lines };
+}
+
+/** Read the image at its OCR scale and, when useful, at a second scale (`OcrPage.passes`). */
 export async function recognize(image: ImportImage, onProgress?: (p: OcrProgress) => void): Promise<OcrPage> {
   const t0 = Date.now();
   try {
     const img = await loadImage(image.uri);
     const { canvas, scale, dark } = preprocess(img);
     ocrLog('image: prepared', { width: img.naturalWidth, height: img.naturalHeight, scale, dark });
-    const data = await recognizePrepared(canvas, onProgress);
-    const lines: OcrLine[] = [];
-    for (const b of data.blocks ?? [])
-      for (const p of b.paragraphs)
-        for (const l of p.lines) {
-          const words = l.words.filter((w) => w.text.trim()).map((w) => ({ text: w.text.trim(), confidence: Math.round(w.confidence), bbox: unscale(w.bbox, scale) }));
-          if (words.length) lines.push({ text: l.text.trim(), confidence: Math.round(l.confidence), bbox: unscale(l.bbox, scale), words });
-        }
-    const words = lines.reduce((n, l) => n + l.words.length, 0);
-    ocrLog('image: read', { totalMs: Date.now() - t0, lines: lines.length, words, confidence: Math.round(data.confidence) });
-    return { width: img.naturalWidth, height: img.naturalHeight, confidence: Math.round(data.confidence), lines };
+    const page = toPage(await recognizePrepared(canvas, onProgress), img, scale);
+    const s2 = secondScale(img.naturalWidth, img.naturalHeight, scale);
+    if (s2 != null) {
+      try {
+        page.passes = [toPage(await recognizePrepared(preprocess(img, s2).canvas, onProgress), img, s2)];
+      } catch (e) {
+        // The first reading stands on its own; a failed second pass only means nothing to compare.
+        ocrLog('image: second pass failed', { code: e instanceof OcrError ? e.code : 'unknown', scale: s2 });
+      }
+    }
+    const words = page.lines.reduce((n, l) => n + l.words.length, 0);
+    ocrLog('image: read', { totalMs: Date.now() - t0, lines: page.lines.length, words, confidence: page.confidence, passes: 1 + (page.passes?.length ?? 0) });
+    return page;
   } catch (e) {
     ocrLog('image: failed', { code: e instanceof OcrError ? e.code : 'unknown', detail: e instanceof OcrError ? e.detail : sanitizeDetail(e), ms: Date.now() - t0 });
     throw e instanceof OcrError ? e : fail('read_failed', e);

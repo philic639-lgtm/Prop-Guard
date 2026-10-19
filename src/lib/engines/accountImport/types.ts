@@ -37,6 +37,11 @@ export interface OcrPage {
   /** Mean OCR confidence 0–100. */
   confidence: number;
   lines: OcrLine[];
+  /**
+   * Further readings of the SAME image (e.g. at another scale). Each is extracted on its own and
+   * merged field by field: agreeing values are kept, disagreeing ones become a conflict.
+   */
+  passes?: OcrPage[];
 }
 
 export type MoneyField =
@@ -53,7 +58,8 @@ export type MoneyField =
   | 'drawdownRemaining'
   | 'dailyLossLimit'
   | 'profitTarget'
-  | 'profitTargetBalance';
+  | 'profitTargetBalance'
+  | 'profitRemaining';
 export type TextField = 'firm' | 'program' | 'stage' | 'status' | 'drawdownType';
 export type DateField = 'startDate' | 'statementDate';
 /** Whole-number counts. */
@@ -75,6 +81,7 @@ export const MONEY_FIELDS: MoneyField[] = [
   'dailyLossLimit',
   'profitTarget',
   'profitTargetBalance',
+  'profitRemaining',
 ];
 export const TEXT_FIELDS: TextField[] = ['firm', 'program', 'stage', 'status', 'drawdownType'];
 export const DATE_FIELDS: DateField[] = ['startDate', 'statementDate'];
@@ -105,6 +112,7 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
   dailyLossLimit: 'Daily loss limit',
   profitTarget: 'Profit target (amount)',
   profitTargetBalance: 'Profit target (balance level)',
+  profitRemaining: 'Profit remaining to target',
   drawdownType: 'Drawdown type',
   tradingDays: 'Trading days',
   startDate: 'Start / purchase date',
@@ -119,6 +127,7 @@ export const FIELD_HELP: Partial<Record<FieldKey, string>> = {
   drawdownRemaining: 'How much more you can lose before the threshold.',
   profitTarget: 'Profit still to make in total (e.g. $1,250) — not a balance.',
   profitTargetBalance: 'The balance that passes the target (e.g. $26,250).',
+  profitRemaining: 'Profit still needed to reach the target balance (e.g. $860).',
   tradingDays: 'Days traded so far, as the dashboard shows it.',
 };
 

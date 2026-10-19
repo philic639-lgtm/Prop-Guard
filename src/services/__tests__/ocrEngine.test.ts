@@ -4,7 +4,7 @@
  * retry must start clean. tesseract.js is replaced by a fake worker; the
  * browser by minimal globals. Timeouts run on fake timers.
  */
-import { __setOcrTestHooks, OcrError, prepareOcr, recognizePrepared, sanitizeDetail, type OcrProgress } from '../accountImport/ocr.web';
+import { __setOcrTestHooks, OcrError, ocrScale, prepareOcr, recognizePrepared, sanitizeDetail, secondScale, type OcrProgress } from '../accountImport/ocr.web';
 
 jest.mock('tesseract.js', () => ({ createWorker: jest.fn() }));
 
@@ -184,5 +184,20 @@ describe('sanitizeDetail', () => {
     expect(sanitizeDetail('user me@example.com account 12345678')).toBe('user [email] account [number]');
     expect(sanitizeDetail('x'.repeat(500))!.length).toBe(160);
     expect(sanitizeDetail(null)).toBeNull();
+  });
+});
+
+describe('reading scales', () => {
+  it('a phone photo of a screen (1500×2000) is read at 1× and again upscaled 1.6×', () => {
+    expect(ocrScale(1500, 2000)).toBe(1);
+    expect(secondScale(1500, 2000, 1)).toBe(1.6);
+  });
+  it('an upscaled desktop capture gets a second reading at native size', () => {
+    expect(ocrScale(1280, 720)).toBe(2);
+    expect(secondScale(1280, 720, 2)).toBe(1);
+  });
+  it('never beyond the pixel budget; no second pass when it would not differ', () => {
+    expect(secondScale(4000, 3000, 0.91)).toBeNull();
+    expect(secondScale(3024, 4032, ocrScale(3024, 4032))).toBeNull();
   });
 });

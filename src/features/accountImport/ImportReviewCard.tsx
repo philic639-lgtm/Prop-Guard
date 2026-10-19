@@ -87,7 +87,7 @@ function ValueRow({ row, onEdit, onConfirm }: { row: ReviewRow; onEdit: (k: Fiel
       {row.status === 'conflict' && row.choices ? (
         <View style={styles.choices}>
           <AppText variant="caption" tone="warning">
-            Your screenshots disagree — pick the right one:
+            The readings disagree — pick the one your dashboard shows:
           </AppText>
           {row.choices.map((c) => (
             <Chip key={String(c.value)} label={`${displayValue(row.key, c.value)} · screenshot ${c.screenshot}`} onPress={() => typeof c.value === 'number' && onEdit(row.key, c.value)} />
@@ -316,7 +316,13 @@ export function ImportReviewCard(p: ImportReviewCardProps) {
           {p.issues.map((i) => (
             <View key={i.id} style={styles.gap}>
               <AppText variant="caption">{i.message}</AppText>
-              <ToggleRow label={i.kind === 'reset' ? 'The account was reset — start the floor over from this screenshot' : 'I checked this'} value={!!p.acks[i.id]} onChange={(v) => p.onAck(i.id, v)} />
+              {i.kind === 'fix' ? (
+                <AppText variant="caption" tone="secondary">
+                  Edit the value that is wrong — compare each one with your dashboard.
+                </AppText>
+              ) : (
+                <ToggleRow label={i.kind === 'reset' ? 'The account was reset — start the floor over from this screenshot' : 'I checked this'} value={!!p.acks[i.id]} onChange={(v) => p.onAck(i.id, v)} />
+              )}
             </View>
           ))}
         </View>

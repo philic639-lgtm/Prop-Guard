@@ -112,7 +112,8 @@ export function matchImport(
   const firm: PropFirm | null = firmName ? findFirm(ctx.db, firmName) : null;
   const size = detectedSize(x);
   const stage = (val(x, 'stage') as ImportMatch['stage']) ?? null;
-  const text = norm([val(x, 'program'), firmName].filter(Boolean).join(' '));
+  // Every reading of the program title counts (two OCR passes may read "LUCIDRLEX" and "LUCIDFLEX").
+  const text = norm([val(x, 'program'), ...(x.fields.program?.alternatives ?? []).map((a) => a.value), firmName].filter(Boolean).join(' '));
 
   // Program suggestion.
   let program: ProgramSuggestion | null = null;

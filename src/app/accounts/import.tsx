@@ -20,7 +20,7 @@ import { useImportReview } from '@/features/accountImport/useImportReview';
 import { IMPORT_DEBUG, useImportSession, type ImportStep } from '@/features/accountImport/useImportSession';
 import { usePendingImport } from '@/features/accountImport/usePendingImport';
 import { olderSnapshot } from '@/lib/engines/accountSync';
-import { compareUpdate, updateSummary, type ChangeRow } from '@/lib/engines/accountUpdate';
+import { compareUpdate, providedFigures, updateSummary, type ChangeRow } from '@/lib/engines/accountUpdate';
 import { UpdateComparison } from '@/features/accountImport/UpdateComparison';
 import { applyImport, buildReview, confirmImport, lockedRuleFields, RESET_BLOCKER, rowsNeedingInput, type ApplyResult, type FieldKey } from '@/lib/engines/accountImport';
 import { getProgram, importProgramRules, missingOptions } from '@/lib/engines/firmRulesEngine';
@@ -39,7 +39,7 @@ import { goBack } from '@/utils/navigation';
 /** The account details shown (editable) on the review — in the order traders read their dashboard. */
 const DETAIL_KEYS: FieldKey[] = ['firm', 'program', 'accountSize', 'balance', 'startingBalance', 'profitTarget', 'drawdownThreshold', 'maxDrawdown', 'drawdownRemaining', 'dailyLossLimit', 'drawdownType', 'status', 'statementDate'];
 /** Everything else the reader may find, under "Screenshot evidence, other fields & privacy". */
-const OTHER_KEYS: FieldKey[] = ['stage', 'startDate', 'netPnl', 'dailyPnl', 'unrealizedPnl', 'equity', 'tradingDays', 'currentDrawdown', 'profitTargetBalance'];
+const OTHER_KEYS: FieldKey[] = ['stage', 'startDate', 'netPnl', 'dailyPnl', 'unrealizedPnl', 'equity', 'tradingDays', 'currentDrawdown', 'profitTargetBalance', 'profitRemaining'];
 const RULE_KEYS = ['maxDrawdown', 'dailyLossLimit', 'profitTarget'] as const;
 type RuleKey = (typeof RULE_KEYS)[number];
 const RULE_NAME: Record<RuleKey, string> = { maxDrawdown: 'max loss allowance', dailyLossLimit: 'daily loss limit', profitTarget: 'profit target' };
@@ -79,8 +79,16 @@ function ImportFlow() {
   const [phase, setPhase] = useState<'add' | 'review' | 'done'>('add');
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [acks, setAcks] = useState<Record<string, boolean>>({});
-  const [confirmedFields, setConfirmedFields] = useState<Set<FieldKey>>(() => new Set());
+  // "Looks right" / "I checked this" belong to the readings they were given for: new or re-read screenshots reset them.
+  const readingsKey = images.map((i) => `${i.image.id}:${i.status}:${i.run}:${i.reader ?? ''}`).join('|');
+  const [checked, setChecked] = useState<{ key: string; acks: Record<string, boolean>; fields: Set<FieldKey> }>(() => ({ key: readingsKey, acks: {}, fields: new Set() }));
+  const current = checked.key === readingsKey;
+  const acks = useMemo(() => (current ? checked.acks : {}), [current, checked.acks]);
+  const confirmedFields = useMemo(() => (current ? checked.fields : new Set<FieldKey>()), [current, checked.fields]);
+  const setAcks = (f: (a: Record<string, boolean>) => Record<string, boolean>) =>
+    setChecked((c) => (c.key === readingsKey ? { ...c, acks: f(c.acks) } : { key: readingsKey, acks: f({}), fields: new Set() }));
+  const setConfirmedFields = (f: (s: Set<FieldKey>) => Set<FieldKey>) =>
+    setChecked((c) => (c.key === readingsKey ? { ...c, fields: f(c.fields) } : { key: readingsKey, acks: {}, fields: f(new Set()) }));
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const createdIdRef = useRef<string | null>(null);
@@ -272,7 +280,8 @@ function ImportFlow() {
   let comparison: ChangeRow[] = [];
   if (mode === 'update' && target && phase === 'review' && recognised) {
     try {
-      comparison = compareUpdate(target, applyImport(target, buildConfirmed(new Date()), 'preview').account);
+      const c = buildConfirmed(new Date());
+      comparison = compareUpdate(target, applyImport(target, c, 'preview').account, providedFigures(Object.keys(c.values).filter((k) => c.sources[k as FieldKey]?.source !== 'derived')));
     } catch {
       comparison = [];
     }
@@ -310,7 +319,7 @@ function ImportFlow() {
       upsert(r.account);
       setActiveAccount(r.account.id);
       if (!(await confirmSaved(r.account))) return;
-      setSavedChanges(compareUpdate(target, r.account));
+      setSavedChanges(compareUpdate(target, r.account, providedFigures(Object.keys(c.values).filter((k) => c.sources[k as FieldKey]?.source !== 'derived'))));
       setResult(r);
       setPhase('done');
       finish(r.account.id, r.record.id);

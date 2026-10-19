@@ -21,6 +21,26 @@ export interface ChangeRow {
   changed: boolean;
   /** The new value is unknown — shown as "Needs verification", never as 0. */
   needsVerification: boolean;
+  /**
+   * Where the new value comes from: this update (screenshot / typed), or KEPT from the saved account because the
+   * update did not provide it — so an unchanged $25,318 is never mistaken for a screenshot reading.
+   */
+  origin: 'update' | 'kept';
+}
+
+/** Which dashboard figures an update provides, from the confirmed field keys it carries. */
+export function providedFigures(keys: Iterable<string>): Set<ChangeKey> {
+  const k = new Set(keys);
+  const out = new Set<ChangeKey>();
+  if (k.has('balance')) out.add('balance').add('totalPnl').add('targetProgress');
+  if (k.has('netPnl')) out.add('totalPnl');
+  if (k.has('dailyPnl')) out.add('dailyPnl');
+  if (k.has('drawdownThreshold') || k.has('drawdownRemaining')) out.add('floor').add('remaining');
+  if (k.has('balance') && (k.has('drawdownThreshold') || k.has('drawdownRemaining'))) out.add('remaining');
+  if (k.has('dailyLossLimit')) out.add('dailyLossLimit');
+  if (k.has('status')) out.add('status');
+  if (k.has('statementDate')) out.add('asOf');
+  return out;
 }
 
 const LABEL: Record<ChangeKey, string> = {
@@ -68,7 +88,9 @@ export function accountFigures(a: Account): Record<ChangeKey, number | string | 
   };
 }
 
-export function compareUpdate(before: Account, after: Account): ChangeRow[] {
+const changedRow = (b: number | string | null, a: number | string | null) => (typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) > 0.004 : a !== b);
+
+export function compareUpdate(before: Account, after: Account, provided?: Set<ChangeKey>): ChangeRow[] {
   const b = accountFigures(before);
   const a = accountFigures(after);
   const keys: ChangeKey[] = ['balance', 'totalPnl', 'dailyPnl', 'floor', 'remaining', 'dailyLossLimit', 'targetProgress', 'status', 'asOf'];
@@ -80,8 +102,10 @@ export function compareUpdate(before: Account, after: Account): ChangeRow[] {
       kind: KIND[k],
       before: b[k],
       after: a[k],
-      changed: typeof a[k] === 'number' && typeof b[k] === 'number' ? Math.abs((a[k] as number) - (b[k] as number)) > 0.004 : a[k] !== b[k],
+      changed: changedRow(b[k], a[k]),
       needsVerification: a[k] == null,
+      // Without a list (manual updates), every row is part of the update; a value that changed always is.
+      origin: !provided || provided.has(k) || changedRow(b[k], a[k]) ? 'update' : 'kept',
     }));
 }
 

@@ -9,7 +9,7 @@ import { NativeOcrHost } from '@/features/accountImport/NativeOcrHost';
 import { UpdateComparison } from '@/features/accountImport/UpdateComparison';
 import { useImportSession } from '@/features/accountImport/useImportSession';
 import { useFirmRules } from '@/features/accounts/useFirmRules';
-import { applyImport, type FieldKey } from '@/lib/engines/accountImport';
+import { applyImport, offeredSizes, type FieldKey } from '@/lib/engines/accountImport';
 import { BULK_STATUS_LABEL, extractionOf, matchToAccount, planBulk, type BulkItemInput, type BulkResult, type BulkStatus } from '@/lib/engines/bulkImport';
 import { pickImages } from '@/services/accountImport/images';
 import { confirmAccountSaved, useAppStore } from '@/store/useAppStore';
@@ -92,8 +92,10 @@ function BulkFlow() {
         .filter((i) => i.page)
         .map((i): BulkItemInput & { uri: string; n: number } => {
           const st = state[i.image.id] ?? EMPTY_ITEM;
-          const extraction = extractionOf(i.page!, st.edits);
-          const match = matchToAccount(extractionOf(i.page!), accounts, db);
+          const firm = typeof i.page!.fields.firm?.value === 'string' ? i.page!.fields.firm.value : null;
+          const context = { sizes: offeredSizes(db, firm), firmName: firm };
+          const extraction = extractionOf(i.page!, st.edits, context);
+          const match = matchToAccount(extractionOf(i.page!, {}, context), accounts, db);
           return { id: i.image.id, uri: i.image.uri, n: images.indexOf(i) + 1, extraction, match, accountId: st.accountId === undefined ? match.accountId : st.accountId, matchConfirmed: st.matchConfirmed, skipped: st.skipped, acks: st.acks, manualChoice: st.manualChoice };
         }),
     [images, state, accounts, db],

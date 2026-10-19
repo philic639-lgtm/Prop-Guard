@@ -131,7 +131,7 @@ export function ImportFieldRow({ k, field, edited, onChange, onReset, note }: Pr
       {field?.alternatives?.length ? (
         <View style={styles.alts}>
           <AppText variant="caption" tone="warning">
-            Screenshots disagree — pick one:
+            Readings disagree — pick one:
           </AppText>
           {[{ value: field.value, page: field.page }, ...field.alternatives].map((a) => (
             <Chip key={String(a.value)} label={`${displayValue(k, a.value)}${a.page >= 0 ? ` · screenshot ${a.page + 1}` : ''}`} onPress={() => onChange(a.value)} />

@@ -24,23 +24,30 @@ export function UpdateComparison({ rows, title = 'What changes' }: { rows: Chang
           Saved now
         </AppText>
         <AppText variant="caption" tone="tertiary" style={styles.col}>
-          After update
+          From this update
         </AppText>
       </View>
       {rows.map((r) => {
         const before = show(r, r.before);
         const after = show(r, r.after);
         return (
-          <View key={r.key} style={[styles.row, styles.line]} accessibilityLabel={`${r.label}: ${before ?? 'not known'} to ${after ?? 'needs verification'}`}>
+          <View key={r.key} style={[styles.row, styles.line]} accessibilityLabel={`${r.label}: ${before ?? 'not known'} to ${after ?? 'needs verification'}${r.origin === 'kept' ? ', kept from the saved account — not on the screenshot' : ''}`}>
             <AppText variant="caption" tone="secondary" style={styles.label}>
               {r.label}
             </AppText>
             <AppText variant="caption" tone="tertiary" style={styles.col}>
               {before ?? '—'}
             </AppText>
-            <AppText variant="caption" style={[styles.col, r.changed && styles.changed, r.needsVerification && styles.verify]}>
-              {after ?? 'Needs verification'}
-            </AppText>
+            <View style={styles.col}>
+              <AppText variant="caption" style={[styles.right, r.changed && styles.changed, r.needsVerification && styles.verify, r.origin === 'kept' && styles.kept]}>
+                {after ?? 'Needs verification'}
+              </AppText>
+              {r.origin === 'kept' ? (
+                <AppText variant="caption" tone="tertiary" style={[styles.right, styles.small]}>
+                  kept · not on screenshot
+                </AppText>
+              ) : null}
+            </View>
           </View>
         );
       })}
@@ -56,4 +63,7 @@ const styles = StyleSheet.create({
   col: { flex: 1, minWidth: 0, textAlign: 'right' },
   changed: { color: colors.text, fontWeight: '700' },
   verify: { color: colors.warning },
+  kept: { color: colors.textTertiary },
+  right: { textAlign: 'right' },
+  small: { fontSize: 10 },
 });

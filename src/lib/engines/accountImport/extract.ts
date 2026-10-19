@@ -15,7 +15,7 @@ import { FIELD_LABEL, type AmbiguousReading, type DateField, type ExtractedField
 // ───────────────────────────── Labels ─────────────────────────────
 
 /** `ignore`: look-alike numbers that must never fill a field (their value is claimed and dropped). */
-type LabelTarget = FieldKey | 'sensitive:account_id' | 'sensitive:name' | 'ignore';
+type LabelTarget = FieldKey | 'sensitive:account_id' | 'sensitive:name' | 'ignore' | 'unclear:balance';
 
 const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   // Balance (current)
@@ -42,6 +42,11 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
   { target: 'netPnl', phrases: ['p&l'], weight: 0.85 },
   { target: 'profitTarget', phrases: ['profit target', 'profit goal', 'target profit'], weight: 1 },
   { target: 'profitTargetBalance', phrases: ['target balance', 'profit target balance', 'passing balance', 'pass balance'], weight: 1 },
+  // A bare "Target" (Lucid's progress bar: "$26,250 TARGET") — a balance-sized reading becomes the target balance.
+  { target: 'profitTarget', phrases: ['target'], weight: 0.75 },
+  { target: 'profitRemaining', phrases: ['profit target remaining', 'remaining profit target', 'remaining target', 'target remaining', 'distance to target', 'profit remaining', 'profit needed', 'needed to pass', 'to target'], weight: 1 },
+  // A bare "Remaining" is usually the profit still to make; arithmetic (balance − threshold) re-files it as drawdown.
+  { target: 'profitRemaining', phrases: ['remaining'], weight: 0.6 },
   { target: 'tradingDays', phrases: ['trading days', 'days traded', 'traded days', 'days trading'], weight: 1 },
   { target: 'accountSize', phrases: ['account size', 'plan size', 'starting size', 'evaluation size'], weight: 1 },
   { target: 'program', phrases: ['plan', 'program', 'account type', 'product', 'plan name', 'account plan'], weight: 0.95 },
@@ -55,7 +60,6 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
     target: 'ignore',
     phrases: [
       'buying power', 'available funds', 'available margin', 'excess liquidity', 'margin used', 'initial margin', 'maintenance margin',
-      'profit target remaining', 'remaining profit target', 'remaining target', 'target remaining', 'to target', 'distance to target', 'profit remaining', 'profit needed', 'needed to pass',
       'high water mark', 'highest balance', 'peak balance', 'max balance', 'highest eod balance', 'trailing high',
       // Rules shown next to progress ("Min trading days 5") are not the days traded.
       'minimum trading days', 'min trading days', 'required trading days', 'min. trading days', 'trading days required',
@@ -70,7 +74,12 @@ const LABELS: { target: LabelTarget; phrases: string[]; weight: number }[] = [
 const COMPILED = LABELS.flatMap((l) => l.phrases.map((p) => ({ target: l.target, phrase: p, weight: l.weight, words: p.split(' ').length })))
   .sort((a, b) => b.phrase.length - a.phrase.length);
 
-const MONEY = new Set<FieldKey>(['accountSize', 'balance', 'startingBalance', 'netPnl', 'dailyPnl', 'equity', 'unrealizedPnl', 'maxDrawdown', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining', 'dailyLossLimit', 'profitTarget', 'profitTargetBalance']);
+const MONEY = new Set<FieldKey>(['accountSize', 'balance', 'startingBalance', 'netPnl', 'dailyPnl', 'equity', 'unrealizedPnl', 'maxDrawdown', 'drawdownThreshold', 'currentDrawdown', 'drawdownRemaining', 'dailyLossLimit', 'profitTarget', 'profitTargetBalance', 'profitRemaining']);
+/**
+ * A bare 1–3 digit number ("88", "5") on a page whose amounts carry "$": a fragment of a
+ * cropped or misread amount ("$988" → "88"), or a chart / calendar label — never a dollar value.
+ */
+const FRAGMENT = /^[+\-−]?\d{1,3}$/;
 const COUNT = new Set<FieldKey>(['tradingDays']);
 /** A count token: "5", or "5/10" (days traded of days required). */
 const parseCount = (raw: string): number | null => {
@@ -160,6 +169,8 @@ export function statusFrom(text: string): string | null {
 /** Account-number-like token: digits + letters/hyphens, not money, size or date. */
 export function looksLikeAccountId(t: string): boolean {
   const s = t.replace(/[,;:|]+$/, '');
+  // Nine or more digits without money formatting ("202585369370002", OCR's "12:85369370802") is an account number.
+  if (!/[$,.]/.test(s) && (s.match(/\d/g) ?? []).length >= 9 && /^[A-Za-z0-9:\-/]+$/.test(s)) return true;
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{5,}$/.test(s)) return false;
   if ((s.match(/\d/g) ?? []).length < 4) return false;
   if (parseMoney(s, true) != null) return false;
@@ -271,6 +282,10 @@ function findLabels(line: OcrLine, li: number): LabelHit[] {
         else if (n < 2 || !fuzzyWord(tokens[i + k], parts[k])) ok = false;
       }
       if (!ok || exact === 0) continue;
+      // One label's words sit together: "DRAWDOWN        BALANCE" under two different numbers are two captions, not "drawdown balance".
+      const words = line.words.slice(i, i + n);
+      const wordH = Math.max(8, ...words.map((w) => w.bbox.y1 - w.bbox.y0));
+      if (words.some((w, k) => k > 0 && w.bbox.x0 - words[k - 1].bbox.x1 > wordH * 2.5)) continue;
       for (let k = 0; k < n; k++) used[i + k] = true;
       // A slip in the label makes the reading "check this", never high confidence.
       hits.push({ target: l.target, phrase: l.phrase, weight: exact < n ? l.weight * 0.88 : l.weight, line: li, w0: i, w1: i + n, bbox: unionBox(line.words.slice(i, i + n)) });
@@ -324,6 +339,11 @@ function readMoney(key: FieldKey, words: OcrWord[], i: number, label: string): M
 const fmtMoney = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions = {}): PageExtraction {
+  // Several readings of one image (OCR at two scales): each is extracted on its own, then merged.
+  if (page.passes?.length) {
+    const { passes, ...first } = page;
+    return mergePasses([first, ...passes].map((p) => extractPage(p, pageIndex, opts)));
+  }
   const fields: FieldMap = {};
   const sensitive: SensitiveItem[] = [];
   const claimed = new Set<string>(); // `${line}:${word}`
@@ -332,6 +352,20 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
   const qualityFactor = quality === 'poor' ? 0.6 : quality === 'fair' ? 0.88 : 1;
 
   const labels = page.lines.map((l, i) => findLabels(l, i));
+  // Two balance labels on one row ("ACCOUNT BALANCE  wwhum BALANCE"): the bare "Balance" is another balance whose
+  // qualifier could not be read (minimum / starting / target) — its value is never the current balance.
+  for (const hits of labels) {
+    if (!hits.some((h) => h.target === 'balance' && h.phrase !== 'balance')) continue;
+    for (const h of hits) if (h.target === 'balance' && h.phrase === 'balance') h.target = 'unclear:balance';
+  }
+  const labelWords = labels.map((hits) => new Set(hits.flatMap((h) => Array.from({ length: h.w1 - h.w0 }, (_, k) => h.w0 + k))));
+  // Amounts on this page carry "$": a bare "88" next to a money label is a fragment, not a value.
+  const dollarPage = page.lines.reduce((n, l) => n + l.words.filter((w) => /\$\s?\d/.test(w.text)).length, 0) >= 2;
+  const fragment = (key: FieldKey, t: string) => dollarPage && key !== 'accountSize' && !COUNT.has(key) && FRAGMENT.test(t.trim().replace(/[,;:.]+$/, ''));
+  const unclearReason = (h: LabelHit) => {
+    const q = page.lines[h.line].words[h.w0 - 1]?.text;
+    return `A second balance on this row${q ? ` (“${q} Balance”)` : ''} whose label could not be read — minimum, starting or target balance? Not used as the current balance.`;
+  };
 
   // Every reading is kept; several DIFFERENT readings of one field on a page are an ambiguity, not a choice.
   const cands: Partial<Record<FieldKey, ExtractedField[]>> = {};
@@ -353,6 +387,41 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     });
   };
 
+  const labelOf = (key: FieldKey) => FIELD_LABEL[key].replace(/ \(.*\)$/, '').toLowerCase();
+  /**
+   * Value printed BEFORE its label on the same line ("$24,402 MLL", "$988 DRAWDOWN"): the nearest word to the
+   * left, close to the label, not part of another label and not already another label's value.
+   */
+  const fromPrefix = (h: LabelHit, li: number, key: FieldKey): boolean => {
+    if (!MONEY.has(key) && !COUNT.has(key)) return false;
+    const line = page.lines[li];
+    let i = h.w0 - 1;
+    while (i >= 0 && isFiller(line.words[i].text)) i--;
+    if (i < 0 || claimed.has(`${li}:${i}`) || labelWords[li].has(i)) return false;
+    const w = line.words[i];
+    const lh = Math.max(8, h.bbox.y1 - h.bbox.y0);
+    if (h.bbox.x0 - w.bbox.x1 > Math.max(3 * lh, 40)) return false;
+    const ev = `“${redactText(line.text)}”`;
+    if (COUNT.has(key)) {
+      const v = parseCount(w.text);
+      if (v == null) return false;
+      claimed.add(`${li}:${i}`);
+      put(key, v, (w.confidence / 100) * h.weight * 0.92, ev);
+      return true;
+    }
+    if (fragment(key, w.text)) return false;
+    const r = readMoney(key, [w], 0, labelOf(key));
+    if (r == null) return false;
+    claimed.add(`${li}:${i}`);
+    if ('rejected' in r) {
+      ambiguous.push({ key, value: r.rejected.value, reason: r.rejected.reason, evidence: ev, page: pageIndex });
+      return true;
+    }
+    if (r.ambiguous) ambiguous.push({ key, ...r.ambiguous, evidence: ev, page: pageIndex });
+    put(key, r.value, (w.confidence / 100) * h.weight * r.factor * 0.92, ev);
+    return true;
+  };
+
   // Pass 1 — same-line values.
   const pending: LabelHit[] = [];
   page.lines.forEach((line, li) => {
@@ -370,10 +439,13 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
         }
         return;
       }
-      if (h.target === 'ignore') {
+      if (h.target === 'ignore' || h.target === 'unclear:balance') {
         const v = words[0] && (parseMoney(words[0].text) != null || /^[+-]?\$?[\d,.]+%$/.test(words[0].text));
-        if (v) claimed.add(`${li}:${startIdx}`);
-        else pending.push(h);
+        if (v) {
+          claimed.add(`${li}:${startIdx}`);
+          const amount = parseMoney(words[0].text);
+          if (h.target === 'unclear:balance' && amount != null) ambiguous.push({ key: 'balance', value: amount, reason: unclearReason(h), evidence: `“${redactText(line.text)}”`, page: pageIndex });
+        } else pending.push(h);
         return;
       }
       if (h.target === 'sensitive:name') {
@@ -382,21 +454,21 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
       }
       const key = h.target;
       if (!words.length) {
-        pending.push(h);
+        if (!fromPrefix(h, li, key)) pending.push(h);
         return;
       }
       if (COUNT.has(key)) {
         const v = parseCount(words[0].text);
         if (v == null) {
-          pending.push(h);
+          if (!fromPrefix(h, li, key)) pending.push(h);
           return;
         }
         claimed.add(`${li}:${startIdx}`);
         put(key, v, (words[0].confidence / 100) * h.weight, `“${redactText(line.text)}”`);
       } else if (MONEY.has(key)) {
-        const r = readMoney(key, words, 0, FIELD_LABEL[key].replace(/ \(.*\)$/, '').toLowerCase());
+        const r = fragment(key, words[0].text) ? null : readMoney(key, words, 0, labelOf(key));
         if (r == null) {
-          pending.push(h);
+          if (!fromPrefix(h, li, key)) pending.push(h);
           return;
         }
         for (const u of r.used) claimed.add(`${li}:${line.words.indexOf(words[u])}`);
@@ -425,10 +497,12 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
   });
 
   // Pass 2 — card / grid layouts: value in the same column on a nearby label-free line.
-  const valueLines = page.lines.map((l, i) => labels[i].length === 0 && !isTableHeader(l) && !isTableRow(l));
+  // Lines with labels may hold values too (Lucid's progress bar: "$988  …  REMAINING"); label words never are.
+  const valueLines = page.lines.map((l) => !isTableHeader(l) && !isTableRow(l));
   for (const h of pending) {
-    if (!MONEY.has(h.target as FieldKey) && !COUNT.has(h.target as FieldKey) && h.target !== 'ignore') continue;
-    const key = h.target as MoneyField | 'tradingDays' | 'ignore';
+    if (!MONEY.has(h.target as FieldKey) && !COUNT.has(h.target as FieldKey) && h.target !== 'ignore' && h.target !== 'unclear:balance') continue;
+    const unclear = h.target === 'unclear:balance';
+    const key = (unclear ? 'ignore' : h.target) as MoneyField | 'tradingDays' | 'ignore';
     const parseFor = (t: string) => (key === 'tradingDays' ? parseCount(t) : parseMoney(t, key === 'accountSize'));
     const lh = Math.max(8, h.bbox.y1 - h.bbox.y0);
     const siblings = labels[h.line];
@@ -440,10 +514,16 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
         const li = h.line + dir * step;
         const line = page.lines[li];
         if (!line || !valueLines[li]) continue;
-        const gap = dir === 1 ? line.bbox.y0 - h.bbox.y1 : h.bbox.y0 - line.bbox.y1;
-        if (gap > Math.max(3.5 * lh, 70) || gap < -lh) continue;
+        const near = (b: OcrBox) => {
+          // Per word: OCR merges words of different rows into one line ("$25,390 … $860" with "$988 … REMAINING").
+          const gap = dir === 1 ? b.y0 - h.bbox.y1 : h.bbox.y0 - b.y1;
+          const mid = (b.y0 + b.y1) / 2 - (h.bbox.y0 + h.bbox.y1) / 2;
+          return gap <= Math.max(3.5 * lh, 70) && gap >= -lh && dir * mid > lh * 0.5;
+        };
+        if (!line.words.some((w) => near(w.bbox))) continue;
         line.words.forEach((w, wi) => {
-          if (claimed.has(`${li}:${wi}`)) return;
+          if (claimed.has(`${li}:${wi}`) || labelWords[li].has(wi) || !near(w.bbox)) return;
+          if (key !== 'ignore' && fragment(key as FieldKey, w.text)) return;
           // The limit half of a "progress / limit" pair is reached through its first half.
           if (wi >= 2 && /^(\/|of)$/i.test(line.words[wi - 1].text) && parseMoney(line.words[wi - 2].text) != null && MONEY.has(key as FieldKey) && key !== 'ignore') return;
           let v = parseFor(w.text) ?? (key === 'ignore' && /^[+-]?[\d,.]+%$/.test(w.text) ? 0 : null);
@@ -482,6 +562,10 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
       const ev = `“${labelText(h)}” → ${b.used.map((u) => page.lines[b.li].words[u].text).join(' ')}`;
       if (b.amb && key !== 'ignore') ambiguous.push({ key: key as FieldKey, ...b.amb, evidence: ev, page: pageIndex });
       if (key !== 'ignore') put(key, b.v, (b.w.confidence / 100) * h.weight * b.layout * b.factor, ev);
+      else if (unclear) {
+        const amount = parseMoney(b.w.text);
+        if (amount != null) ambiguous.push({ key: 'balance', value: amount, reason: unclearReason(h), evidence: ev, page: pageIndex });
+      }
     } else if (refused && key !== 'ignore') {
       const r = refused as { value: number; reason: string; evidence: string };
       ambiguous.push({ key: key as FieldKey, value: r.value, reason: r.reason, evidence: r.evidence, page: pageIndex });
@@ -538,7 +622,7 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
     if (!sizeWord && !stage) continue;
     // A menu item ("Funded Accounts") is not a title.
     if (!sizeWord && line.words.every((w) => stageFrom(w.text) || NAV_WORDS.has(normWord(w.text)))) continue;
-    if (line.words.some((w) => parseMoney(w.text) != null && !/[kK]$/.test(w.text))) continue;
+    if (line.words.some((w) => parseMoney(w.text) != null && !/[kK]$/.test(w.text) && !looksLikeAccountId(w.text))) continue;
     const crumbs = /[>›»]|@/.test(line.text) ? 1.5 : 0;
     const score = (sizeWord ? 1 : 0) + (stage ? 1 : 0) - crumbs - Math.max(0, line.words.length - 7) * 0.2;
     if (!title || score > title.score) title = { line, sizeWord, stage, score };
@@ -651,6 +735,61 @@ export function extractPage(page: OcrPage, pageIndex = 0, opts: ExtractOptions =
   // A refused reading that another label claimed later ("−$66" → Total P&L) is no longer ambiguous.
   const stillAmbiguous = ambiguous.filter((a) => !Object.values(fields).some((f) => f && f.key !== a.key && typeof f.value === 'number' && Math.abs(f.value - a.value) < 0.005 && a.value < 0 && !LIMIT_PAIR.has(f.key)));
   return { page: pageIndex, fields: resolveLevels(fields), ...(stillAmbiguous.length ? { ambiguous: stillAmbiguous } : {}), sensitive, quality, ocrConfidence: Math.round(page.confidence), wordCount, labelsFound };
+}
+
+/**
+ * Merge several readings of ONE image (`OcrPage.passes`). A value read the same way twice is kept
+ * (slightly more confident); different readings of a field become alternatives — a conflict the
+ * trader resolves (or the arithmetic cross-check settles). Nothing is averaged or invented.
+ */
+export function mergePasses(list: PageExtraction[]): PageExtraction {
+  if (list.length === 1) return list[0];
+  const same = (key: FieldKey, a: number | string, b: number | string) =>
+    typeof a === 'number' && typeof b === 'number' ? (COUNT.has(key) ? a === b : Math.abs(a - b) <= 0.5) : String(a).toLowerCase().replace(/[^a-z0-9]/g, '') === String(b).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const fields: FieldMap = {};
+  const keys = new Set(list.flatMap((e) => Object.keys(e.fields) as FieldKey[]));
+  for (const key of keys) {
+    const readings = list.flatMap((e) => {
+      const f = e.fields[key];
+      return f ? [f, ...(f.alternatives ?? []).map((a) => ({ ...f, value: a.value, confidence: a.confidence, alternatives: undefined }))] : [];
+    });
+    const groups: ExtractedField[][] = [];
+    for (const r of readings) {
+      const g = groups.find((x) => same(key, x[0].value, r.value));
+      if (g) g.push(r);
+      else groups.push([r]);
+    }
+    const score = (g: ExtractedField[]) => g.reduce((n, r) => n + r.confidence, 0);
+    groups.sort((a, b) => score(b) - score(a));
+    const top = [...groups[0]].sort((a, b) => b.confidence - a.confidence)[0];
+    const best: ExtractedField = { ...top };
+    delete best.alternatives;
+    if (groups.length > 1) {
+      best.alternatives = groups.slice(1).map((g) => {
+        const r = [...g].sort((a, b) => b.confidence - a.confidence)[0];
+        return { value: r.value, confidence: r.confidence, page: r.page };
+      });
+      best.confidence = Math.min(best.confidence, 0.5);
+    } else if (groups[0].length > 1) {
+      best.confidence = Math.round(Math.min(1, best.confidence + 0.05 * (groups[0].length - 1)) * 100) / 100;
+      best.evidence = `${best.evidence} · read the same way twice`;
+    }
+    fields[key] = best;
+  }
+  const ambiguous = list.flatMap((e) => e.ambiguous ?? []).filter((a, i, all) => all.findIndex((b) => b.key === a.key && Math.abs(b.value - a.value) < 0.005) === i);
+  const sensitive = list.flatMap((e) => e.sensitive).filter((a, i, all) => all.findIndex((b) => b.kind === a.kind && b.masked === a.masked) === i);
+  const rank = { good: 2, fair: 1, poor: 0 } as const;
+  const bestQuality = list.reduce((q, e) => (rank[e.quality] > rank[q] ? e.quality : q), list[0].quality);
+  return {
+    page: list[0].page,
+    fields: resolveLevels(fields),
+    ...(ambiguous.length ? { ambiguous } : {}),
+    sensitive,
+    quality: bestQuality,
+    ocrConfidence: Math.max(...list.map((e) => e.ocrConfidence)),
+    wordCount: Math.max(...list.map((e) => e.wordCount)),
+    labelsFound: Math.max(...list.map((e) => e.labelsFound ?? 0)),
+  };
 }
 
 export type { ExtractedField, TextField };

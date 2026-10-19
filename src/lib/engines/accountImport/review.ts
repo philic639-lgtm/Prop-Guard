@@ -1,5 +1,5 @@
 import type { ImportMatch } from './match';
-import { DRAWDOWN_TYPE_LABEL, LOW_CONFIDENCE, type AmbiguousReading, type ExtractedField, type FieldKey, type FieldMap, type ImportCheck } from './types';
+import { DRAWDOWN_TYPE_LABEL, FIELD_LABEL, LOW_CONFIDENCE, type AmbiguousReading, type ExtractedField, type FieldKey, type FieldMap, type ImportCheck } from './types';
 
 /**
  * The trader-facing review: a few essential rows, each with WHERE its value
@@ -39,8 +39,11 @@ export interface ReviewRow {
 export interface ReviewIssue {
   id: string;
   message: string;
-  /** `reset`: the trader may confirm an account reset (a lower floor). */
-  kind: 'ack' | 'reset';
+  /**
+   * `reset`: the trader may confirm an account reset (a lower floor). `fix`: screenshot values contradict each
+   * other — resolved only by correcting a value, never by "I checked this".
+   */
+  kind: 'ack' | 'reset' | 'fix';
 }
 
 export interface ReviewInput {
@@ -256,17 +259,35 @@ export function buildReview(input: ReviewInput): ReviewModel {
   const issues: ReviewIssue[] = [];
   for (const c of input.match.conflicts.filter((x) => x.severity === 'conflict'))
     issues.push({ id: `m:${c.field}:${c.message}`, message: c.message, kind: c.field === 'drawdownThreshold' ? 'reset' : 'ack' });
-  for (const c of input.checks.filter((x) => x.status === 'conflict' && !x.id.startsWith('conflict:') && x.id !== 'different-accounts')) issues.push({ id: `c:${c.id}`, message: c.message, kind: 'ack' });
+  // Numbers that do not add up: a focused correction. Only when the trader typed every value involved is it their call.
+  for (const c of input.checks.filter((x) => x.status === 'conflict' && !x.id.startsWith('conflict:') && x.id !== 'different-accounts')) {
+    const allTyped = c.fields.every((k) => edited.has(k) || fields[k]?.source === 'user');
+    issues.push({ id: `c:${c.id}`, message: c.message, kind: allTyped ? 'ack' : 'fix' });
+  }
+
+  // Every other value whose readings disagree, or that a contradiction involves, gets its own row to pick / edit.
+  const shown = new Set(rows.map((r) => r.key));
+  const involved = new Set(issues.filter((i) => i.kind === 'fix').flatMap((i) => input.checks.find((c) => `c:${c.id}` === i.id)?.fields ?? []));
+  for (const [k, f] of Object.entries(fields) as [FieldKey, ExtractedField][]) {
+    if (shown.has(k) || k === 'program' || k === 'firm' || f.source === 'derived') continue;
+    if (f.alternatives?.length || involved.has(k)) {
+      const r = fromField(k, FIELD_LABEL[k], false);
+      if (r.status === 'ok' && involved.has(k) && !edited.has(k) && f.source !== 'user') r.status = 'uncertain';
+      rows.push(r);
+    }
+  }
 
   // What still blocks saving.
   if (mode === 'new' && !input.name.trim()) blockers.push('Name the account.');
   for (const r of rows) {
     if (r.required && (r.status === 'missing' || typeof r.value !== 'number' || r.value <= 0)) blockers.push(`Enter the ${r.label.toLowerCase()}.`);
-    else if (r.status === 'conflict') blockers.push(`Pick the correct ${r.label.toLowerCase()} — your screenshots disagree.`);
+    else if (r.status === 'conflict') blockers.push(`Pick the correct ${r.label.toLowerCase()} — the readings disagree.`);
     else if (r.status === 'uncertain') blockers.push(`Check the ${r.label.toLowerCase()} — the reading is uncertain.`);
   }
   for (const o of input.missingOptions) blockers.push(`Choose the ${o.label} option.`);
-  for (const i of issues) if (!input.acks[i.id]) blockers.push(i.kind === 'reset' ? RESET_BLOCKER : 'Resolve the item marked “Needs your attention”.');
+  for (const i of issues)
+    if (i.kind === 'fix') blockers.push('Correct the values that do not add up (marked “Needs your attention”).');
+    else if (!input.acks[i.id]) blockers.push(i.kind === 'reset' ? RESET_BLOCKER : 'Resolve the item marked “Needs your attention”.');
 
   // Different accounts in one import: never saved together.
   if (input.checks.some((c) => c.id === 'different-accounts')) blockers.push('Remove the screenshots of the other account — import one account at a time.');
@@ -323,7 +344,7 @@ function cardFromRow(r: ReviewRow | undefined, key: SummaryCard['key'], label: s
     return { key, label, value: null, status: 'missing', statusLabel: CARD_STATUS_LABEL.missing, editable: true, needsReview: !!r?.required, ...(r?.required ? { note: 'Required — enter it from your dashboard.' } : {}) };
   const value = typeof r.value === 'number' ? r.value : null;
   if (r.status === 'conflict')
-    return { key, label, value, status: 'conflict', statusLabel: CARD_STATUS_LABEL.conflict, editable: true, needsReview: true, note: 'Your screenshots disagree — pick the right value.', choices: (r.choices ?? []).filter((c): c is { value: number; screenshot: number } => typeof c.value === 'number') };
+    return { key, label, value, status: 'conflict', statusLabel: CARD_STATUS_LABEL.conflict, editable: true, needsReview: true, note: 'The readings disagree — pick the value your dashboard shows.', choices: (r.choices ?? []).filter((c): c is { value: number; screenshot: number } => typeof c.value === 'number') };
   if (r.status === 'uncertain') return { key, label, value, status: 'review', statusLabel: 'Needs review — unclear reading', editable: true, needsReview: true, confirmKey: r.key, note: 'Compare with your dashboard, then tap “Looks right” or edit.' };
   const status: CardStatus = r.source === 'verified_rule' ? 'verified' : r.source === 'edited' ? 'entered' : r.source === 'calculated' ? 'calculated' : 'extracted';
   return { key, label, value, status, statusLabel: status === 'extracted' && r.screenshot ? `Extracted — needs confirmation (screenshot ${r.screenshot})` : CARD_STATUS_LABEL[status], editable: status !== 'verified', needsReview: false, ...(r.note && status === 'verified' && r.note.startsWith('Your screenshot') ? { note: r.note } : {}) };
@@ -333,6 +354,8 @@ function summaryCards(input: ReviewInput, rows: ReviewRow[], dd: DrawdownState):
   const row = (k: FieldKey) => rows.find((r) => r.key === k);
   const amb = (k: FieldKey) => (input.ambiguous ?? []).filter((a) => a.key === k);
   const balance = cardFromRow(row('balance'), 'balance', 'Current Balance');
+  // A balance that was read but cannot be right (or whose label was unreadable): say why, the trader types it.
+  if (balance.status === 'missing' && amb('balance').length) Object.assign(balance, { status: 'review', statusLabel: 'Needs confirmation — unclear reading', needsReview: true, note: amb('balance')[0].reason });
   if (input.confirmedFields.has('balance') && balance.status === 'extracted') Object.assign(balance, { status: 'confirmed', statusLabel: CARD_STATUS_LABEL.confirmed });
 
   const thrRow = row('drawdownThreshold');

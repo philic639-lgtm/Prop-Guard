@@ -1,5 +1,6 @@
+import { checkPlausibility, type PlausibilityContext } from './plausibility';
 import type { AmbiguousReading, ExtractedField, Extraction, FieldKey, FieldMap, ImportCheck, PageExtraction } from './types';
-import { ALL_FIELDS, COUNT_FIELDS } from './types';
+import { ALL_FIELDS, COUNT_FIELDS, FIELD_LABEL } from './types';
 
 /**
  * Merge one or more screenshots and cross-check the numbers.
@@ -119,9 +120,12 @@ export function mergePages(pages: PageExtraction[]): FieldMap {
     const all = usable.map((p) => p.fields[key]).filter((f): f is ExtractedField => !!f).sort((a, b) => b.confidence - a.confidence);
     if (!all.length) continue;
     const best = { ...all[0] };
-    const others = all.slice(1).filter((f) => !sameValue(key, f.value, best.value));
+    delete best.alternatives;
+    // Every reading counts, including the alternatives one screenshot already had (two OCR passes that disagreed).
+    const readings = all.flatMap((f, i) => [...(i ? [{ value: f.value, confidence: f.confidence, page: f.page }] : []), ...(f.alternatives ?? [])]);
+    const others = readings.filter((r, i) => !sameValue(key, r.value, best.value) && readings.findIndex((x) => sameValue(key, x.value, r.value)) === i);
     if (others.length) {
-      best.alternatives = others.map((f) => ({ value: f.value, confidence: f.confidence, page: f.page }));
+      best.alternatives = others;
       best.confidence = Math.min(best.confidence, 0.6);
     } else if (all.length > 1) {
       // Two screenshots agree.
@@ -152,25 +156,93 @@ const derived = (key: FieldKey, value: number, from: ExtractedField[], evidence:
  * Also used after the trader edits values: edits (`source: 'user'`) are
  * never down-rated, and fields the trader cleared are never re-derived.
  */
-export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } = {}): { fields: FieldMap; checks: ImportCheck[] } {
+export function crossCheck(
+  input: FieldMap,
+  opts: { noDerive?: Set<FieldKey>; /** Firm sizes / the account being updated, for plausibility. */ context?: PlausibilityContext } = {},
+): { fields: FieldMap; checks: ImportCheck[]; ambiguous: AmbiguousReading[] } {
   const fields: FieldMap = {};
   for (const [k, f] of Object.entries(resolveLevels(input)) as [FieldKey, ExtractedField][]) if (f && f.source !== 'derived') fields[k] = { ...f };
   const checks: ImportCheck[] = [];
   const may = (k: FieldKey) => !opts.noDerive?.has(k);
 
+  // Implausible readings never reach the review as values (they become "needs confirmation").
+  const pl = checkPlausibility(fields, opts.context);
+  for (const k of Object.keys(fields) as FieldKey[]) if (!pl.fields[k]) delete fields[k];
+  Object.assign(fields, pl.fields);
+  checks.push(...pl.checks);
+
+  // Lucid's progress bar labels the cushion "DRAWDOWN" / "REMAINING": a reading equal to balance − minimum
+  // balance IS the remaining drawdown (filed by arithmetic, never by guess).
+  const plain = (f: ExtractedField | undefined) => (f && f.source !== 'derived' && !f.alternatives?.length && typeof f.value === 'number' ? f.value : null);
+  const refile = () => {
+    const b = plain(fields.balance);
+    const t = plain(fields.drawdownThreshold);
+    if (b == null || t == null || fields.drawdownRemaining) return;
+    for (const from of ['currentDrawdown', 'profitRemaining'] as const) {
+      const f = fields[from];
+      const v = plain(f);
+      if (f && v != null && close(b - t, v) && !(from === 'profitRemaining' && plain(fields.profitTargetBalance) != null && close(plain(fields.profitTargetBalance)! - b, v))) {
+        fields.drawdownRemaining = { ...f, key: 'drawdownRemaining', evidence: `${f.evidence} · equals balance − minimum balance` };
+        delete fields[from];
+        return;
+      }
+    }
+  };
+
+  // Two readings of one value (two OCR passes, two screenshots): arithmetic with values read only one way decides —
+  // shown as a check, the other reading named. Without such agreement it stays a conflict for the trader.
+  const sum = (a: FieldKey, b: FieldKey, sign = 1) => () => (plain(fields[a]) != null && plain(fields[b]) != null ? plain(fields[a])! + sign * plain(fields[b])! : null);
+  const identities: [FieldKey, () => number | null, string][] = [
+    ['balance', sum('drawdownThreshold', 'drawdownRemaining'), 'minimum balance + remaining drawdown'],
+    // Lucid shows the cushion as "DRAWDOWN": minimum balance + that amount = balance settles both.
+    ['balance', sum('drawdownThreshold', 'currentDrawdown'), 'minimum balance + the drawdown shown'],
+    ['balance', sum('profitTargetBalance', 'profitRemaining', -1), 'target balance − profit remaining'],
+    ['balance', sum('startingBalance', 'netPnl'), 'starting balance + total P&L'],
+    ['drawdownThreshold', sum('balance', 'drawdownRemaining', -1), 'balance − remaining drawdown'],
+    ['drawdownRemaining', sum('balance', 'drawdownThreshold', -1), 'balance − minimum balance'],
+    ['profitTargetBalance', sum('balance', 'profitRemaining'), 'balance + profit remaining'],
+    ['profitRemaining', sum('profitTargetBalance', 'balance', -1), 'target balance − balance'],
+    ['netPnl', sum('balance', 'startingBalance', -1), 'balance − starting balance'],
+  ];
+  const resolve = () => {
+    for (const [key, f] of Object.entries(fields) as [FieldKey, ExtractedField][]) {
+      if (!f.alternatives?.length || f.source === 'user' || typeof f.value !== 'number') continue;
+      const candidates = [f.value, ...f.alternatives.map((a) => a.value)].filter((v): v is number => typeof v === 'number');
+      const expected = identities.filter(([k]) => k === key).map(([, calc, how]) => ({ v: calc(), how })).filter((e): e is { v: number; how: string } => e.v != null);
+      const hits = candidates.filter((c) => expected.some((e) => close(e.v, c)));
+      if (hits.length !== 1) continue;
+      const pick = hits[0];
+      const how = expected.find((e) => close(e.v, pick))!.how;
+      const others = candidates.filter((c) => c !== pick);
+      const alt = f.alternatives.find((a) => a.value === pick);
+      const next: ExtractedField = { ...f, value: pick, confidence: Math.max(0.75, alt?.confidence ?? f.confidence), page: alt?.page ?? f.page, evidence: `${f.evidence} · ${money(pick)} agrees with ${how}` };
+      delete next.alternatives;
+      fields[key] = next;
+      checks.push({ id: `resolved:${key}`, status: 'consistent', fields: [key], message: `${FIELD_LABEL[key]}: read as ${[pick, ...others].map(money).join(' and ')} — ${money(pick)} agrees with ${how}, so it is used. Compare with your dashboard.` });
+    }
+  };
+  for (let round = 0; round < 3; round++) {
+    refile();
+    resolve();
+  }
+  refile();
+
   for (const [key, f] of Object.entries(fields) as [FieldKey, ExtractedField][]) {
-    if (f.alternatives?.length) {
+    // A program title is a name for matching (its readings are all used there), not a value to pick.
+    if (f.alternatives?.length && key !== 'program') {
       const fmt = (v: number | string) => (typeof v === 'number' ? money(v) : v);
       checks.push({ id: `conflict:${key}`, status: 'conflict', fields: [key], message: `Different values were read for this field: ${[f.value, ...f.alternatives.map((a) => a.value)].map(fmt).join(' vs ')}. Pick the correct one.` });
     }
   }
 
-  // Calculated values (only from two values that were actually read).
-  const bal = () => num(fields.balance);
-  const thr = () => num(fields.drawdownThreshold);
-  const rem = () => num(fields.drawdownRemaining);
-  const max = () => num(fields.maxDrawdown);
-  const used = () => num(fields.currentDrawdown);
+  // Calculated values (only from two values that were actually read — and settled: a field whose readings still
+  // disagree is never a basis for another number).
+  const settled = (f: ExtractedField | undefined) => (f?.alternatives?.length ? null : num(f));
+  const bal = () => settled(fields.balance);
+  const thr = () => settled(fields.drawdownThreshold);
+  const rem = () => settled(fields.drawdownRemaining);
+  const max = () => settled(fields.maxDrawdown);
+  const used = () => settled(fields.currentDrawdown);
   if (may('drawdownRemaining') && rem() == null && bal() != null && thr() != null)
     fields.drawdownRemaining = derived('drawdownRemaining', bal()! - thr()!, [fields.balance!, fields.drawdownThreshold!], 'Calculated: current balance − drawdown threshold');
   if (may('drawdownRemaining') && rem() == null && max() != null && used() != null)
@@ -185,8 +257,30 @@ export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } =
   if (may('currentDrawdown') && used() == null && max() != null && rem() != null && fields.drawdownRemaining!.source !== 'derived' && rem()! <= max()! + TOL && rem()! >= 0)
     fields.currentDrawdown = derived('currentDrawdown', max()! - rem()!, [fields.maxDrawdown!, fields.drawdownRemaining!], 'Calculated: max drawdown − remaining drawdown');
 
+  // Starting balance from two read values: current balance − total P&L (marked calculated; never saved over an account's start).
+  if (may('startingBalance') && fields.startingBalance == null && plain(fields.balance) != null && plain(fields.netPnl) != null)
+    fields.startingBalance = derived('startingBalance', plain(fields.balance)! - plain(fields.netPnl)!, [fields.balance!, fields.netPnl!], 'Calculated: current balance − total P&L');
+  // Profit still to make, from the target balance and the balance (both read).
+  if (may('profitRemaining') && fields.profitRemaining == null && plain(fields.profitTargetBalance) != null && plain(fields.balance) != null)
+    fields.profitRemaining = derived('profitRemaining', plain(fields.profitTargetBalance)! - plain(fields.balance)!, [fields.profitTargetBalance!, fields.balance!], 'Calculated: target balance − current balance');
+  // balance + profit remaining = target balance
+  {
+    const b = plain(fields.balance);
+    const pr = plain(fields.profitRemaining);
+    const tb = plain(fields.profitTargetBalance);
+    if (b != null && pr != null && tb != null) {
+      if (close(b + pr, tb)) {
+        [fields.balance, fields.profitRemaining, fields.profitTargetBalance].forEach((f) => boost(f));
+        checks.push({ id: 'balance-remaining-target', status: 'consistent', fields: ['balance', 'profitRemaining', 'profitTargetBalance'], message: `Balance + profit remaining = target balance (${money(tb)}).` });
+      } else {
+        [fields.profitRemaining, fields.profitTargetBalance].forEach((f) => flag(f, 0.5));
+        checks.push({ id: 'balance-remaining-target', status: 'conflict', fields: ['balance', 'profitRemaining', 'profitTargetBalance'], message: `Balance ${money(b)} + profit remaining ${money(pr)} = ${money(b + pr)}, but the target balance reads ${money(tb)}. One of them is misread — correct it.` });
+      }
+    }
+  }
+
   // Profit target amount ⇄ target balance, only from a READ starting balance (never the nominal account size).
-  const base = num(fields.startingBalance);
+  const base = fields.startingBalance?.source === 'derived' ? null : num(fields.startingBalance);
   const baseField = fields.startingBalance;
   const tgt = num(fields.profitTarget);
   const tgtBal = num(fields.profitTargetBalance);
@@ -220,7 +314,7 @@ export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } =
     }
   }
   // starting + net P&L = balance
-  const start = num(fields.startingBalance);
+  const start = fields.startingBalance?.source === 'derived' ? null : num(fields.startingBalance);
   const pnl = num(fields.netPnl);
   if (start != null && pnl != null && bal() != null) {
     if (close(start + pnl, bal()!)) {
@@ -255,13 +349,13 @@ export function crossCheck(input: FieldMap, opts: { noDerive?: Set<FieldKey> } =
   }
 
   for (const f of Object.values(fields)) if (f) f.confidence = Math.round(f.confidence * 100) / 100;
-  return { fields, checks };
+  return { fields, checks, ambiguous: pl.ambiguous };
 }
 
-export function reconcile(pages: PageExtraction[]): Extraction {
-  const { fields, checks: cc } = crossCheck(mergePages(pages));
+export function reconcile(pages: PageExtraction[], context?: PlausibilityContext): Extraction {
+  const { fields, checks: cc, ambiguous: implausible } = crossCheck(mergePages(pages), { context });
   const checks = [...screenshotChecks(pages), ...cc];
-  const ambiguous = mergeAmbiguous(pages, fields);
+  const ambiguous = [...mergeAmbiguous(pages, fields), ...implausible];
   const sensitive = pages.flatMap((p) => p.sensitive);
   const fingerprint = sensitive.find((s) => s.fingerprint)?.fingerprint ?? null;
   return {
