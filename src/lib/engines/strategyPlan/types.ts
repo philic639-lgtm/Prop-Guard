@@ -79,6 +79,8 @@ export interface PlanField<K extends PlanFieldKey = PlanFieldKey> {
   note?: string;
   relevance: PlanRelevance;
   updatedAt?: string;
+  /** An earlier answer kept after the description changed — the trader re-confirms it. */
+  review?: boolean;
 }
 
 export type PlanFields = { [K in PlanFieldKey]: PlanField<K> };
@@ -95,6 +97,8 @@ export interface PlanBranch {
   status: 'supplied' | 'needs_clarification';
   source: PlanFieldSource;
   note?: string;
+  /** An earlier answer kept after the description changed — the trader re-confirms it. */
+  review?: boolean;
 }
 
 export type SuggestionDecision = 'pending' | 'accepted' | 'rejected';
@@ -154,4 +158,17 @@ export const STATUS_LABEL: Record<PlanFieldStatus, string> = {
   missing: 'Not in your description',
   accepted: 'Accepted suggestion',
   not_used: 'Not used',
+};
+
+/**
+ * The four rule labels the app shows. trader_supplied — your description, your answer, or a saved
+ * setting you confirmed; needs_clarification — stated but unclear, not stated yet, or an earlier answer
+ * to re-check; app_suggestion — an idea Prop Guard offers (inactive); trader_accepted — an idea you accepted.
+ */
+export type RuleTag = 'trader_supplied' | 'needs_clarification' | 'app_suggestion' | 'trader_accepted';
+export const RULE_TAG_LABEL: Record<RuleTag, string> = {
+  trader_supplied: 'Trader supplied',
+  needs_clarification: 'Needs clarification',
+  app_suggestion: 'App suggestion',
+  trader_accepted: 'Trader accepted',
 };

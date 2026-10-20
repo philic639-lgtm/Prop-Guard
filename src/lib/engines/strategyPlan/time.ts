@@ -21,6 +21,10 @@ export function parseClock(raw: string): string | null {
     h = +m[1];
     min = +m[2];
     ap = m[3];
+  } else if ((m = /^(\d{1,2})(\d{2})$/.exec(t))) {
+    // Bare "945" / "1030" — a time typed without the colon.
+    h = +m[1];
+    min = +m[2];
   } else if ((m = /^(\d{1,2})(am|pm)$/.exec(t))) {
     h = +m[1];
     min = 0;

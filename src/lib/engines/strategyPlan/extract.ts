@@ -14,6 +14,13 @@ const TYPOS: [RegExp, string][] = [
   [/\bcandel(s)?\b/g, 'candle$1'],
   [/\bcandl\b/g, 'candle'],
   [/\buntill?\b/g, 'until'],
+  [/\bun?til\b/g, 'until'],
+  [/\blookin\b/g, 'looking'],
+  [/\bwaitin\b/g, 'waiting'],
+  [/\bstartin\b/g, 'starting'],
+  [/\bfollowin\b/g, 'following'],
+  [/\bdirection(?:s)?\b/g, 'direction'],
+  [/\bopening range breakout\b/g, 'orb'],
   [/\btill?\b/g, 'until'],
   [/\bop+en+ing\b/g, 'opening'],
   [/\bstop-?loss\b/g, 'stop loss'],
@@ -57,7 +64,8 @@ export function sentencesOf(text: string): Sentence[] {
   return out;
 }
 
-const TIME = String.raw`(\d{1,2}[:.]\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|\d{3,4}\s*(?:am|pm))`;
+// Informal times too: "9:30", "9.30am", "930am", and bare "945" / "950" (3–4 digits) as typed in a hurry.
+const TIME = String.raw`(\d{1,2}[:.]\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm)|\d{3,4}(?:\s*(?:am|pm))?(?![\d%$]))`;
 const TZ = String.raw`(?:\s*(?:est|edt|et|ny|eastern|new york time))?`;
 const RANGE = new RegExp(`${TIME}${TZ}\\s*(?:-|to|until|through|and)\\s*${TIME}${TZ}`);
 const SINGLE = new RegExp(`${TIME}${TZ}`, 'g');

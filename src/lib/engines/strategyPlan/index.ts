@@ -7,6 +7,7 @@ export {
   decideSuggestion,
   editQuestion,
   rebasePlan,
+  tagOf,
   planQuestions,
   planReadiness,
   planSuggestions,
@@ -24,4 +25,4 @@ export {
   type SavedSettings,
   type ScoreLine,
 } from './plan';
-export { isDraftStrategy, planLimits, planName, planOf, planToStrategy, rrOf } from './strategy';
+export { isDraftStrategy, planLimits, planName, planOf, planToStrategy, rrOf, syncedStrategy } from './strategy';

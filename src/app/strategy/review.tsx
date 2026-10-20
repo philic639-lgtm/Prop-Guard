@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -19,6 +19,7 @@ import {
 import { Icon } from '@/components/ui/Icon';
 import { colors, radius, spacing } from '@/constants/theme';
 import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
+import { planOf } from '@/lib/engines/strategyPlan';
 import { sourceTypeAfterEdit, strategyRules, strategySourceLabel, strategySourceType, validateStrategy, type ReviewRule } from '@/lib/engines';
 import { useAppStore } from '@/store/useAppStore';
 import type { Strategy } from '@/types/domain';
@@ -50,6 +51,9 @@ export default function ReviewStrategy() {
   const [v2, setV2] = useState('');
   const [newCondition, setNewCondition] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+
+  // A plan built from the trader's description has one view: the plan view (same saved record).
+  if (saved && planOf(saved)) return <Redirect href={{ pathname: '/strategy/[id]', params: { id: saved.id } }} />;
 
   if (!s) {
     return (

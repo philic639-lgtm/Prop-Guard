@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText, Button, Card, Chip, Input, StatusBadge } from '@/components/ui';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { colors, radius, spacing, type Tone } from '@/constants/theme';
-import { SCORE_RUBRIC, type Answer, type PlanLine, type PlanQuestion, type PlanScore, type PlanSuggestion, type PlanTestability } from '@/lib/engines/strategyPlan';
+import { RULE_TAG_LABEL, SCORE_RUBRIC, type Answer, type PlanLine, type PlanQuestion, type PlanScore, type PlanSuggestion, type PlanTestability, type RuleTag } from '@/lib/engines/strategyPlan';
 
 /**
  * The plan screen in three parts — what we understood, what needs clarification, your confirmed
@@ -19,6 +19,13 @@ const STATUS_ICON: Record<string, { icon: IconName; color: string }> = {
   needs_clarification: { icon: 'help-circle-outline', color: colors.warning },
   missing: { icon: 'alert-circle-outline', color: colors.textTertiary },
 };
+
+const TAG_TONE: Record<RuleTag, Tone> = { trader_supplied: 'positive', needs_clarification: 'warning', app_suggestion: 'neutral', trader_accepted: 'accent' };
+
+/** Trader supplied / Needs clarification / App suggestion / Trader accepted — the only source labels shown. */
+export function TagBadge({ tag }: { tag: RuleTag }) {
+  return <StatusBadge label={RULE_TAG_LABEL[tag]} tone={TAG_TONE[tag]} size="sm" />;
+}
 
 function Expand({ label, children }: { label: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -49,6 +56,7 @@ export function UnderstoodCard({ lines, original, onEdit, onEditDescription }: {
             <Icon name={s.icon} size={16} color={s.color} />
             <View style={styles.flex}>
               <AppText variant="body">{l.text}</AppText>
+              <TagBadge tag={l.tag} />
               {l.evidence && l.status !== 'missing' ? (
                 <AppText variant="caption" tone="tertiary" numberOfLines={2}>
                   “{l.evidence}”
@@ -164,6 +172,7 @@ export function ConfirmedPlanCard({ lines, draft, unresolved }: { lines: PlanLin
             <Icon name={(STATUS_ICON[l.status] ?? STATUS_ICON.supplied).icon} size={16} color={(STATUS_ICON[l.status] ?? STATUS_ICON.supplied).color} />
             <View style={styles.flex}>
               <AppText variant="body">{l.text}</AppText>
+              <TagBadge tag={l.tag} />
               {l.sourceLabel ? (
                 <AppText variant="caption" tone="tertiary">
                   {l.sourceLabel}
@@ -189,23 +198,42 @@ export function ConfirmedPlanCard({ lines, draft, unresolved }: { lines: PlanLin
 const scoreTone = (n: number): Tone => (n >= 80 ? 'positive' : n >= 50 ? 'accent' : 'warning');
 
 export function PlanScoreCard({ score }: { score: PlanScore }) {
+  const lost = score.lines.reduce((n, l) => n + l.possible - l.earned, 0);
+  const possible = score.lines.reduce((n, l) => n + l.possible, 0);
   return (
     <Card style={styles.gap}>
       <View style={styles.row}>
         <AppText variant="label" style={styles.flex}>
-          PLAN DEFINITION SCORE
+          STRATEGY DEFINITION SCORE
         </AppText>
         <StatusBadge label={`${score.score} / 100`} tone={scoreTone(score.score)} />
       </View>
       <AppText variant="caption" tone="secondary">
-        How clearly your rules are written — not whether the strategy makes money.
+        How completely and clearly your rules are defined — not whether the strategy makes money. It is recalculated from your current plan after every confirmed change.
       </AppText>
-      <Expand label={score.deductions.length ? `Why ${score.deductions.length} item${score.deductions.length > 1 ? 's' : ''} lost points` : 'How this is scored'}>
-        {score.deductions.map((d) => (
-          <AppText key={d.key} variant="caption">
-            −{d.possible - d.earned} · {d.label}: {d.reason}
-          </AppText>
-        ))}
+      <AppText variant="caption" tone="tertiary">
+        {possible - lost} of {possible} points{lost ? ` · ${lost} deducted` : ''} → {score.score}/100.
+      </AppText>
+      {score.lines.map((l) => {
+        const full = l.earned === l.possible;
+        return (
+          <View key={l.key} style={styles.line}>
+            <Icon name={full ? 'checkmark-circle-outline' : 'remove-circle-outline'} size={14} color={full ? colors.positive : colors.warning} />
+            <View style={styles.flex}>
+              <AppText variant="caption">{l.label}</AppText>
+              {!full ? (
+                <AppText variant="caption" tone="warning">
+                  −{l.possible - l.earned} · {l.reason}
+                </AppText>
+              ) : null}
+            </View>
+            <AppText variant="caption" tone="secondary">
+              {l.earned}/{l.possible}
+            </AppText>
+          </View>
+        );
+      })}
+      <Expand label="How this is scored">
         <AppText variant="caption" tone="tertiary">
           {SCORE_RUBRIC}
         </AppText>
@@ -221,7 +249,7 @@ export function SuggestionsCard({ suggestions, onDecide }: { suggestions: PlanSu
     <Card style={styles.gap}>
       <AppText variant="label">OPTIONAL IDEAS TO TEST</AppText>
       <AppText variant="caption" tone="secondary">
-        Not part of your plan unless you accept them. They are hypotheses to test in practice, not proof of an edge.
+        Inactive — not part of your plan, score or practice unless you accept them. They are hypotheses to test in practice, not proof of an edge.
       </AppText>
       {visible.map((s) => (
         <View key={s.id} style={styles.question}>
@@ -229,7 +257,7 @@ export function SuggestionsCard({ suggestions, onDecide }: { suggestions: PlanSu
             <AppText variant="bodyStrong" style={styles.flex}>
               {s.title}
             </AppText>
-            {s.status === 'accepted' ? <StatusBadge label="Accepted" tone="accent" size="sm" /> : null}
+            <TagBadge tag={s.status === 'accepted' ? 'trader_accepted' : 'app_suggestion'} />
           </View>
           <AppText variant="body">{s.rule}</AppText>
           <AppText variant="caption" tone="tertiary">
@@ -252,7 +280,7 @@ export function SuggestionsCard({ suggestions, onDecide }: { suggestions: PlanSu
   );
 }
 
-export function TestingCard({ testability, onPractice }: { testability: PlanTestability; onPractice: () => void }) {
+export function TestingCard({ testability, unresolved, onPractice }: { testability: PlanTestability; unresolved: string[]; onPractice: () => void }) {
   return (
     <Card style={styles.gap}>
       <AppText variant="label">PRACTICE & TESTING</AppText>
@@ -260,6 +288,11 @@ export function TestingCard({ testability, onPractice }: { testability: PlanTest
       <AppText variant="caption" tone="secondary">
         {testability.manual.note}
       </AppText>
+      {unresolved.length ? (
+        <AppText variant="caption" tone="warning">
+          Before testing: {unresolved.length} rule{unresolved.length > 1 ? 's are' : ' is'} not defined yet ({unresolved.join(', ')}). Prop Guard will not fill them in — without them a test cannot follow your plan exactly.
+        </AppText>
+      ) : null}
       <Button label="Practice manually" size="md" variant="secondary" icon="time-outline" onPress={onPractice} />
       <AppText variant="bodyStrong">Automated testing</AppText>
       {testability.automated.available ? (

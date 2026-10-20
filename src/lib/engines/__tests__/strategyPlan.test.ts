@@ -19,6 +19,7 @@ import {
   rebasePlan,
   scorePlan,
   sessionInstant,
+  syncedStrategy,
   understoodLines,
   type StrategyPlan,
 } from '../strategyPlan';
@@ -222,5 +223,79 @@ describe('other strategies and informal writing', () => {
     expect(t.manual.available).toBe(true);
     expect(t.automated.available).toBe(false);
     expect(t.automated.reasons.join(' ')).toMatch(/Verified historical data is not connected/);
+  });
+});
+
+describe('the same description typed loosely (typos, no colons, no capitals)', () => {
+  const LOOSE =
+    'i draw out the high and low of 930am est - 945 candel. then i wait untill 950 to start lookin for a move. if price is outside the orb by 950-955 i follow the direction outside the orb. if its inside the orb, i take a move following its direction inside the orb';
+  it('reads the same plan: 15-minute range, start 9:50, both branches, nothing invented', () => {
+    const p = extractPlan(LOOSE, { now: NOW });
+    expect(p.fields.openingRange).toMatchObject({ status: 'supplied', value: { start: '09:30', end: '09:45', minutes: 15 } });
+    expect(p.fields.lookStart.value).toBe('09:50');
+    expect(p.fields.evaluationWindow.value).toMatchObject({ start: '09:50', end: '09:55', meaning: null });
+    expect(p.fields.entryCutoff.status).toBe('missing');
+    expect(p.fields.executionTimeframe.status).toBe('missing');
+    expect(p.branches.map((b) => [b.kind, b.status])).toEqual([
+      ['outside_range', 'needs_clarification'],
+      ['inside_range', 'needs_clarification'],
+    ]);
+    expect(understoodLines(p).find((l) => l.key === 'openingRange')!.text).toMatch(/^Opening range: high and low of 9:30.*9:45/);
+    expect(understoodLines(p).map((l) => l.text).join(' ')).not.toMatch(/minutes are not stated|length not stated/);
+    expect(JSON.stringify(confirmedPlan(p))).not.toMatch(/close|retest/i);
+  });
+});
+
+describe('rule labels', () => {
+  it('every line carries Trader supplied / Needs clarification / Trader accepted — no percentages', () => {
+    let p = plan();
+    const tags = Object.fromEntries(understoodLines(p).map((l) => [l.key, l.tag]));
+    expect(tags).toMatchObject({ openingRange: 'trader_supplied', lookStart: 'trader_supplied', 'branch:b1': 'needs_clarification', timezone: 'needs_clarification' });
+    p = decideSuggestion(p, 'retest', 'accepted', NOW);
+    expect(confirmedPlan(p).find((l) => l.key === 'suggestion:retest')!.tag).toBe('trader_accepted');
+    expect(JSON.stringify(confirmedPlan(p))).not.toMatch(/%/);
+  });
+});
+
+describe('editing the description flags carried answers for review', () => {
+  it('a carried answer needs re-confirmation; “keep it” restores it', () => {
+    let p = answerPlan(plan(), 'instrument', { text: 'MNQ' }, NOW);
+    p = answerPlan(p, 'branch:b1', { text: 'Trade the side price broke out of' }, NOW);
+    const before = scorePlan(p).score;
+    const next = rebasePlan(extractPlan(ORB.replace('9:50 to start', '9:52 to start'), { now: NOW }), p);
+    expect(next.fields.instrument).toMatchObject({ value: ['MNQ'], status: 'needs_clarification', review: true });
+    expect(next.branches[0]).toMatchObject({ directionRule: 'Trade the side price broke out of', status: 'needs_clarification', review: true });
+    const q = planQuestions(next);
+    expect(q[0].title).toMatch(/Check your answer/);
+    expect(planReadiness(next).unresolved).toContain('Instrument');
+    expect(scorePlan(next).score).toBeLessThan(before);
+    let kept = answerPlan(next, 'instrument', { keep: true }, NOW);
+    kept = answerPlan(kept, 'branch:b1', { keep: true }, NOW);
+    expect(kept.fields.instrument).toMatchObject({ value: ['MNQ'], status: 'supplied' });
+    expect(kept.fields.instrument.review).toBeFalsy();
+    expect(kept.branches[0]).toMatchObject({ status: 'supplied' });
+    expect(planQuestions(kept).some((x) => /Check your answer/.test(x.title))).toBe(false);
+  });
+});
+
+describe('resolving a rule updates every derived view and the saved strategy', () => {
+  it('questions, missing-rule list, warnings, score, readiness, testability and the saved record move together', () => {
+    let p = plan();
+    const saved = planToStrategy(p, { id: 'plan-9', now: NOW });
+    const views = (x: StrategyPlan) => ({ q: planQuestions(x).length, unresolved: planReadiness(x).unresolved.length, score: scorePlan(x).score, reasons: planTestability(x, 0).automated.reasons.join(' ') });
+    const a = views(p);
+    p = answerPlan(p, 'executionTimeframe', { text: '1m' }, '2026-10-20T12:01:00Z');
+    const b = views(p);
+    expect(b.q).toBe(a.q - 1);
+    expect(b.unresolved).toBe(a.unresolved - 1);
+    expect(b.score).toBeGreaterThan(a.score);
+    expect(a.reasons).toMatch(/execution chart timeframe/);
+    expect(b.reasons).not.toMatch(/execution chart timeframe/);
+    const synced = syncedStrategy(saved, p, '2026-10-20T12:01:00Z')!;
+    expect(synced).toMatchObject({ id: 'plan-9', timeframe: '1m', createdAt: saved.createdAt });
+    expect(planOf(synced)!.fields.executionTimeframe.value).toBe('1m');
+    // Already up to date → no write.
+    expect(syncedStrategy(synced, p, NOW)).toBeNull();
+    expect(syncedStrategy(undefined, p, NOW)).toBeNull();
   });
 });

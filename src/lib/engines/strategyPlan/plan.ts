@@ -1,5 +1,5 @@
 import { formatClock, parseClock } from './time';
-import { FIELD_LABELS, SOURCE_LABEL, type PlanBranch, type PlanField, type PlanFieldKey, type PlanFields, type PlanFieldSource, type PlanSuggestion, type PlanValues, type StrategyPlan } from './types';
+import { FIELD_LABELS, SOURCE_LABEL, type PlanBranch, type RuleTag, type PlanField, type PlanFieldKey, type PlanFields, type PlanFieldSource, type PlanSuggestion, type PlanValues, type StrategyPlan } from './types';
 
 /**
  * Follow-up questions, answers / edits, suggestions, the definition score and the three
@@ -50,6 +50,8 @@ export interface Answer {
   /** Evaluation window meaning. */
   meaning?: 'check_window' | 'entry_window';
   source?: PlanFieldSource;
+  /** Re-confirm an earlier answer flagged after the description changed. */
+  keep?: boolean;
 }
 
 const lowerFirst = (s: string) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
@@ -74,6 +76,34 @@ const BRANCH_CHOICES: Record<PlanBranch['kind'], { id: string; label: string }[]
 
 /** Open questions, most important first. Only what is still unanswered. */
 export function planQuestions(plan: StrategyPlan, saved: SavedSettings = {}): PlanQuestion[] {
+  // Earlier answers kept after the description changed: re-confirm or change them first.
+  const review: PlanQuestion[] = [
+    ...(Object.values(plan.fields) as PlanField[])
+      .filter((x) => x.review)
+      .map((x) => ({
+        id: x.key,
+        title: `Check your answer: ${x.label}`,
+        question: `Your description changed. Is this still right? “${x.display ?? ''}”`,
+        why: 'Answers you gave before the edit are kept but not used until you confirm them.',
+        choices: [{ id: 'keep', label: `Yes, keep it`, apply: { keep: true } }],
+        custom: { placeholder: 'Or type the new rule' },
+        priority: 0,
+        optional: false,
+      })),
+    ...plan.branches
+      .filter((b) => b.review)
+      .map((b) => ({
+        id: `branch:${b.id}`,
+        title: 'Check your answer: direction',
+        question: `Your description changed. When ${lowerFirst(b.condition)}, is this still right? “${b.directionRule ?? ''}”`,
+        why: 'Answers you gave before the edit are kept but not used until you confirm them.',
+        choices: [{ id: 'keep', label: 'Yes, keep it', apply: { keep: true } }, ...BRANCH_CHOICES[b.kind].map((c) => ({ id: c.id, label: c.label, apply: { text: c.label } }))],
+        custom: { placeholder: 'Describe how you pick long or short' },
+        priority: 0,
+        optional: false,
+      })),
+  ];
+  const reviewIds = new Set(review.map((r) => r.id));
   const f = plan.fields;
   const q: PlanQuestion[] = [];
   const ev = f.evaluationWindow.value;
@@ -278,7 +308,7 @@ export function planQuestions(plan: StrategyPlan, saved: SavedSettings = {}): Pl
       optional: false,
     });
 
-  return q.sort((a, b) => a.priority - b.priority);
+  return [...review, ...q.filter((x) => !reviewIds.has(x.id)).sort((a, b) => a.priority - b.priority)];
 }
 
 // ───────────────────────────── Answers & edits ─────────────────────────────
@@ -287,7 +317,7 @@ const at = (now?: string) => now ?? new Date().toISOString();
 
 function setField<K extends PlanFieldKey>(fields: PlanFields, key: K, value: PlanValues[K] | null, display: string | null, source: PlanFieldSource, now: string, status: PlanField['status'] = 'supplied'): PlanFields {
   const prev = fields[key];
-  return { ...fields, [key]: { ...prev, value, display, status, source, updatedAt: now, note: undefined } } as PlanFields;
+  return { ...fields, [key]: { ...prev, value, display, status, source, updatedAt: now, note: undefined, review: undefined } } as PlanFields;
 }
 
 /** Apply an answer or an edit. Dependent views (questions, score, checklist) are derived, so nothing goes stale. */
@@ -299,10 +329,17 @@ export function answerPlan(plan: StrategyPlan, id: string, a: Answer, now?: stri
 
   if (id.startsWith('branch:')) {
     const bid = id.slice(7);
-    branches = branches.map((b) => (b.id === bid && a.text ? { ...b, directionRule: a.text, status: 'supplied', source: src, note: undefined } : b));
+    branches = branches.map((b) =>
+      b.id !== bid ? b : a.keep && b.directionRule ? { ...b, status: 'supplied', review: undefined, note: undefined } : a.text ? { ...b, directionRule: a.text, status: 'supplied', source: src, note: undefined, review: undefined } : b,
+    );
     return { ...plan, branches, updatedAt: t };
   }
   const key = id as PlanFieldKey;
+  if (a.keep) {
+    const x = fields[key];
+    if (!x.review) return plan;
+    return { ...plan, fields: { ...fields, [key]: { ...x, status: x.display === 'Not used' ? 'not_used' : 'supplied', review: undefined, note: undefined, updatedAt: t } } as PlanFields, updatedAt: t };
+  }
   const text = a.text?.trim() ?? '';
   switch (key) {
     case 'instrument': {
@@ -456,12 +493,17 @@ export interface PlanLine {
   status: PlanField['status'] | 'accepted';
   sourceLabel: string | null;
   evidence?: string;
+  /** Trader supplied / Needs clarification / App suggestion / Trader accepted. */
+  tag: RuleTag;
 }
+
+/** The rule label for a status. */
+export const tagOf = (status: PlanLine['status']): RuleTag => (status === 'accepted' ? 'trader_accepted' : status === 'supplied' || status === 'not_used' ? 'trader_supplied' : 'needs_clarification');
 
 /** "What we understood": a short, editable summary in plain language. */
 export function understoodLines(plan: StrategyPlan): PlanLine[] {
   const f = plan.fields;
-  const out: PlanLine[] = [];
+  const out: Omit<PlanLine, 'tag'>[] = [];
   const line = (key: PlanFieldKey, text: string) => out.push({ key, text, status: f[key].status, sourceLabel: f[key].source ? SOURCE_LABEL[f[key].source!] : null, evidence: f[key].evidence });
   if (f.openingRange.value) line('openingRange', `Opening range: high and low of ${f.openingRange.display}.`);
   else if (f.openingRange.status === 'needs_clarification') line('openingRange', 'Opening range: mentioned, but its minutes are not stated.');
@@ -476,13 +518,13 @@ export function understoodLines(plan: StrategyPlan): PlanLine[] {
     if (f[k].value != null && f[k].status !== 'missing') line(k, `${FIELD_LABELS[k]}: ${f[k].display}.`);
   const notGiven = (['instrument', 'executionTimeframe', 'entryTrigger', 'stop', 'target', 'sizing', 'maxTrades', 'maxLosses', 'dailyLossLimit'] as const).filter((k) => f[k].status === 'missing').map((k) => FIELD_LABELS[k].toLowerCase());
   if (notGiven.length) out.push({ key: 'not_given', text: `Not in your description: ${notGiven.join(', ')}.`, status: 'missing', sourceLabel: null });
-  return out;
+  return out.map((l) => ({ ...l, tag: tagOf(l.status) }));
 }
 
 /** "Your confirmed plan": only defined rules and accepted suggestions, each with its source. */
 export function confirmedPlan(plan: StrategyPlan): PlanLine[] {
   const f = plan.fields;
-  const out: PlanLine[] = [];
+  const out: Omit<PlanLine, 'tag'>[] = [];
   const add = (key: PlanFieldKey, text: string) => {
     const x = f[key];
     if (x.status === 'supplied' || x.status === 'accepted') out.push({ key, text, status: x.status, sourceLabel: x.source ? SOURCE_LABEL[x.source] : null, evidence: x.evidence });
@@ -497,7 +539,7 @@ export function confirmedPlan(plan: StrategyPlan): PlanLine[] {
   for (const k of ['executionTimeframe', 'entryTrigger', 'stop', 'target', 'sizing', 'maxTrades', 'maxLosses', 'dailyLossLimit', 'filters'] as const) if (f[k].display) add(k, `${FIELD_LABELS[k]}: ${f[k].display}`);
   if (f.filters.status === 'not_used') out.push({ key: 'filters', text: 'Optional filters: not used', status: 'not_used', sourceLabel: SOURCE_LABEL.answer });
   for (const s of planSuggestions(plan).filter((x) => x.status === 'accepted')) out.push({ key: `suggestion:${s.id}`, text: s.rule, status: 'accepted', sourceLabel: SOURCE_LABEL.suggestion });
-  return out;
+  return out.map((l) => ({ ...l, tag: tagOf(l.status) }));
 }
 
 // ───────────────────────────── Readiness ─────────────────────────────
@@ -562,11 +604,13 @@ export function rebasePlan(next: StrategyPlan, prev: StrategyPlan): StrategyPlan
   const fields = { ...next.fields } as PlanFields;
   for (const k of Object.keys(prev.fields) as PlanFieldKey[]) {
     const old = prev.fields[k];
-    if (old.source && old.source !== 'description' && (fields[k].status === 'missing' || fields[k].status === 'needs_clarification')) (fields as Record<string, PlanField>)[k] = old;
+    // Kept, but flagged: the trader confirms it still applies to the edited description.
+    if (old.source && old.source !== 'description' && old.value != null && (fields[k].status === 'missing' || fields[k].status === 'needs_clarification'))
+      (fields as Record<string, PlanField>)[k] = { ...old, status: 'needs_clarification', review: true, note: 'Your description changed — check this answer still applies.' };
   }
   const branches = next.branches.map((b) => {
-    const was = prev.branches.find((x) => x.kind === b.kind && x.source !== 'description' && x.status === 'supplied');
-    return b.status === 'needs_clarification' && was ? { ...b, directionRule: was.directionRule, status: 'supplied' as const, source: was.source, note: undefined } : b;
+    const was = prev.branches.find((x) => x.kind === b.kind && x.source !== 'description' && x.directionRule);
+    return b.status === 'needs_clarification' && was ? { ...b, directionRule: was.directionRule, status: 'needs_clarification' as const, source: was.source, review: true, note: 'Your description changed — check this answer still applies.' } : b;
   });
   return { ...next, fields, branches, decisions: { ...prev.decisions }, createdAt: prev.createdAt };
 }

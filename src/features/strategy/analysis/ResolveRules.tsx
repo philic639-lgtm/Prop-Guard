@@ -12,7 +12,6 @@ import {
   type RuleProvenance,
   type RuleSource,
   type StrategyHealthScore,
-  type StrategyOwnership,
   type StrategyRuleItem,
   type TestReadiness,
 } from '@/lib/engines/strategyIntelligence';
@@ -410,45 +409,7 @@ function ResolveBody({ item, onResolve, onUnresolve, progress, onNext, onClose }
   );
 }
 
-// ───────────────────────────── Ownership + test ready ─────────────────────────────
-
-export function OwnershipCard({ ownership, uniquenessNote }: { ownership: StrategyOwnership; uniquenessNote?: string }) {
-  const bars: { label: string; pct: number; color: string }[] = [
-    { label: 'Original trader rules', pct: ownership.traderPct, color: colors.positive },
-    { label: 'AI-assisted rules approved by you', pct: ownership.aiApprovedPct, color: colors.accentBright },
-    { label: 'Prop Guard wording / interpretation', pct: ownership.propGuardPct, color: colors.textTertiary },
-  ];
-  return (
-    <Card>
-      <View style={styles.row}>
-        <Icon name="person-circle-outline" size={18} color={colors.positive} />
-        <AppText variant="label" tone="positive">
-          Strategy ownership
-        </AppText>
-      </View>
-      <View style={[styles.stack, { marginTop: spacing.sm }]}>
-        {bars.map((b) => (b.pct > 0 ? <View key={b.label} style={{ flex: b.pct, backgroundColor: b.color }} /> : null))}
-      </View>
-      {bars.map((b) => (
-        <View key={b.label} style={[styles.row, { marginTop: 6 }]}>
-          <View style={[styles.dot, { backgroundColor: b.color }]} />
-          <AppText variant="body" style={styles.flex}>
-            {b.label}
-          </AppText>
-          <AppText variant="bodyStrong">{b.pct}%</AppText>
-        </View>
-      ))}
-      <AppText variant="caption" style={{ marginTop: spacing.sm }}>
-        Every AI-assisted rule was chosen and approved by you{ownership.customRules ? `; ${ownership.customRules} rule${ownership.customRules === 1 ? ' is' : 's are'} written in your own words` : ''}. Prop Guard did not add anything you did not approve.
-      </AppText>
-      {uniquenessNote ? (
-        <AppText variant="caption" tone="tertiary" style={{ marginTop: 4 }}>
-          Identity check: {uniquenessNote}
-        </AppText>
-      ) : null}
-    </Card>
-  );
-}
+// ───────────────────────────── Test ready ─────────────────────────────
 
 export function TestReadyCard({ readiness, score, onViewFinal, onTest }: { readiness: TestReadiness; score: number; onViewFinal: () => void; onTest: () => void }) {
   return (

@@ -78,3 +78,12 @@ export function planToStrategy(plan: StrategyPlan, opts: { id: string; now: stri
     updatedAt: opts.now,
   };
 }
+
+/**
+ * The saved strategy updated to the current plan — `null` when nothing is saved yet or it already
+ * holds this version. Keeps one record: same id, name and creation date.
+ */
+export function syncedStrategy(saved: Strategy | null | undefined, plan: StrategyPlan, now: string): Strategy | null {
+  if (!saved || JSON.stringify(planOf(saved)) === JSON.stringify(plan)) return null;
+  return planToStrategy(plan, { id: saved.id, now, name: saved.name, createdAt: saved.createdAt });
+}

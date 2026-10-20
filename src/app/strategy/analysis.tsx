@@ -6,7 +6,7 @@ import { AppHeader, AppText, Button, Card, EmptyState, Screen, Sheet } from '@/c
 import { spacing } from '@/constants/theme';
 import { ClarifyCard, ConfirmedPlanCard, PlanScoreCard, QuestionCard, SuggestionsCard, TestingCard, UnderstoodCard } from '@/features/strategy/plan/PlanCards';
 import { useStrategyAnalysisStore } from '@/features/strategy/useStrategyAnalysisStore';
-import { confirmedPlan, editQuestion, planName, planQuestions, planReadiness, planSuggestions, planTestability, planToStrategy, scorePlan, understoodLines, type SavedSettings } from '@/lib/engines/strategyPlan';
+import { confirmedPlan, editQuestion, planName, planQuestions, planReadiness, planSuggestions, planTestability, planToStrategy, scorePlan, syncedStrategy, understoodLines, type SavedSettings } from '@/lib/engines/strategyPlan';
 import { getVerifiedHistorical } from '@/services/marketHistory/historical';
 import { useAppStore } from '@/store/useAppStore';
 import { uuid } from '@/utils/id';
@@ -26,11 +26,21 @@ export default function StrategyPlanScreen() {
   const rules = useAppStore((s) => s.tradingRules);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [gate, setGate] = useState(false);
 
   // Older saved progress has text but no plan yet.
   useEffect(() => {
     useStrategyAnalysisStore.getState().ensurePlan();
   }, [text]);
+
+  // Once saved, the saved strategy follows every confirmed change — the strategy list, Setup Check,
+  // practice and the saved view all read that one record.
+  useEffect(() => {
+    if (!plan || !savedId) return;
+    const st = useAppStore.getState();
+    const next = syncedStrategy(st.strategies.find((x) => x.id === savedId), plan, new Date().toISOString());
+    if (next) st.upsertStrategy(next);
+  }, [plan, savedId]);
 
   // Settings the trader already saved — offered for reuse, applied only when picked.
   const saved: SavedSettings = useMemo(
@@ -78,6 +88,9 @@ export default function StrategyPlanScreen() {
     return strategy.id;
   };
   const practice = () => {
+    // Explain what is missing first — the missing rules are never filled in for the test.
+    if (draft && !gate) return setGate(true);
+    setGate(false);
     save();
     router.push({ pathname: '/practice', params: { source: 'historical', fromAnalysis: 'closest', ...(plan.usesOpeningRange ? { strategyId: 'orb-15' } : {}) } });
   };
@@ -113,7 +126,23 @@ export default function StrategyPlanScreen() {
       <ConfirmedPlanCard lines={views.confirmed} draft={draft} unresolved={views.readiness.unresolved} />
       <PlanScoreCard score={views.score} />
       <SuggestionsCard suggestions={views.suggestions} onDecide={decide} />
-      <TestingCard testability={views.testability} onPractice={practice} />
+      <TestingCard testability={views.testability} unresolved={views.readiness.unresolved} onPractice={practice} />
+
+      <Sheet visible={gate} onClose={() => setGate(false)} title="Before you test">
+        <View style={{ gap: spacing.sm }}>
+          <AppText variant="body">These rules are not defined yet, so a test cannot follow your plan exactly:</AppText>
+          {views.readiness.unresolved.map((r) => (
+            <AppText key={r} variant="body">
+              • {r}
+            </AppText>
+          ))}
+          <AppText variant="caption" tone="secondary">
+            Prop Guard will not invent them. Answer the open questions to define them, or practice manually — you make each decision on the chart, and nothing is recorded as a test of this plan.
+          </AppText>
+          <Button label="Answer the open questions" onPress={() => setGate(false)} />
+          <Button label="Practice manually anyway" variant="secondary" icon="time-outline" onPress={practice} />
+        </View>
+      </Sheet>
 
       <Sheet visible={!!editQ} onClose={() => setEditing(null)} title="Edit your plan">
         {editQ ? (
