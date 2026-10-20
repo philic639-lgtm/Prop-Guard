@@ -13,6 +13,7 @@ import { StrategyPathCard } from '@/features/strategy/StrategyPathCard';
 import { StrategyPerformanceCard } from '@/features/strategy/StrategyPerformanceCard';
 import { useAccountTrades, useActiveStrategy } from '@/hooks/useAppData';
 import { performanceInsight, strategyPerformance, strategyRules, strategySourceLabel } from '@/lib/engines';
+import { isDraftStrategy, planOf } from '@/lib/engines/strategyPlan';
 import { useAppStore } from '@/store/useAppStore';
 import { useEntitlement, useSubscriptionStore } from '@/store/useSubscriptionStore';
 
@@ -68,7 +69,7 @@ export default function StrategyTab() {
               ) : null}
             </View>
             <View style={styles.btnRow}>
-              <Button label="Edit rules" variant="secondary" size="md" icon="create-outline" style={styles.flex} onPress={() => router.push({ pathname: '/strategy/review', params: { id: active.id } })} />
+              <Button label="Edit rules" variant="secondary" size="md" icon="create-outline" style={styles.flex} onPress={() => router.push(planOf(active) ? { pathname: '/strategy/[id]', params: { id: active.id } } : { pathname: '/strategy/review', params: { id: active.id } })} />
               <Button label="Practice" variant="secondary" size="md" icon="practice" style={styles.flex} onPress={() => router.push({ pathname: '/practice', params: { strategyId: active.id } })} />
             </View>
           </Card>
@@ -96,18 +97,21 @@ export default function StrategyTab() {
         <>
           <SectionHeader title="Saved strategies" />
           {others.map((s) => (
-            <Card key={s.id} hasActions onPress={() => router.push({ pathname: '/strategy/review', params: { id: s.id } })}>
+            <Card key={s.id} hasActions onPress={() => router.push(planOf(s) ? { pathname: '/strategy/[id]', params: { id: s.id } } : { pathname: '/strategy/review', params: { id: s.id } })}>
               <View style={styles.head}>
                 <View style={styles.flex}>
-                  <AppText variant="heading">{s.name}</AppText>
+                  <View style={styles.titleRow}>
+                    <AppText variant="heading">{s.name}</AppText>
+                    {isDraftStrategy(s) ? <StatusBadge label="Draft" tone="warning" size="sm" /> : null}
+                  </View>
                   <AppText variant="caption">
-                    {s.markets.join(' · ')} · {s.checklist.length} conditions · min 1:{s.minRR}
+                    {[s.markets.join(' · ') || 'Instrument not set', `${s.checklist.length} conditions`, s.minRR > 0 ? `min 1:${s.minRR}` : 'R:R not set'].join(' · ')}
                   </AppText>
                   <AppText variant="label" style={{ fontSize: 10, marginTop: 2 }}>
                     {strategySourceLabel(s)}
                   </AppText>
                 </View>
-                <Button label="Use" size="md" variant="ghost" onPress={() => setActive(s.id)} />
+                {isDraftStrategy(s) ? null : <Button label="Use" size="md" variant="ghost" onPress={() => setActive(s.id)} />}
               </View>
             </Card>
           ))}
@@ -141,6 +145,7 @@ export default function StrategyTab() {
 }
 
 const styles = StyleSheet.create({
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
   head: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   flex: { flex: 1 },
   rules: { marginTop: spacing.md, gap: spacing.sm },

@@ -23,7 +23,9 @@ import { colors, spacing } from '@/constants/theme';
 import { getTemplate } from '@/data/strategyLibrary';
 import { blankStrategy, strategyFromTemplate } from '@/features/strategy/fromTemplate';
 import { InstrumentBrowser } from '@/features/instruments/InstrumentBrowser';
+import { PlanStrategyView } from '@/features/strategy/plan/PlanStrategyView';
 import { sourceTypeAfterEdit, validateStrategy } from '@/lib/engines';
+import { planOf } from '@/lib/engines/strategyPlan';
 import { useAppStore } from '@/store/useAppStore';
 import type { ChecklistItem, InstrumentSymbol, Strategy } from '@/types/domain';
 import { numToInput, parseNum } from '@/utils/format';
@@ -82,7 +84,16 @@ function toForm(s: Strategy): FormValues {
   };
 }
 
-export default function StrategyBuilder() {
+/** A plan from "Teach Prop Guard your plan" is shown and edited as a plan; everything else uses the form. */
+export default function StrategyScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const existing = useAppStore((s) => s.strategies.find((x) => x.id === id) ?? null);
+  const plan = planOf(existing);
+  if (existing && plan) return <PlanStrategyView strategy={existing} plan={plan} />;
+  return <StrategyBuilder />;
+}
+
+function StrategyBuilder() {
   const { id, template } = useLocalSearchParams<{ id: string; template?: string }>();
   const strategies = useAppStore((s) => s.strategies);
   const activeId = useAppStore((s) => s.activeStrategyId);

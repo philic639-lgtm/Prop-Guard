@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { accountCard, type AccountCard } from '@/lib/engines/accountOverview';
 import { computeDailyGuard, type DailyGuard } from '@/lib/engines/dailyGuardEngine';
 import { computeDisciplineScore } from '@/lib/engines/disciplineEngine';
+import { isDraftStrategy } from '@/lib/engines/strategyPlan';
 import { useAppStore } from '@/store/useAppStore';
 import type { Account, PendingTrade, Strategy, Trade } from '@/types/domain';
 import { dayKey } from '@/utils/dates';
@@ -18,7 +19,8 @@ export function useActiveAccount(): Account | null {
 export function useActiveStrategy(): Strategy | null {
   const strategies = useAppStore((s) => s.strategies);
   const activeId = useAppStore((s) => s.activeStrategyId);
-  return useMemo(() => strategies.find((s) => s.id === activeId) ?? strategies[0] ?? null, [strategies, activeId]);
+  // A draft plan (rules still to define) is never the active strategy — it cannot approve trades.
+  return useMemo(() => strategies.find((s) => s.id === activeId && !isDraftStrategy(s)) ?? strategies.find((s) => !isDraftStrategy(s)) ?? null, [strategies, activeId]);
 }
 
 export function useStrategy(id: string | null | undefined): Strategy | null {

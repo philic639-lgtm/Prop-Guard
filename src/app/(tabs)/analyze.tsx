@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { NewsWatch } from '@/features/intelligence/NewsRiskBanner';
@@ -33,6 +33,7 @@ import { StrategyMatchCard } from '@/features/strategy/StrategyMatchCard';
 import { useSetupEvaluation } from '@/features/session/useSetupEvaluation';
 import { useActiveAccount, useActiveStrategy, useDailyGuard, useOpenTrade } from '@/hooks/useAppData';
 import { instrumentOptions, maxContractsForRisk, specSummary, strategySourceLabel } from '@/lib/engines';
+import { isDraftStrategy } from '@/lib/engines/strategyPlan';
 import { useAppStore } from '@/store/useAppStore';
 import { formatDuration } from '@/utils/dates';
 import { money, parseNum, points, rr } from '@/utils/format';
@@ -43,7 +44,9 @@ export default function AnalyzeScreen() {
   const params = useLocalSearchParams<{ mode?: string }>();
   const account = useActiveAccount();
   const activeStrategy = useActiveStrategy();
-  const strategies = useAppStore((s) => s.strategies);
+  const allStrategies = useAppStore((s) => s.strategies);
+  // Draft plans (rules still to define) cannot be used to check or approve a trade.
+  const strategies = useMemo(() => allStrategies.filter((s) => !isDraftStrategy(s)), [allStrategies]);
   const plans = useAppStore((s) => s.plans);
   const draft = useAppStore((s) => s.draft);
   const setDraft = useAppStore((s) => s.setDraft);

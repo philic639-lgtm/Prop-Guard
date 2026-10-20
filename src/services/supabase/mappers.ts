@@ -13,6 +13,7 @@ import type {
   UserPreferences,
 } from '@/types/domain';
 import { DEFAULT_COPY_SETTINGS } from '@/lib/engines/copyTradeEngine';
+import { planLimits } from '@/lib/engines/strategyPlan';
 import type { CopyGroup, CopyTrade, SourceTrader } from '@/types/copyTrade';
 import type { PracticeAttempt, PracticeLesson } from '@/types/practice';
 
@@ -118,8 +119,9 @@ export function strategyToRows(s: Strategy, userId: string) {
       typical_stop_min: s.typicalStopMin,
       typical_stop_max: s.typicalStopMax,
       target_method: s.targetMethod,
-      min_rr: s.minRR,
-      max_trades: s.maxTrades,
+      // The columns require > 0; a plan that does not set them keeps "not set" in structured.plan (restored on load).
+      min_rr: s.minRR > 0 ? s.minRR : 1,
+      max_trades: s.maxTrades > 0 ? s.maxTrades : 1,
       invalidation_rules: s.invalidationRules,
       notes: s.notes,
       source: s.source,
@@ -142,6 +144,9 @@ export function strategyToRows(s: Strategy, userId: string) {
 }
 
 export function rowsToStrategy(r: Row, items: Row[]): Strategy {
+  const structured = r.structured && typeof r.structured === 'object' && (r.structured as { version?: number }).version === 1 ? (r.structured as unknown as Strategy['structured']) : undefined;
+  // A plan's own limits win over the column placeholders (a plan that sets none stays "not set").
+  const limits = structured?.plan ? planLimits(structured.plan) : null;
   const checklist: ChecklistItem[] = [...items]
     .sort((a, b) => num(a.position) - num(b.position))
     .map((i) => ({ id: str(i.item_key), label: str(i.label), kind: i.kind === 'bias' ? 'bias' : 'yesno', required: i.required !== false }));
@@ -162,8 +167,8 @@ export function rowsToStrategy(r: Row, items: Row[]): Strategy {
     typicalStopMin: numOrNull(r.typical_stop_min),
     typicalStopMax: numOrNull(r.typical_stop_max),
     targetMethod: str(r.target_method),
-    minRR: num(r.min_rr),
-    maxTrades: num(r.max_trades),
+    minRR: limits ? limits.minRR : num(r.min_rr),
+    maxTrades: limits ? limits.maxTrades : num(r.max_trades),
     invalidationRules: str(r.invalidation_rules),
     notes: str(r.notes),
     checklist,
@@ -171,7 +176,7 @@ export function rowsToStrategy(r: Row, items: Row[]): Strategy {
     libraryId: (r.library_id as string | null) ?? undefined,
     ...(r.source_type === 'BUILT_IN' || r.source_type === 'CUSTOM' || r.source_type === 'AI_ADAPTED' ? { sourceType: r.source_type } : {}),
     ...(typeof r.original_text === 'string' ? { originalText: r.original_text } : {}),
-    ...(r.structured && typeof r.structured === 'object' && (r.structured as { version?: number }).version === 1 ? { structured: r.structured as unknown as Strategy['structured'] } : {}),
+    ...(structured ? { structured } : {}),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
   };

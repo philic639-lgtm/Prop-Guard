@@ -162,7 +162,8 @@ export function evaluateSetup(input: SetupEvaluationInput): SetupEvaluation {
       violations.push(`A stop-out would exceed your remaining daily risk of $${guard.riskRemaining.toFixed(0)}.`);
     }
 
-    if (risk.rr != null) {
+    // A minimum R:R the strategy does not set (0) is not a rule.
+    if (risk.rr != null && strategy.minRR > 0) {
       const rrOk = risk.rr + 1e-9 >= strategy.minRR;
       checks.push({
         id: 'min_rr',

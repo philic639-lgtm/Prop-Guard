@@ -1,216 +1,131 @@
 import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { View } from 'react-native';
 
-import { AppHeader, AppText, Button, Card, EmptyState, Screen } from '@/components/ui';
+import { AppHeader, AppText, Button, Card, EmptyState, Screen, Sheet } from '@/components/ui';
 import { spacing } from '@/constants/theme';
-import { AnalysisProgress, ANALYSIS_STEPS, IdeaCard, ImprovedStrategyCard, SuggestionCard } from '@/features/strategy/analysis/AnalysisCards';
-import {
-  AnalyzerTabBar,
-  AvoidWhenTab,
-  BestConditionsTab,
-  ComparisonView,
-  DnaTab,
-  PracticeTab,
-  TestableRulesTab,
-  WeaknessesTab,
-  type AnalyzerTab,
-} from '@/features/strategy/analysis/AnalysisTabs';
-import { DefinitionScoreCard, OwnershipCard, ResolveRuleSheet, ResolveSummaryCard, TestReadyCard } from '@/features/strategy/analysis/ResolveRules';
-import { useResolvedStrategy } from '@/features/strategy/useResolvedStrategy';
+import { ClarifyCard, ConfirmedPlanCard, PlanScoreCard, QuestionCard, SuggestionsCard, TestingCard, UnderstoodCard } from '@/features/strategy/plan/PlanCards';
 import { useStrategyAnalysisStore } from '@/features/strategy/useStrategyAnalysisStore';
-import { useStrategyDraftStore } from '@/features/strategy/useStrategyDraftStore';
-import { allRules, effectiveFields, improvedChecklist, improvedTexts, originalChecklist, toStrategy, type StrategyRuleItem } from '@/lib/engines';
-import { aiService } from '@/services/ai';
+import { confirmedPlan, editQuestion, planName, planQuestions, planReadiness, planSuggestions, planTestability, planToStrategy, scorePlan, understoodLines, type SavedSettings } from '@/lib/engines/strategyPlan';
+import { getVerifiedHistorical } from '@/services/marketHistory/historical';
 import { useAppStore } from '@/store/useAppStore';
 import { uuid } from '@/utils/id';
-import { goBack } from '@/utils/navigation';
 
-const STEP_MS = 420;
-
-/** Strategy Intelligence: analyse the trader's own description, then resolve and improve it together. */
-export default function StrategyAnalysisScreen() {
+/**
+ * "Teach Prop Guard your plan": what we understood, what needs clarification, your confirmed plan.
+ * Everything on this screen comes from ONE plan model built from the trader's own words; answers and
+ * accepted ideas update it, and every view, the score and the saved strategy are derived from it.
+ */
+export default function StrategyPlanScreen() {
   const text = useStrategyAnalysisStore((s) => s.text);
-  const setAnalysis = useStrategyAnalysisStore((s) => s.setAnalysis);
-  const decide = useStrategyAnalysisStore((s) => s.decide);
-  const resolveItem = useStrategyAnalysisStore((s) => s.resolve);
-  const unresolve = useStrategyAnalysisStore((s) => s.unresolve);
-  const { analysis, resolved, items, progress, readiness, ownership, score, rules, savedId, error, setError, practicing, save, practiceOwnRules, testInPractice, accountMaxTrades } = useResolvedStrategy();
-  const [step, setStep] = useState(analysis ? ANALYSIS_STEPS.length : 0);
-  const [tab, setTab] = useState<AnalyzerTab>('dna');
-  const [openId, setOpenId] = useState<string | null>(null);
-  // Only a fresh analysis plays the stage animation; a restored one (Finish later) opens directly.
-  const requested = useRef(false);
+  const plan = useStrategyAnalysisStore((s) => s.plan);
+  const savedId = useStrategyAnalysisStore((s) => s.savedId);
+  const answer = useStrategyAnalysisStore((s) => s.answerPlan);
+  const decide = useStrategyAnalysisStore((s) => s.decidePlanSuggestion);
+  const markets = useAppStore((s) => s.preferences.markets);
+  const rules = useAppStore((s) => s.tradingRules);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Analyse exactly the submitted text (never an example or a template).
+  // Older saved progress has text but no plan yet.
   useEffect(() => {
-    if (!text.trim() || (analysis && analysis.originalText === text)) return;
-    let alive = true;
-    requested.current = true;
-    // Earlier analysed strategies: the uniqueness test makes sure this one does not converge on them.
-    const references = useAppStore
-      .getState()
-      .strategies.filter((st) => st.structured)
-      .map((st) => ({ name: st.name, originalText: st.structured!.originalText, improved: improvedTexts(allRules(st.structured!), st.structured!.aiSuggestedRules) }));
-    aiService
-      .analyzeStrategy(text, { references })
-      .then((a) => alive && setAnalysis(a))
-      .catch((e: Error) => alive && setError(e.message));
-    return () => {
-      alive = false;
+    useStrategyAnalysisStore.getState().ensurePlan();
+  }, [text]);
+
+  // Settings the trader already saved — offered for reuse, applied only when picked.
+  const saved: SavedSettings = useMemo(
+    () => ({ markets, maxTradesPerDay: rules.maxTradesPerDay || null, maxConsecutiveLosses: rules.maxConsecutiveLosses || null, dailyStop: rules.dailyStop || null, maxRiskPerTrade: rules.maxRiskPerTrade || null }),
+    [markets, rules],
+  );
+  const views = useMemo(() => {
+    if (!plan) return null;
+    const instruments = plan.fields.instrument.value ?? [];
+    const verified = getVerifiedHistorical().filter((h) => !instruments.length || instruments.includes(h.instrument)).length;
+    return {
+      understood: understoodLines(plan),
+      questions: planQuestions(plan, saved),
+      confirmed: confirmedPlan(plan),
+      score: scorePlan(plan),
+      readiness: planReadiness(plan),
+      suggestions: planSuggestions(plan),
+      testability: planTestability(plan, verified),
     };
-  }, [text, analysis, setAnalysis, setError]);
+  }, [plan, saved]);
 
-  useEffect(() => {
-    if (analysis && !requested.current) setStep(ANALYSIS_STEPS.length);
-  }, [analysis]);
-
-  // Stage ticker: shows each pipeline stage; the result appears once all stages are shown and the analysis is ready.
-  useEffect(() => {
-    if (step >= ANALYSIS_STEPS.length) return;
-    const t = setTimeout(() => setStep((s) => (s === ANALYSIS_STEPS.length - 1 && !analysis ? s : s + 1)), STEP_MS);
-    return () => clearTimeout(t);
-  }, [step, analysis]);
-
-  const checklist = useMemo(() => (resolved ? improvedChecklist(resolved, { accountMaxTrades }) : []), [resolved, accountMaxTrades]);
-  const original = useMemo(() => (analysis ? originalChecklist(analysis) : []), [analysis]);
-  // The sheet always shows the live item (its status updates as soon as the trader resolves it).
-  const openItem: StrategyRuleItem | null = openId ? (items.find((i) => i.id === openId) ?? null) : null;
-
-  if (!text.trim()) {
+  if (!text.trim() || !plan || !views) {
     return (
-      <Screen header={<AppHeader title="Strategy analysis" back />}>
+      <Screen header={<AppHeader title="Your strategy plan" back />}>
         <EmptyState icon="sparkles-outline" title="Nothing to analyze" message="Describe your strategy first." actionLabel="Describe my strategy" onAction={() => router.replace('/strategy/describe')} />
       </Screen>
     );
   }
 
-  const ready = !!analysis && step >= ANALYSIS_STEPS.length;
-  const pending = resolved?.aiSuggestedRules.filter((s) => s.status === 'pending').length ?? 0;
-  const fields = resolved ? effectiveFields(resolved) : null;
-  const blocker = fields && !fields.instrument.length ? 'Resolve which market you trade before saving.' : null;
-
-  const fineTune = () => {
-    if (!analysis) return;
-    const s = toStrategy(analysis, { id: savedId ?? uuid(), now: new Date().toISOString(), accountMaxTrades });
-    useStrategyDraftStore.getState().setDraft(s, 'describe', analysis.analysisSource);
-    router.push('/strategy/review');
+  const draft = views.readiness.status === 'draft';
+  const save = (): string | null => {
+    const id = savedId ?? uuid();
+    const st = useAppStore.getState();
+    const existing = st.strategies.find((x) => x.id === id);
+    const strategy = planToStrategy(plan, { id, now: new Date().toISOString(), name: existing?.name, createdAt: existing?.createdAt });
+    if (!strategy.name.trim()) {
+      setError('Name the strategy first.');
+      return null;
+    }
+    setError(null);
+    st.upsertStrategy(strategy);
+    // A draft never becomes the active trading strategy on its own.
+    if (!st.activeStrategyId && !draft) st.setActiveStrategy(strategy.id);
+    useStrategyAnalysisStore.getState().setSavedId(strategy.id);
+    return strategy.id;
   };
-
-  const openFinal = () => router.push('/strategy/final');
-  const finishLater = () => {
-    // Progress is persisted with the analysis; an already-saved strategy is updated too.
-    if (savedId) save();
-    setOpenId(null);
-    goBack('/strategy');
+  const practice = () => {
+    save();
+    router.push({ pathname: '/practice', params: { source: 'historical', fromAnalysis: 'closest', ...(plan.usesOpeningRange ? { strategyId: 'orb-15' } : {}) } });
   };
+  const editQ = editing ? editQuestion(plan, editing, saved) : null;
 
   return (
     <Screen
-      header={<AppHeader title="Strategy analysis" subtitle={ready ? resolved!.name : 'Teach Prop Guard your plan'} back />}
+      header={<AppHeader title="Your strategy plan" subtitle={planName(plan)} back />}
       footer={
-        ready ? (
-          <View style={{ gap: spacing.sm }}>
-            <Button
-              label={savedId ? 'UPDATE MY STRATEGY' : 'SAVE AS MY STRATEGY'}
-              icon={savedId ? 'checkmark' : 'save-outline'}
-              disabled={!!blocker}
-              onPress={() => {
-                const id = save();
-                if (id) router.replace({ pathname: '/strategy/next', params: { id } });
-              }}
-            />
-            <Button label="TEST IN HISTORICAL PRACTICE" icon="time-outline" variant="secondary" size="md" disabled={!!blocker} onPress={testInPractice} />
-          </View>
-        ) : undefined
+        <View style={{ gap: spacing.sm }}>
+          <Button
+            label={draft ? (savedId ? 'UPDATE DRAFT' : 'SAVE AS DRAFT') : savedId ? 'UPDATE MY PLAN' : 'SAVE MY PLAN'}
+            icon="save-outline"
+            onPress={() => {
+              const id = save();
+              if (id) router.replace({ pathname: '/strategy/[id]', params: { id } });
+            }}
+          />
+          {draft ? (
+            <AppText variant="caption" tone="tertiary" align="center">
+              Saved as a draft until every required rule is defined. Drafts are not used to approve trades.
+            </AppText>
+          ) : null}
+        </View>
       }>
-      {!ready ? <AnalysisProgress step={step} /> : null}
       {error ? (
         <Card tone="danger">
           <AppText variant="body">{error}</AppText>
         </Card>
       ) : null}
+      <UnderstoodCard lines={views.understood} original={plan.originalText} onEdit={setEditing} onEditDescription={() => router.push({ pathname: '/strategy/describe', params: { edit: '1' } })} />
+      <ClarifyCard questions={views.questions} onAnswer={answer} />
+      <ConfirmedPlanCard lines={views.confirmed} draft={draft} unresolved={views.readiness.unresolved} />
+      <PlanScoreCard score={views.score} />
+      <SuggestionsCard suggestions={views.suggestions} onDecide={decide} />
+      <TestingCard testability={views.testability} onPractice={practice} />
 
-      {ready && analysis && resolved && score && rules && readiness && ownership ? (
-        <>
-          <IdeaCard a={resolved} />
-          <DefinitionScoreCard baseline={analysis.strategyHealthScore} current={score} />
-          {readiness.ready ? (
-            <TestReadyCard readiness={readiness} score={score.total} onViewFinal={openFinal} onTest={testInPractice} />
-          ) : null}
-          {progress.total > progress.resolved || !readiness.ready ? (
-            <ResolveSummaryCard
-              progress={progress}
-              onResolveNext={() => progress.next && setOpenId(progress.next.id)}
-              onViewAll={() => setTab('dna')}
-              onFinishLater={finishLater}
-            />
-          ) : null}
-          <OwnershipCard ownership={ownership} uniquenessNote={analysis.uniqueness?.notes.join(' ')} />
-
-          <AnalyzerTabBar value={tab} onChange={setTab} />
-          {tab === 'dna' ? <DnaTab a={resolved} items={items} onResolve={(i) => setOpenId(i.id)} /> : null}
-          {tab === 'weaknesses' ? <WeaknessesTab a={resolved} /> : null}
-          {tab === 'improved' ? (
-            <>
-              <ComparisonView original={original} optimized={checklist} />
-              <ImprovedStrategyCard sections={checklist} />
-            </>
-          ) : null}
-          {tab === 'why' ? (
-            <>
-              <AppText variant="caption">
-                Original idea → problem → Prop Guard improvement → why it helps. Thresholds are Prop Guard suggestions, not your rules: accept, edit or reject each one — only accepted or edited changes are saved.
-              </AppText>
-              {resolved.aiSuggestedRules
-                .filter((s) => s.scope !== 'account')
-                .map((s) => (
-                  <SuggestionCard key={s.id} s={s} onDecide={(status, edited) => decide(s.id, status, edited)} />
-                ))}
-              {resolved.aiSuggestedRules.some((s) => s.scope === 'account') ? (
-                <AppText variant="label" style={{ marginTop: spacing.sm }}>
-                  ACCOUNT-WIDE PROTECTIONS · apply to every strategy, not part of this one’s logic
-                </AppText>
-              ) : null}
-              {resolved.aiSuggestedRules
-                .filter((s) => s.scope === 'account')
-                .map((s) => (
-                  <SuggestionCard key={s.id} s={s} onDecide={(status, edited) => decide(s.id, status, edited)} />
-                ))}
-              <View style={styles.bulk}>
-                <Button label={`Accept all ${pending} pending`} size="md" variant="ghost" disabled={!pending} onPress={() => resolved.aiSuggestedRules.filter((s) => s.status === 'pending').forEach((s) => decide(s.id, 'accepted'))} />
-              </View>
-            </>
-          ) : null}
-          {tab === 'rules' ? <TestableRulesTab rules={rules} /> : null}
-          {tab === 'best' ? <BestConditionsTab a={resolved} /> : null}
-          {tab === 'avoid' ? <AvoidWhenTab a={resolved} /> : null}
-          {tab === 'practice' ? <PracticeTab rules={rules} onPractice={practiceOwnRules} busy={practicing} /> : null}
-
-          {blocker ? (
-            <AppText variant="caption" tone="warning" align="center">
-              {blocker}
-            </AppText>
-          ) : null}
-          <Button label="Fine-tune rules before saving" icon="create-outline" variant="ghost" size="md" onPress={fineTune} />
-          <AppText variant="caption" tone="tertiary">
-            Prop Guard measures how well-defined a plan is. A higher definition score means more measurable, testable rules — it says nothing about future results. Only Historical Practice shows how a plan behaved in the past.
-          </AppText>
-        </>
-      ) : null}
-      <ResolveRuleSheet
-        item={openItem}
-        progress={progress}
-        onClose={() => setOpenId(null)}
-        onResolve={(input) => openItem && resolveItem(openItem, input)}
-        onUnresolve={() => {
-          if (openItem) unresolve(openItem.id);
-          setOpenId(null);
-        }}
-        onNext={() => setOpenId(progress.next?.id ?? null)}
-      />
+      <Sheet visible={!!editQ} onClose={() => setEditing(null)} title="Edit your plan">
+        {editQ ? (
+          <QuestionCard
+            q={editQ}
+            onAnswer={(a) => {
+              answer(editQ.id, a);
+              setEditing(null);
+            }}
+          />
+        ) : null}
+      </Sheet>
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({ bulk: { alignItems: 'flex-end' } });

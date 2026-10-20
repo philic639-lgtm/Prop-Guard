@@ -422,4 +422,6 @@ export interface StructuredStrategy {
   practiceSpec?: import('./resolve').PracticeStrategySpec;
   analysisSource: 'ai' | 'local';
   analyzedAt: string;
+  /** The canonical plan (fields, branches, answers, decisions) — the source of truth for strategies from a description. */
+  plan?: import('../strategyPlan/types').StrategyPlan;
 }

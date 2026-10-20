@@ -21,6 +21,7 @@ import { contentHash } from '@/lib/engines/setupCheck';
 import { pickScreenshot } from '@/services/screenshotService';
 import { validateImage } from '@/services/setupCheck/imageValidation';
 import { firmRestrictions } from '@/services/setupCheck/localContext';
+import { isDraftStrategy } from '@/lib/engines/strategyPlan';
 import { useAppStore } from '@/store/useAppStore';
 import { numToInput, parseNum } from '@/utils/format';
 import { uuid } from '@/utils/id';
@@ -35,7 +36,9 @@ const TIMEFRAMES = ['1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h', 'D'] as co
  */
 export default function SetupCheckScreen() {
   const params = useLocalSearchParams<{ strategyId?: string }>();
-  const strategies = useAppStore((s) => s.strategies);
+  const allStrategies = useAppStore((s) => s.strategies);
+  // Draft plans (rules still to define) cannot be used to check or approve a trade.
+  const strategies = useMemo(() => allStrategies.filter((s) => !isDraftStrategy(s)), [allStrategies]);
   const accounts = useAppStore((s) => s.accounts);
   const markets = useAppStore((s) => s.preferences.markets);
   const defaultInstrument = useAppStore((s) => s.preferences.defaultInstrument);

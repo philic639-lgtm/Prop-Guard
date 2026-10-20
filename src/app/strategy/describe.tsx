@@ -1,10 +1,11 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppHeader, AppText, Button, Card, Input, Screen } from '@/components/ui';
 import { Icon } from '@/components/ui/Icon';
 import { colors, spacing } from '@/constants/theme';
+import { goBack } from '@/utils/navigation';
 import { useStrategyAnalysisStore } from '@/features/strategy/useStrategyAnalysisStore';
 import { STRATEGY_EXAMPLE } from '@/lib/engines';
 
@@ -19,8 +20,16 @@ export default function DescribeStrategy() {
   // Start from the last submitted text (editing after going back), never from an example.
   const [text, setText] = useState(() => useStrategyAnalysisStore.getState().text);
   const submit = useStrategyAnalysisStore((s) => s.submit);
+  const revise = useStrategyAnalysisStore((s) => s.revise);
+  // Opened from "Edit description": the same plan (answers kept), not a new strategy.
+  const { edit } = useLocalSearchParams<{ edit?: string }>();
 
   const analyze = () => {
+    if (edit === '1') {
+      revise(text.trim());
+      goBack('/strategy/analysis');
+      return;
+    }
     submit(text.trim());
     router.push('/strategy/analysis');
   };
