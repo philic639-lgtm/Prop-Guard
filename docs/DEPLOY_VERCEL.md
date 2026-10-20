@@ -66,7 +66,7 @@ anyone using the site. Never put secret keys in them. After changing one, **rede
 | Variable | Needed? | Value |
 | --- | --- | --- |
 | `EXPO_PUBLIC_SUPABASE_URL` | Optional — blank = Demo Mode | `https://<ref>.supabase.co` |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | With the URL | Supabase anon (public) key — RLS protects the data |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | With the URL | Supabase **publishable** key (`sb_publishable_…`) or legacy `anon` key — RLS protects the data. A secret / `service_role` key here is refused by the app. Without it the app has no backend: the economic calendar shows "Not connected — this build has no calendar server settings" and names this variable. |
 | `EXPO_PUBLIC_AI_MODE` | Optional | `mock` (default, on-device) or `remote` (needs the deployed `ai-gateway` function + provider secrets — see `docs/BACKEND_DEPLOYMENT.md`) |
 | `EXPO_PUBLIC_DEV_UNLOCK_PRO` | **Decide before going public** | Defaults to **on** when RevenueCat is not configured (every visitor gets Pro features). Set `false` to show the paywall. Web has no billing yet (RevenueCat keys are iOS/Android only). |
 | `EXPO_PUBLIC_OCR_ASSETS_URL` | No | Set by the build script to `/ocr`. Only override to serve OCR files elsewhere. |
@@ -74,6 +74,13 @@ anyone using the site. Never put secret keys in them. After changing one, **rede
 | `EXPO_PUBLIC_OCR_RESTRICTED_HOST` | No | Set to `true` by the build script (model fetched as `.wasm`). |
 | `EXPO_PUBLIC_IMPORT_DEBUG` | No | `true` shows the OCR debug panel — leave unset in production. |
 | `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `_ANDROID_KEY` | Native apps only | Not used by the website. |
+
+The economic calendar needs only these two variables: the app reads the public tables
+`economic_events`, `economic_feed_status` and `economic_updates` through
+`<URL>/rest/v1/…` with the publishable key, signed in or not. It never calls the
+`economic-calendar-sync` function — that is run by the Supabase scheduler with `ECON_SYNC_SECRET`.
+Set both for **Production and Preview**, then redeploy (the build script clears the bundler cache,
+so a newly added value is always inlined).
 
 Server secrets (AI provider keys, `SUPABASE_SERVICE_ROLE_KEY`, `ECON_SYNC_SECRET`, …)
 **never** go into Vercel — they belong to Supabase Edge Function secrets

@@ -329,7 +329,13 @@ export default function IntelligenceScreen() {
           <AppText variant="bodyStrong" accessibilityRole="alert">
             Not connected — this build has no calendar server settings, so nothing can be loaded.
           </AppText>
-        ) : cal.fetchedAt ? (
+        ) : null}
+        {notConnected && env.supabaseProblem ? (
+          <AppText variant="caption" tone="secondary" style={styles.mt}>
+            {env.supabaseProblem}
+          </AppText>
+        ) : null}
+        {notConnected ? null : cal.fetchedAt ? (
           <AppText variant="bodyStrong">
             Last refreshed {nyStamp(cal.fetchedAt)} ({ago(cal.fetchedAt, cal.now)})
           </AppText>
